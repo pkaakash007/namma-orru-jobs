@@ -2992,11 +2992,11 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
 
     // For recruiters/managers, do not allow viewing other recruiters/managers
     if (
-      currentUser.role === 'manager' &&
-      (targetUser.role === 'manager' || targetUser.role === 'admin') &&
+      (currentUser.role === 'manager' || currentUser.role === 'admin') &&
+      targetUser.role !== 'employee' &&
       currentUser.id !== targetId
     ) {
-      return c.json({ error: 'Recruiters can only view candidate and employee profiles' }, 403)
+      return c.json({ error: 'Recruiters can only view candidate and employee profiles', is_recruiter_restricted: true }, 403)
     }
 
     // Exclude deactivated accounts for non-admin viewers
@@ -3078,13 +3078,17 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
 
     // Check target exists and is active
     const targetUser = await c.env.DB.prepare(
-      'SELECT id, is_active, status FROM users WHERE id = ?'
+      'SELECT id, role, is_active, status FROM users WHERE id = ?'
     )
       .bind(targetId)
       .first() as any
 
     if (!targetUser || targetUser.is_active === 0 || targetUser.status !== 'active') {
       return c.json({ error: 'Cannot follow this user as the account is deactivated or not found' }, 400)
+    }
+
+    if (currentUser.role === 'manager' && targetUser.role !== 'employee') {
+      return c.json({ error: 'Recruiters can only follow candidates and employees' }, 403)
     }
 
     // Check if already followed
@@ -3308,17 +3312,22 @@ app.get('/api/conversations', requireAuth, async (c) => {
     const currentUser = c.get('user') as UserRecord
 
     // Fetch all conversations for current user
-    const { results } = await c.env.DB.prepare(
-      `SELECT c.id as conversation_id, c.updated_at,
-              cp_other.user_id as participant_id,
-              u.full_name, u.username, u.avatar_url, u.headline, u.is_active, u.status
-       FROM conversation_participants cp_me
-       JOIN conversations c ON cp_me.conversation_id = c.id
-       JOIN conversation_participants cp_other ON c.id = cp_other.conversation_id AND cp_other.user_id != cp_me.user_id
-       JOIN users u ON cp_other.user_id = u.id
-       WHERE cp_me.user_id = ?
-       ORDER BY c.updated_at DESC`
-    )
+    let convQuery = `
+      SELECT c.id as conversation_id, c.updated_at,
+             cp_other.user_id as participant_id,
+             u.full_name, u.username, u.avatar_url, u.headline, u.role, u.is_active, u.status
+      FROM conversation_participants cp_me
+      JOIN conversations c ON cp_me.conversation_id = c.id
+      JOIN conversation_participants cp_other ON c.id = cp_other.conversation_id AND cp_other.user_id != cp_me.user_id
+      JOIN users u ON cp_other.user_id = u.id
+      WHERE cp_me.user_id = ?
+    `
+    if (currentUser.role === 'manager') {
+      convQuery += ` AND u.role = 'employee'`
+    }
+    convQuery += ` ORDER BY c.updated_at DESC`
+
+    const { results } = await c.env.DB.prepare(convQuery)
       .bind(currentUser.id)
       .all()
 
@@ -3385,13 +3394,17 @@ app.post('/api/conversations', requireAuth, async (c) => {
 
     // Verify recipient exists and is active
     const recipient = await c.env.DB.prepare(
-      'SELECT id, full_name, username, avatar_url, headline, is_active, status FROM users WHERE id = ?'
+      'SELECT id, full_name, username, avatar_url, headline, role, is_active, status FROM users WHERE id = ?'
     )
       .bind(recipientId)
       .first() as any
 
     if (!recipient || recipient.is_active === 0 || recipient.status !== 'active') {
       return c.json({ error: 'Cannot message this user because their account is deactivated or not found' }, 400)
+    }
+
+    if (currentUser.role === 'manager' && recipient.role !== 'employee') {
+      return c.json({ error: 'Recruiters can only message candidates and employees' }, 403)
     }
 
     // Check if an existing 1-to-1 conversation exists

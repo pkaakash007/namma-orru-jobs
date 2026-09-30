@@ -396,13 +396,12 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                   key={cat.id}
                   type="button"
                   onClick={() => handleCategorySelect(cat.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center ${
                     selectedCategory === cat.id
                       ? 'bg-[#0B2545] text-white shadow-xs'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  <span>{cat.icon}</span>
                   <span>{localizedName}</span>
                 </button>
               )
@@ -414,7 +413,7 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
             <div className="mt-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-bold text-[#0B2545]">
-                  {activeCategoryObj.icon} {activeCategoryObj.name} Skill Profiles:
+                  {activeCategoryObj.name} Skill Profiles:
                 </span>
                 <span className="text-slate-500 text-[10px]">{activeCategoryObj.description}</span>
               </div>
@@ -524,12 +523,6 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                         <h3 className="text-sm font-bold text-[#0F172A] truncate">
                           {cand.full_name}
                         </h3>
-                        {cand.resume_url && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                            <CheckCircle2 className="h-3 w-3" />
-                            {language === 'ta' ? 'தன்விவரக் குறிப்பு உள்ளது' : language === 'hi' ? 'बायोडाटा संलग्न' : 'Resume Attached'}
-                          </span>
-                        )}
                         {matchScore !== undefined && matchScore > 0 && (
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
@@ -705,12 +698,6 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                     <h3 className="text-base font-bold text-[#0F172A]">
                       {selectedCandidate.full_name}
                     </h3>
-                    {selectedCandidate.resume_url && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Verified CV
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs font-semibold text-[#0B2545]">
                     {selectedCandidate.headline || selectedCandidate.position}

@@ -33,6 +33,7 @@ class ApiClient {
 
   setToken(t: string | null) {
     this.token = t
+    this.inFlightRequests.clear()
     cachedNotifications = null
     lastNotificationsFetch = 0
     if (t) {

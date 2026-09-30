@@ -83,25 +83,6 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     } finally {
       setLoading(false)
     }
-  }perience: lang === 'ta' ? 'அனுபவம் & பணி' : lang === 'hi' ? 'कार्य अनुभव' : 'Professional Role',
-    notFound: lang === 'ta' ? 'பயனர் சுயவிவரம் கிடைக்கவில்லை' : lang === 'hi' ? 'प्रोफ़ाइल नहीं मिली' : 'User profile could not be found.',
-  }
-
-  const fetchProfile = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await socialService.getUserProfile(userId)
-      if (res?.profile) {
-        setProfile(res.profile)
-      } else {
-        setError(t.notFound)
-      }
-    } catch {
-      setError(t.notFound)
-    } finally {
-      setLoading(false)
-    }
   }
 
   useEffect(() => {
@@ -162,36 +143,14 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     )
   }
 
-  if (error || !profile) {
-    return (
-      <div className="w-full space-y-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B2545] transition px-2.5 py-1.5 rounded-lg hover:bg-white cursor-pointer border border-transparent hover:border-gray-200"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>{t.back}</span>
-        </button>
+  const isOtherRecruiter = Boolean(
+    isRecruiter &&
+    profile &&
+    (profile.role === 'manager' || profile.role === 'admin') &&
+    !profile.is_self
+  )
 
-        <div className="rounded-xl border border-[#E0DFDC] bg-white p-8 text-center shadow-xs">
-          <p className="text-xs text-slate-500 mb-4">{error || t.notFound}</p>
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-5 py-2 bg-[#0B2545] text-white rounded-full font-bold text-xs shadow-xs hover:bg-[#071A31] transition cursor-pointer"
-          >
-            {t.back}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const isRecruiter = hasRole(['admin', 'manager'])
-  const isOtherRecruiter = isRecruiter && (profile.role === 'manager' || profile.role === 'admin') && !profile.is_self
-
-  if (isOtherRecruiter) {
+  if (isRestrictedRecruiter || isOtherRecruiter) {
     return (
       <div className="w-full space-y-4">
         <button
@@ -225,9 +184,35 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
               onClick={onBack}
               className="px-5 py-2.5 bg-[#0B2545] text-white rounded-xl font-bold text-xs shadow-xs hover:bg-[#071A31] transition cursor-pointer"
             >
-              {lang === 'ta' ? 'விண்ணப்பதாரர்களுக்குத் திரும்பு' : lang === 'hi' ? 'उम्मीदवार खोज पर वापस जाएं' : 'Return to Candidates'}
+              {lang === 'ta' ? 'விண்ணப்பதாரர்களுக்குத் திரும்பு' : lang === 'hi' ? 'உम्मीदवार खोज पर वापस जाएं' : 'Return to Candidates'}
             </button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !profile) {
+    return (
+      <div className="w-full space-y-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B2545] transition px-2.5 py-1.5 rounded-lg hover:bg-white cursor-pointer border border-transparent hover:border-gray-200"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>{t.back}</span>
+        </button>
+
+        <div className="rounded-xl border border-[#E0DFDC] bg-white p-8 text-center shadow-xs">
+          <p className="text-xs text-slate-500 mb-4">{error || t.notFound}</p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-5 py-2 bg-[#0B2545] text-white rounded-full font-bold text-xs shadow-xs hover:bg-[#071A31] transition cursor-pointer"
+          >
+            {t.back}
+          </button>
         </div>
       </div>
     )

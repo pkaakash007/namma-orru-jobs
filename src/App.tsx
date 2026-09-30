@@ -222,7 +222,12 @@ function MainContent() {
       window.history.pushState({}, '', '/')
     } catch {}
     setIsLoginRoute(false)
-    setActiveTab(user ? 'jobs' : 'home')
+    const hasAuthedUser = Boolean(
+      user ||
+      localStorage.getItem('namma_user') ||
+      localStorage.getItem('namma_token')
+    )
+    setActiveTab(hasAuthedUser ? 'jobs' : 'home')
     try {
       window.dispatchEvent(new PopStateEvent('popstate'))
     } catch {}
@@ -382,10 +387,15 @@ function MainContent() {
 
   // Registered members should strictly stay on authenticated portal, never see public landing page
   useEffect(() => {
-    if (user && activeTab === 'home') {
-      setActiveTab('jobs')
+    if (user) {
+      if (activeTab === 'home') {
+        setActiveTab('jobs')
+      }
+      // Instantly load fresh authenticated jobs and posts without requiring a browser refresh
+      loadJobs(true)
+      loadPosts(true)
     }
-  }, [user, activeTab])
+  }, [user?.id, loadJobs, loadPosts])
 
   // Guard notifications: only available for authenticated members
   useEffect(() => {
@@ -790,9 +800,6 @@ function MainContent() {
                     <Briefcase className="h-3 w-3 text-[#0B2545]" />
                     {t('app_hr_suite')}
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-[#EA580C] font-bold">
-                    {t('app_talent_tag')}
-                  </span>
                 </div>
                 <button
                   onClick={() => setActiveTab('post-job')}
@@ -921,7 +928,7 @@ function MainContent() {
           {/* CENTER COLUMN: Main Content */}
           <section className={`${activeTab === 'candidates' ? 'lg:col-span-9' : 'lg:col-span-6'} space-y-4`}>
             {/* TAB 1: Jobs Board (LinkedIn business logic: Gated for unregistered visitors) */}
-            {activeTab === 'jobs' && (
+            {(activeTab === 'jobs' || (activeTab === 'home' && user)) && (
               <>
                 {!user ? (
                   <GuestJobsLanding

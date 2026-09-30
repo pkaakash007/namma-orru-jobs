@@ -294,15 +294,6 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
             </div>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 border border-orange-200/60 text-[#EA580C] text-[11px] font-bold tracking-wide">
-            <Briefcase className="h-3.5 w-3.5 text-[#EA580C]" />
-            <span>
-              {selectedRole === 'manager'
-                ? 'Employer & HR Recruitment Suite'
-                : 'Tamil Nadu\'s #1 Career Network'}
-            </span>
-          </div>
-
           <h1 className="mt-3 text-2xl sm:text-5xl font-black text-[#0B2545] tracking-tight leading-tight">
             {selectedRole === 'manager'
               ? 'Hire Top Verified Talent in Tamil Nadu'

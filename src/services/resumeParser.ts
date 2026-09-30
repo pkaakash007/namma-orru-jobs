@@ -17,7 +17,7 @@ export interface ExtractedResumeData {
 export interface SkillCategory {
   id: string
   name: string
-  icon: string
+  icon?: string
   description: string
   skills: string[]
 }
@@ -27,7 +27,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'it_software',
     name: 'IT & Software',
-    icon: '💻',
+    icon: '',
     description: 'Frontend, Backend, Mobile, Cloud, AI & DevOps',
     skills: [
       'React', 'Next.js', 'TypeScript', 'JavaScript', 'HTML5', 'CSS3', 'Tailwind CSS',
@@ -43,7 +43,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'finance_accounting',
     name: 'Finance & Accounts',
-    icon: '📊',
+    icon: '',
     description: 'Tally, GST, Auditing, Tax, Banking & MIS Reporting',
     skills: [
       'Accounting', 'Tally', 'Tally Prime', 'GST', 'TDS', 'Income Tax', 'Auditing',
@@ -55,7 +55,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'sales_marketing',
     name: 'Sales & Marketing',
-    icon: '📢',
+    icon: '',
     description: 'Business Development, Digital Marketing, Telecalling & BPO',
     skills: [
       'Sales', 'Business Development', 'Lead Generation', 'B2B Sales', 'Retail Sales',
@@ -67,7 +67,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'engineering_manufacturing',
     name: 'Engineering & Core',
-    icon: '⚙️',
+    icon: '',
     description: 'CAD/CAM, Mechanical, Electrical, Production & QA',
     skills: [
       'AutoCAD', 'SolidWorks', 'CATIA', 'Mechanical Engineering', 'Electrical Engineering',
@@ -79,7 +79,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'design_media',
     name: 'Creative & Design',
-    icon: '🎨',
+    icon: '',
     description: 'UI/UX Design, Figma, Graphic Design, Video & Motion',
     skills: [
       'UI/UX Design', 'Figma', 'Adobe XD', 'Graphic Design', 'Photoshop', 'Illustrator',
@@ -90,7 +90,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'healthcare_pharma',
     name: 'Healthcare & Pharma',
-    icon: '🏥',
+    icon: '',
     description: 'Nursing, Pharmacy, Medical Lab, Hospital Care & Diagnostics',
     skills: [
       'Nursing', 'Pharmacy', 'Pharmacology', 'Medical Lab', 'Lab Technician',
@@ -101,7 +101,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   {
     id: 'skilled_trades',
     name: 'Trades & Logistics',
-    icon: '🔧',
+    icon: '',
     description: 'Electrician, Technician, Tailoring, Drivers, Supply Chain',
     skills: [
       'Electrician', 'Plumber', 'Tailoring', 'Garment Making', 'Driver', 'Heavy Vehicle',

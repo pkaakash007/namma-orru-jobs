@@ -18,7 +18,7 @@ export const fetchJobs = createAsyncThunk(
   async (forceRefresh: boolean = false, { getState, rejectWithValue }) => {
     const state = (getState() as any).jobs as JobsState
     const now = Date.now()
-    if (!forceRefresh && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
+    if (!forceRefresh && !state.registeredOnly && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
       // One-Time Fetch: Return existing memory cache to save Cloudflare D1 queries
       return {
         jobs: state.items,
@@ -48,8 +48,8 @@ export const fetchJobs = createAsyncThunk(
         return false
       }
       const now = Date.now()
-      // Skip if fresh cache exists and not a force-refresh
-      if (!forceRefresh && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
+      // Skip if fresh cache exists, not registeredOnly, and not a force-refresh
+      if (!forceRefresh && !state.registeredOnly && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
         return false
       }
       return true

@@ -181,9 +181,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
               })
             }
             className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+            aria-label={language === 'ta' ? 'பின்செல்' : language === 'hi' ? 'वापस' : 'Back'}
           >
             <ArrowLeft className="h-4 w-4" />
-            <span>{t('auth_skip')}</span>
+            <span>{language === 'ta' ? 'பின்செல்' : language === 'hi' ? 'वापस' : 'Back'}</span>
           </button>
 
           {/* Pure Language Selector */}

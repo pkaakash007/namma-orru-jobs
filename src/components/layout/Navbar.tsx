@@ -151,7 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onSelectTab('jobs')}
               className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors relative whitespace-nowrap cursor-pointer ${
-                activeTab === 'jobs'
+                activeTab === 'jobs' || (activeTab === 'home' && !!user)
                   ? 'border-b-2 border-[#0B2545] text-[#0B2545] font-bold'
                   : 'text-[#5E5E5E] hover:text-[#0F172A]'
               }`}
@@ -442,7 +442,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           onClick={() => onSelectTab('jobs')}
           className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold relative transition cursor-pointer ${
-            activeTab === 'jobs' ? 'text-[#0B2545] font-bold' : 'text-slate-500'
+            activeTab === 'jobs' || (activeTab === 'home' && !!user) ? 'text-[#0B2545] font-bold' : 'text-slate-500'
           }`}
         >
           <div className="relative">
