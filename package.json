@@ -1,0 +1,43 @@
+{
+  "name": "notes",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "cap:sync": "npm run build && npx cap sync android",
+    "cap:open": "npx cap open android",
+    "apk:debug": "export JAVA_HOME=/opt/homebrew/Cellar/openjdk@21/21.0.9/libexec/openjdk.jdk/Contents/Home && cd android && ./gradlew assembleDebug",
+    "apk:build": "export JAVA_HOME=/opt/homebrew/Cellar/openjdk@21/21.0.9/libexec/openjdk.jdk/Contents/Home && cd android && ./gradlew assembleRelease",
+    "bundle:build": "export JAVA_HOME=/opt/homebrew/Cellar/openjdk@21/21.0.9/libexec/openjdk.jdk/Contents/Home && cd android && ./gradlew bundleRelease",
+    "apk:upload": "npx wrangler r2 object put namma-ooru-jobs-media/apks/namma-ooru-jobs-latest.apk --file=android/app/build/outputs/apk/release/app-release.apk --remote && npx wrangler r2 object put namma-ooru-jobs-media/apks/namma-ooru-jobs-v1.0.0.apk --file=android/app/build/outputs/apk/release/app-release.apk --remote",
+    "apk:release": "npm run cap:sync && npm run apk:build && npm run apk:upload",
+    "playstore:build": "npm run cap:sync && npm run bundle:build",
+    "backend:dev": "npm --prefix backend run dev"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@reduxjs/toolkit": "^2.13.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "lucide-react": "^1.48.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-redux": "^9.3.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

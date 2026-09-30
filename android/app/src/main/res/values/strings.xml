@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Namma Ooru Jobs</string>
+    <string name="title_activity_main">Namma Ooru Jobs</string>
+    <string name="package_name">com.nammaoorujobs.app</string>
+    <string name="custom_url_scheme">com.nammaoorujobs.app</string>
+    <string name="server_client_id">1081442493959-s9906ironh3oq1vcso7hbbje8qi6uj65.apps.googleusercontent.com</string>
+</resources>

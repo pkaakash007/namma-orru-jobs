@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "namma-ooru-jobs-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "namma-ooru-jobs-db",
+      "database_id": "a3f752ce-64b2-40ee-bef5-581d1f6f45a2"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "namma-ooru-jobs-media"
+    }
+  ]
+}

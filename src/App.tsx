@@ -1,0 +1,1226 @@
+import { useState, useEffect, useCallback } from 'react'
+import { ToastProvider, useToast } from './context/ToastContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { LanguageProvider, useLanguage } from './context/LanguageContext'
+import { Navbar, type TabType } from './components/layout/Navbar'
+import { JobCard } from './components/features/jobs/JobCard'
+import { TrendingJobRow } from './components/features/jobs/TrendingJobRow'
+import { JobSearchFilters } from './components/features/jobs/JobSearchFilters'
+import { JobApplyModal } from './components/features/jobs/JobApplyModal'
+import { GuestJobsLanding } from './components/features/jobs/GuestJobsLanding'
+import { PostJobForm } from './components/features/hr/PostJobForm'
+import { AdminStatsGrid } from './components/features/admin/AdminStatsGrid'
+import { UserDirectoryTable } from './components/features/admin/UserDirectoryTable'
+import { RoleGuideCard } from './components/features/admin/RoleGuideCard'
+import { FeedView } from './components/features/feed/FeedView'
+import { Badge } from './components/ui/Badge'
+import { Avatar } from './components/ui/Avatar'
+import { ProfileEditModal } from './components/features/profile/ProfileEditModal'
+import { UserProfilePage } from './components/features/profile/UserProfilePage'
+import { NotificationSection } from './components/features/notifications/NotificationSection'
+import { ConnectionsView } from './components/features/connections/ConnectionsView'
+import { PublicUserProfileView } from './components/features/profile/PublicUserProfileView'
+import { MessagesView } from './components/features/messages/MessagesView'
+import { AdminModerationTable } from './components/features/admin/AdminModerationTable'
+import { adminService, feedService, chatService, jobReadService } from './services/api'
+import { initPushNotifications } from './services/notifications'
+import { ApkReleasePage } from './components/features/releases/ApkReleasePage'
+import { LoginPage } from './components/features/auth/LoginPage'
+import { PublicHomePage } from './components/features/home/PublicHomePage'
+import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
+import { SavedJobsView } from './components/features/jobs/SavedJobsView'
+import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, CheckCheck } from 'lucide-react'
+import type { Job } from './types'
+import { useAppDispatch, useAppSelector } from './store/hooks'
+import { fetchJobs } from './store/jobsSlice'
+import { fetchPosts, postAdded, postLiked } from './store/postsSlice'
+import { fetchAdminData, userRoleUpdated } from './store/adminSlice'
+import { translateLocationSync, translateJobTitleSync, translateCompanySync } from './services/googleAiTranslate'
+
+const isLoginPath = () => {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname.toLowerCase()
+  const hash = window.location.hash.toLowerCase()
+  const searchParams = new URLSearchParams(window.location.search)
+  const tabParam = searchParams.get('tab')?.toLowerCase()
+  const viewParam = searchParams.get('view')?.toLowerCase()
+  const modalParam = searchParams.get('modal')?.toLowerCase()
+  const isQueryLogin =
+    tabParam === 'login' ||
+    tabParam === 'signin' ||
+    viewParam === 'login' ||
+    viewParam === 'signin' ||
+    modalParam === 'login'
+
+  return (
+    path === '/login' ||
+    path.startsWith('/login/') ||
+    path === '/signin' ||
+    path.startsWith('/signin/') ||
+    hash === '#login' ||
+    hash === '#signin' ||
+    hash.startsWith('#/login') ||
+    hash.startsWith('#/signin') ||
+    isQueryLogin
+  )
+}
+
+const isReleasePath = () => {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname.toLowerCase()
+  const hash = window.location.hash.toLowerCase()
+  const search = window.location.search.toLowerCase()
+  return (
+    path.startsWith('/release') ||
+    path.startsWith('/apk') ||
+    path.startsWith('/download') ||
+    hash.includes('release') ||
+    hash.includes('apk') ||
+    search.includes('release') ||
+    search.includes('apk')
+  )
+}
+
+function MainContent() {
+  const { user, role, hasRole, setSelectedRole } = useAuth()
+  const [isLoginRoute, setIsLoginRoute] = useState(() => isLoginPath())
+  const [isReleaseRoute, setIsReleaseRoute] = useState(() => isReleasePath())
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash.toLowerCase()
+        const path = window.location.pathname.toLowerCase()
+        const search = window.location.search.toLowerCase()
+        if (hash === '#profile' || path === '/profile') return 'profile'
+        if (hash === '#saved-jobs' || hash === '#saved' || path === '/saved-jobs' || search.includes('tab=saved-jobs')) return 'saved-jobs'
+      }
+      const savedUser = localStorage.getItem('namma_user')
+      if (savedUser) return 'jobs'
+    } catch {}
+    return 'home'
+  })
+
+  const [savedJobsCount, setSavedJobsCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('namma_saved_job_ids')
+      return raw ? JSON.parse(raw).length : 0
+    } catch {
+      return 0
+    }
+  })
+
+  useEffect(() => {
+    const handleSavedUpdate = () => {
+      try {
+        const raw = localStorage.getItem('namma_saved_job_ids')
+        setSavedJobsCount(raw ? JSON.parse(raw).length : 0)
+      } catch {}
+    }
+    window.addEventListener('saved_jobs_updated', handleSavedUpdate)
+    return () => window.removeEventListener('saved_jobs_updated', handleSavedUpdate)
+  }, [])
+  const dispatch = useAppDispatch()
+  const { items: jobs, totalCount: reduxJobsCount } = useAppSelector((state) => state.jobs)
+  const totalJobsCount = reduxJobsCount || jobs.length
+  const { items: posts, isLoading: isLoadingPosts } = useAppSelector((state) => state.posts)
+  const { users: usersList, stats: reduxAdminStats } = useAppSelector((state) => state.admin)
+  const adminStats = reduxAdminStats || {
+    total_users: 0,
+    admins: 0,
+    managers_hr: 0,
+    employees: 0,
+    total_jobs: 0,
+  }
+
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedType, setSelectedType] = useState('All')
+  const [applyingJob, setApplyingJob] = useState<Job | null>(null)
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('')
+  const [candidateSearchJd, setCandidateSearchJd] = useState('')
+  const [viewingPublicProfileId, setViewingPublicProfileId] = useState<string | null>(null)
+  const [chatRecipientId, setChatRecipientId] = useState<string | null>(null)
+
+  // Dynamic Read / Unread Jobs State
+  const [readJobIds, setReadJobIds] = useState<Set<string>>(() =>
+    jobReadService.getReadJobIds(user?.id)
+  )
+
+  useEffect(() => {
+    const handleReadJobsUpdate = () => {
+      setReadJobIds(jobReadService.getReadJobIds(user?.id))
+    }
+    window.addEventListener('namma_jobs_read_updated', handleReadJobsUpdate)
+    return () => window.removeEventListener('namma_jobs_read_updated', handleReadJobsUpdate)
+  }, [user?.id])
+
+  // Calculate dynamic unread jobs count
+  const unreadJobsCount = jobs.filter((j) => !readJobIds.has(j.id)).length
+
+  const handleMarkJobAsRead = (jobId: string) => {
+    jobReadService.markJobAsRead(jobId, user?.id)
+  }
+
+  const handleMarkAllJobsAsRead = () => {
+    jobReadService.markAllJobsAsRead(
+      jobs.map((j) => j.id),
+      user?.id
+    )
+    showToast(
+      language === 'ta'
+        ? 'அனைத்து வேலைகளும் படித்ததாகக் குறிக்கப்பட்டன'
+        : language === 'hi'
+        ? 'सभी नौकरियों को पढ़ा हुआ चिह्नित किया गया'
+        : 'All jobs marked as read',
+      'info'
+    )
+  }
+
+  // Dynamic Unread Messages State
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0)
+
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (!user) {
+        setUnreadMessagesCount(0)
+        return
+      }
+      const count = await chatService.getUnreadMessagesCount()
+      setUnreadMessagesCount(count)
+    }
+
+    loadUnreadCount()
+    const handleMessagesUpdate = () => {
+      loadUnreadCount()
+    }
+    window.addEventListener('namma_messages_updated', handleMessagesUpdate)
+    const interval = setInterval(loadUnreadCount, 8000)
+    return () => {
+      window.removeEventListener('namma_messages_updated', handleMessagesUpdate)
+      clearInterval(interval)
+    }
+  }, [user])
+
+  const { showToast } = useToast()
+  const { t, language } = useLanguage()
+
+  // Navigation helpers
+  const navigateToHome = useCallback(() => {
+    try {
+      window.history.pushState({}, '', '/')
+    } catch {}
+    setIsLoginRoute(false)
+    setActiveTab(user ? 'jobs' : 'home')
+    try {
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    } catch {}
+  }, [user])
+
+  const navigateToLogin = useCallback(() => {
+    try {
+      window.history.pushState({}, '', '/login')
+    } catch {}
+    setIsLoginRoute(true)
+    try {
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    } catch {}
+  }, [])
+
+  // Load jobs from Redux store with 5-minute cache TTL & persistent local store
+  const loadJobs = useCallback(
+    async (forceRefresh = false) => {
+      dispatch(fetchJobs(forceRefresh))
+    },
+    [dispatch]
+  )
+
+  // Load feed posts from Redux store with 3-minute cache TTL
+  const loadPosts = useCallback(
+    async (forceRefresh = false) => {
+      dispatch(fetchPosts(forceRefresh))
+    },
+    [dispatch]
+  )
+
+  // Load admin data with 5-minute cache TTL
+  const loadAdminData = useCallback(
+    async (forceRefresh = false) => {
+      if (!hasRole(['admin'])) return
+      dispatch(fetchAdminData(forceRefresh))
+    },
+    [hasRole, dispatch]
+  )
+
+  // Handle role promotion / demotion by Admin (Optimistic Redux update)
+  const handlePromote = async (userId: string) => {
+    try {
+      const res = await adminService.updateUserRole(userId, 'manager')
+      showToast(res.message || 'User promoted to HR / Manager', 'success')
+      dispatch(userRoleUpdated({ userId, newRole: 'manager' }))
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    }
+  }
+
+  const handleDemote = async (userId: string) => {
+    try {
+      const res = await adminService.updateUserRole(userId, 'employee')
+      showToast(res.message || 'User reverted to Employee', 'info')
+      dispatch(userRoleUpdated({ userId, newRole: 'employee' }))
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    }
+  }
+
+  // Publish new dynamic post to D1 (Optimistic update in Redux store)
+  const handleCreatePost = async (content: string) => {
+    try {
+      const res = await feedService.createPost(content)
+      showToast('Post published to professional network!', 'success')
+      if (user && res.post_id) {
+        dispatch(
+          postAdded({
+            id: res.post_id,
+            author_id: user.id,
+            author_name: user.full_name,
+            author_avatar: user.avatar_url,
+            author_headline: user.headline,
+            author_role: user.role,
+            content,
+            likes_count: 0,
+            comments_count: 0,
+            created_at: new Date().toISOString(),
+          })
+        )
+      } else {
+        dispatch(fetchPosts(true))
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to publish post', 'error')
+    }
+  }
+
+  // Like dynamic post in D1 (Optimistic reaction increment in Redux store)
+  const handleLikePost = async (postId: string) => {
+    try {
+      const res = await feedService.likePost(postId)
+      dispatch(postLiked({ id: postId, likes_count: res.likes_count }))
+    } catch {
+      // Quiet
+    }
+  }
+
+  useEffect(() => {
+    // Anti-Scraping / Competitor Data-Theft Shield
+    if (typeof window !== 'undefined') {
+      console.log(
+        '%c🛡️ NAMMA OORU JOBS — HIGH-SECURITY SYSTEM ACTIVATED',
+        'color: #EA580C; font-size: 15px; font-weight: bold; background: #FFF7ED; padding: 6px 12px; border: 1px solid #EA580C; border-radius: 4px;'
+      )
+      console.log(
+        '%cAll API payloads, candidate talent records, and endpoints are protected by End-to-End AES-256-GCM Cryptographic Tunneling. Unauthorized scraping, automated tool flooding, or data theft is strictly blocked and logged.',
+        'color: #475569; font-size: 11px;'
+      )
+    }
+
+    loadJobs()
+    loadPosts()
+    initPushNotifications((title, body) => {
+      showToast(`${title}: ${body}`, 'info')
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'admin-panel') {
+      loadAdminData()
+    }
+  }, [activeTab, loadAdminData])
+
+  useEffect(() => {
+    const handleRouteChange = () => {
+      setIsLoginRoute(isLoginPath())
+      setIsReleaseRoute(isReleasePath())
+    }
+    window.addEventListener('popstate', handleRouteChange)
+    window.addEventListener('hashchange', handleRouteChange)
+    return () => {
+      window.removeEventListener('popstate', handleRouteChange)
+      window.removeEventListener('hashchange', handleRouteChange)
+    }
+  }, [])
+
+  // Auto-redirect authenticated user away from login route to jobs feed
+  useEffect(() => {
+    if (user && isLoginRoute) {
+      navigateToHome()
+    }
+  }, [user, isLoginRoute, navigateToHome])
+
+  // Registered members should strictly stay on authenticated portal, never see public landing page
+  useEffect(() => {
+    if (user && activeTab === 'home') {
+      setActiveTab('jobs')
+    }
+  }, [user, activeTab])
+
+  // Guard notifications: only available for authenticated members
+  useEffect(() => {
+    if (!user && activeTab === 'notifications') {
+      setActiveTab('jobs')
+      navigateToLogin()
+    }
+  }, [user, activeTab, navigateToLogin])
+
+  if (isLoginRoute) {
+    return (
+      <LoginPage
+        onSuccess={navigateToHome}
+        onBackToApp={navigateToHome}
+      />
+    )
+  }
+
+  if (isReleaseRoute) {
+    return (
+      <ApkReleasePage
+        onBackToApp={() => {
+          window.history.pushState({}, '', '/')
+          setIsReleaseRoute(false)
+        }}
+      />
+    )
+  }
+
+  // Filter jobs
+  const filteredJobs = jobs.filter((j) => {
+    const q = searchQuery.toLowerCase().trim()
+    const matchesSearch =
+      !q ||
+      j.title.toLowerCase().includes(q) ||
+      j.company_name.toLowerCase().includes(q) ||
+      j.location.toLowerCase().includes(q) ||
+      translateJobTitleSync(j.title, language).toLowerCase().includes(q) ||
+      translateCompanySync(j.company_name, language).toLowerCase().includes(q) ||
+      translateLocationSync(j.location, language).toLowerCase().includes(q)
+
+    const matchesFilter = selectedType === 'All' || j.workplace_type === selectedType
+
+    const matchesDistrict =
+      !selectedDistrict ||
+      (() => {
+        const target = selectedDistrict.toLowerCase().trim()
+        const targetEn = translateLocationSync(selectedDistrict, 'en').toLowerCase().trim()
+        const targetTa = translateLocationSync(selectedDistrict, 'ta').toLowerCase().trim()
+        const targetHi = translateLocationSync(selectedDistrict, 'hi').toLowerCase().trim()
+
+        const locEn = j.location.toLowerCase()
+        const locTa = translateLocationSync(j.location, 'ta').toLowerCase()
+        const locHi = translateLocationSync(j.location, 'hi').toLowerCase()
+
+        return (
+          locEn.includes(target) ||
+          locTa.includes(target) ||
+          locHi.includes(target) ||
+          locEn.includes(targetEn) ||
+          locTa.includes(targetTa) ||
+          locHi.includes(targetHi) ||
+          target.includes(locEn) ||
+          target.includes(locTa) ||
+          target.includes(locHi) ||
+          targetEn.includes(locEn)
+        )
+      })()
+
+    return matchesSearch && matchesFilter && matchesDistrict
+  })
+
+  // Dynamic location counts calculated from real jobs in database
+  const chennaiJobsCount = jobs.filter((j) =>
+    j.location.toLowerCase().includes('chennai')
+  ).length
+  const coimbatoreJobsCount = jobs.filter((j) =>
+    j.location.toLowerCase().includes('coimbatore')
+  ).length
+  const maduraiTrichyJobsCount = jobs.filter(
+    (j) =>
+      j.location.toLowerCase().includes('madurai') ||
+      j.location.toLowerCase().includes('trichy')
+  ).length
+  const bangaloreJobsCount = jobs.filter(
+    (j) =>
+      j.location.toLowerCase().includes('bangalore') ||
+      j.location.toLowerCase().includes('bengaluru')
+  ).length
+  const remoteJobsCount = jobs.filter(
+    (j) =>
+      j.workplace_type === 'Remote' || j.location.toLowerCase().includes('remote')
+  ).length
+
+  // Home Landing Info Page (Initial Design & Overview) - strictly for unregistered / guest visitors only
+  if (activeTab === 'home' && !user) {
+    return (
+      <PublicHomePage
+        onNavigateToLogin={navigateToLogin}
+        onExploreJobs={(q, city) => {
+          setActiveTab('jobs')
+          if (q) setSearchQuery(q)
+          if (city) setSelectedDistrict(city)
+        }}
+        onPostJob={() => {
+          if (user) {
+            if (role === 'employee') {
+              showToast('Job posting is reserved for HR / Recruiter accounts. You are currently logged in as a Job Seeker.', 'info')
+              setActiveTab('jobs')
+            } else {
+              setActiveTab('post-job')
+            }
+          } else {
+            setSelectedRole('manager')
+            navigateToLogin()
+          }
+        }}
+        totalJobsCount={totalJobsCount || (jobs.length > 0 ? jobs.length : 50)}
+        featuredJobs={jobs.slice(0, 3)}
+      />
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F4F2EE] text-[#0F172A]">
+      <Navbar
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          setViewingPublicProfileId(null)
+          setActiveTab(tab)
+        }}
+        jobsCount={user ? unreadJobsCount : (totalJobsCount || 0)}
+        unreadMessagesCount={unreadMessagesCount}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onOpenProfileEdit={() => setActiveTab('profile')}
+        onSelectNotificationJob={(_jobId, jobTitle) => {
+          setViewingPublicProfileId(null)
+          setActiveTab('jobs')
+          if (jobTitle) setSearchQuery(jobTitle)
+        }}
+      />
+
+      <main className="mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8">
+        {viewingPublicProfileId ? (
+          <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
+            <PublicUserProfileView
+              userId={viewingPublicProfileId}
+              lang={language}
+              onBack={() => setViewingPublicProfileId(null)}
+              onOpenChat={(recipientId) => {
+                setViewingPublicProfileId(null)
+                setChatRecipientId(recipientId)
+                setActiveTab('messages')
+              }}
+            />
+          </div>
+        ) : activeTab === 'connections' ? (
+          <div className="max-w-6xl mx-auto w-full animate-in fade-in duration-150">
+            <ConnectionsView
+              currentUser={user}
+              lang={language}
+              onOpenProfile={(uid) => setViewingPublicProfileId(uid)}
+              onOpenChat={(recipientId) => {
+                setChatRecipientId(recipientId)
+                setActiveTab('messages')
+              }}
+            />
+          </div>
+        ) : activeTab === 'messages' ? (
+          <div className="max-w-6xl mx-auto w-full animate-in fade-in duration-150">
+            <MessagesView
+              currentUser={user}
+              lang={language}
+              initialRecipientId={chatRecipientId}
+              onClearInitialRecipient={() => setChatRecipientId(null)}
+              onOpenProfile={(uid) => setViewingPublicProfileId(uid)}
+              onUnreadMessagesCountChange={(count) => setUnreadMessagesCount(count)}
+            />
+          </div>
+        ) : activeTab === 'notifications' && user ? (
+          <div className="max-w-2xl mx-auto w-full">
+            <NotificationSection
+              onSelectJob={(_jobId, jobTitle) => {
+                setActiveTab('jobs')
+                if (jobTitle) setSearchQuery(jobTitle)
+              }}
+            />
+          </div>
+        ) : activeTab === 'profile' && user ? (
+          <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
+            <UserProfilePage onBack={() => setActiveTab('jobs')} />
+          </div>
+        ) : activeTab === 'saved-jobs' ? (
+          <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
+            <SavedJobsView
+              onApply={(job) => setApplyingJob(job)}
+              onMatchCandidates={(job) => {
+                setCandidateSearchQuery(job.title)
+                setCandidateSearchJd(`${job.title}\n${job.description}`)
+                setActiveTab('candidates')
+                showToast(`Matching candidates for: ${job.title}`, 'info')
+              }}
+              onBack={() => setActiveTab('jobs')}
+              onBrowseJobs={() => setActiveTab('jobs')}
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            {/* LEFT SIDEBAR: Mini Profile Card & Regional Hubs */}
+            <aside className="hidden lg:block lg:col-span-3 space-y-4">
+              {/* User Profile Card */}
+            <div className="rounded-lg border border-[#E0DFDC] bg-white shadow-xs overflow-hidden">
+              {/* Cover Banner */}
+              <div className="h-16 bg-[#0B2545]" />
+
+              {/* Avatar & Headline */}
+              <div className="px-4 pb-4 text-center">
+                <div
+                  className="-mt-8 mb-2 flex justify-center cursor-pointer"
+                  onClick={() => user && setActiveTab('profile')}
+                  title="View Profile"
+                >
+                  <Avatar
+                    src={user?.avatar_url}
+                    name={user?.full_name || 'Guest'}
+                    size="xl"
+                    className="border-2 border-white shadow-sm ring-1 ring-black/5 hover:scale-105 transition"
+                  />
+                </div>
+                <h3
+                  className={`text-sm font-bold text-[#0F172A] ${user ? 'cursor-pointer hover:text-[#0B2545] transition' : ''}`}
+                  onClick={() => user && setActiveTab('profile')}
+                >
+                  {user ? user.full_name : t('sidebar_welcome_guest')}
+                </h3>
+                <p className="text-xs text-[#64748B] mt-0.5 line-clamp-2">
+                  {user ? user.headline : t('sidebar_guest_desc')}
+                </p>
+
+                {user && (
+                  <button
+                    onClick={() => setActiveTab('profile')}
+                    className="mt-2.5 flex items-center justify-center gap-1.5 w-full rounded-full border border-gray-200 bg-gray-50/80 py-1 text-xs font-semibold text-slate-700 hover:bg-gray-100 transition cursor-pointer"
+                  >
+                    <Settings className="h-3 w-3 text-[#0B2545]" />
+                    <span>{t('nav_edit_profile')}</span>
+                  </button>
+                )}
+
+                {user && role !== 'employee' && (
+                  <div className="mt-2 flex justify-center">
+                    <Badge variant="role" role={role} />
+                  </div>
+                )}
+
+                {/* Employee Resume Skills Status */}
+                {user && role === 'employee' && (
+                  <div className="mt-3 border-t border-gray-100 pt-2.5 text-left">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                        <Briefcase className="h-3 w-3 text-[#0B2545]" />
+                        {t('app_skills_in_hr_search')}
+                      </span>
+                      {user.resume_url && (
+                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                          {t('app_resume_active')}
+                        </span>
+                      )}
+                    </div>
+                    {user.skills && (Array.isArray(user.skills) ? user.skills.length > 0 : String(user.skills).length > 0) ? (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap gap-1">
+                          {(Array.isArray(user.skills) ? user.skills : String(user.skills).split(','))
+                            .slice(0, 4)
+                            .map((s: string) => (
+                              <span key={s} className="px-1.5 py-0.5 bg-slate-100 text-[#0B2545] font-semibold rounded text-[10px]">
+                                {s.trim()}
+                              </span>
+                            ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          {t('app_discoverable_by_hr')}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-500">
+                        {t('app_upload_resume_prompt')}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => setActiveTab('profile')}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-dashed border-[#0B2545]/30 text-[#0B2545] bg-[#0B2545]/5 hover:bg-[#0B2545]/10 text-[11px] font-bold transition cursor-pointer"
+                    >
+                      <FileText className="h-3 w-3 text-[#F97316]" />
+                      <span>{user.resume_url ? t('app_update_resume') : t('app_upload_resume_skills')}</span>
+                    </button>
+                  </div>
+                )}
+
+                {!user && (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => {
+                        window.history.pushState({}, '', '/login')
+                        window.dispatchEvent(new PopStateEvent('popstate'))
+                      }}
+                      className="w-full rounded-full bg-[#0B2545] py-1.5 text-xs font-bold text-white hover:bg-[#0B2545]/90 transition shadow-xs cursor-pointer"
+                    >
+                      {t('nav_sign_in_register')}
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-4 border-t border-gray-100 pt-3 text-left text-xs space-y-1">
+                  <div
+                    onClick={() => {
+                      if (!user) navigateToLogin()
+                      else setActiveTab('jobs')
+                    }}
+                    className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+                  >
+                    <span>{t('sidebar_live_openings')}</span>
+                    <span className="font-bold text-[#0B2545]">
+                      {user ? jobs.length : (totalJobsCount || 50)} {t('sidebar_active_count')}
+                    </span>
+                  </div>
+                  {user && (
+                    <div
+                      onClick={() => setActiveTab('saved-jobs')}
+                      className="flex justify-between items-center py-1 px-1 rounded transition cursor-pointer text-slate-500 hover:bg-gray-50"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Bookmark className="h-3.5 w-3.5 text-[#0B2545]" />
+                        <span>{t('saved_jobs_title') || 'Saved Jobs'}</span>
+                      </span>
+                      <span className="font-bold text-[#0B2545] bg-blue-50 px-1.5 py-0.2 rounded text-[10px]">
+                        {savedJobsCount}
+                      </span>
+                    </div>
+                  )}
+                  {user && (
+                    <div
+                      onClick={() => setActiveTab('notifications')}
+                      className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+                    >
+                      <span>{t('notif_title')}</span>
+                      <span className="font-bold text-[#F97316]">{t('sidebar_alerts')}</span>
+                    </div>
+                  )}
+                  <div
+                    onClick={() => setActiveTab('feed')}
+                    className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+                  >
+                    <span>{t('sidebar_discussions')}</span>
+                    <span className="font-bold text-[#0B2545]">
+                      {posts.length} {t('sidebar_posts_count')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t border-gray-100 pt-3 text-left text-xs font-semibold text-[#0B2545]">
+                  <div
+                    onClick={() => {
+                      if (!user) navigateToLogin()
+                      else setActiveTab('jobs')
+                    }}
+                    className="flex items-center gap-2 py-1 text-slate-700 hover:text-[#0B2545] cursor-pointer"
+                  >
+                    <Compass className="h-4 w-4 text-[#0B2545]" />
+                    <span>
+                      {t('sidebar_explore_all')} ({user ? jobs.length : (totalJobsCount || 50)})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* HR Recruiter Quick Access Card */}
+            {hasRole(['admin', 'manager']) && (
+              <div className="rounded-lg border border-[#E0DFDC] bg-white p-3.5 shadow-xs text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                  <span className="flex items-center gap-1 text-[#0B2545]">
+                    <Briefcase className="h-3 w-3 text-[#0B2545]" />
+                    {t('app_hr_suite')}
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-[#EA580C] font-bold">
+                    {t('app_talent_tag')}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setActiveTab('candidates')}
+                  className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition font-semibold cursor-pointer ${
+                    activeTab === 'candidates'
+                      ? 'bg-[#0B2545] text-white shadow-xs'
+                      : 'bg-slate-50 text-[#0B2545] hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-xs">
+                    <Users className="h-4 w-4 text-[#F97316]" />
+                    <span>{t('app_search_by_skill')}</span>
+                  </span>
+                  <span className="text-xs font-bold">→</span>
+                </button>
+              </div>
+            )}
+
+            {/* Tamil Nadu Regional Tech Hubs */}
+            <div className="rounded-lg border border-[#E0DFDC] bg-white p-4 shadow-xs text-xs">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                {t('sidebar_tech_hubs')}
+              </span>
+              <ul className="mt-2.5 space-y-2.5 text-slate-700 font-medium">
+                <li
+                  onClick={() => {
+                    if (!user) navigateToLogin()
+                    else {
+                      setActiveTab('jobs')
+                      setSearchQuery('Chennai')
+                    }
+                  }}
+                  className="flex items-center justify-between hover:text-[#0B2545] cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                    {t('hub_chennai')}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {user ? chennaiJobsCount : '12+'} {t('sidebar_job_plural')}
+                  </span>
+                </li>
+                <li
+                  onClick={() => {
+                    if (!user) navigateToLogin()
+                    else {
+                      setActiveTab('jobs')
+                      setSearchQuery('Coimbatore')
+                    }
+                  }}
+                  className="flex items-center justify-between hover:text-[#0B2545] cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                    {t('hub_coimbatore')}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {user ? coimbatoreJobsCount : '8+'} {t('sidebar_job_plural')}
+                  </span>
+                </li>
+                <li
+                  onClick={() => {
+                    if (!user) navigateToLogin()
+                    else {
+                      setActiveTab('jobs')
+                      setSearchQuery('Madurai')
+                    }
+                  }}
+                  className="flex items-center justify-between hover:text-[#0B2545] cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                    {t('hub_madurai')}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {user ? maduraiTrichyJobsCount : '6+'} {t('sidebar_job_plural')}
+                  </span>
+                </li>
+                <li
+                  onClick={() => {
+                    if (!user) navigateToLogin()
+                    else {
+                      setActiveTab('jobs')
+                      setSearchQuery('Bangalore')
+                    }
+                  }}
+                  className="flex items-center justify-between hover:text-[#0B2545] cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                    {t('hub_bangalore')}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {user ? bangaloreJobsCount : '15+'} {t('sidebar_job_plural')}
+                  </span>
+                </li>
+                <li
+                  onClick={() => {
+                    if (!user) navigateToLogin()
+                    else {
+                      setActiveTab('jobs')
+                      setSelectedType('Remote')
+                    }
+                  }}
+                  className="flex items-center justify-between hover:text-[#0B2545] cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5 text-[#0B2545] font-semibold">
+                    <Globe className="h-3.5 w-3.5 text-[#F97316]" />
+                    {t('sidebar_remote_flex')}
+                  </span>
+                  <span className="text-[11px] text-[#F97316] font-bold">
+                    {user ? remoteJobsCount : '10+'} {t('sidebar_job_plural')}
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </aside>
+
+          {/* CENTER COLUMN: Main Content */}
+          <section className={`${activeTab === 'candidates' ? 'lg:col-span-9' : 'lg:col-span-6'} space-y-4`}>
+            {/* TAB 1: Jobs Board (LinkedIn business logic: Gated for unregistered visitors) */}
+            {activeTab === 'jobs' && (
+              <>
+                {!user ? (
+                  <GuestJobsLanding
+                    totalJobsCount={totalJobsCount || jobs.length}
+                    onNavigateToLogin={navigateToLogin}
+                    onNavigateToHome={navigateToHome}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <JobSearchFilters
+                      searchQuery={searchQuery}
+                      onSearchChange={setSearchQuery}
+                      selectedType={selectedType}
+                      onTypeChange={setSelectedType}
+                      selectedDistrict={selectedDistrict}
+                      onDistrictChange={setSelectedDistrict}
+                      onViewSavedJobs={() => setActiveTab('saved-jobs')}
+                      savedJobsCount={savedJobsCount}
+                    />
+
+                    <div className="flex items-center justify-between px-1 text-xs text-slate-500 font-medium">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>
+                          {t('jobs_showing')}{' '}
+                          <strong className="text-[#0B2545]">{filteredJobs.length}</strong>{' '}
+                          {t('jobs_opportunities')}
+                        </span>
+                        {unreadJobsCount > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-50 text-[#F97316] border border-orange-200/80 font-bold text-[11px]">
+                            {unreadJobsCount} {language === 'ta' ? 'புதியவை' : language === 'hi' ? 'नए' : 'unread'}
+                          </span>
+                        )}
+                        {selectedDistrict && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-[#0B2545] font-bold text-[11px]">
+                            <span>{translateLocationSync(selectedDistrict, language)}</span>
+                            <button
+                              onClick={() => setSelectedDistrict('')}
+                              className="hover:text-red-600 font-bold ml-0.5 cursor-pointer"
+                              title="Clear district"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {unreadJobsCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllJobsAsRead}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B2545] hover:underline cursor-pointer"
+                            title="Mark all jobs as read"
+                          >
+                            <CheckCheck className="h-3.5 w-3.5 text-[#0B2545]" />
+                            <span>{language === 'ta' ? 'அனைத்தையும் படித்ததாகக் குறிக்க' : language === 'hi' ? 'सभी को पढ़ा हुआ चिह्नित करें' : 'Mark all as read'}</span>
+                          </button>
+                        )}
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery('')}
+                            className="text-[#F97316] hover:underline font-semibold cursor-pointer"
+                          >
+                            {t('jobs_clear_search')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {filteredJobs.length === 0 ? (
+                        <div className="rounded-lg border border-[#E0DFDC] bg-white p-8 text-center text-slate-500">
+                          <p className="font-semibold text-slate-700">{t('jobs_no_found')}</p>
+                          <p className="mt-1 text-xs">{t('jobs_no_found_sub')}</p>
+                        </div>
+                      ) : (
+                        filteredJobs.map((job) => (
+                          <JobCard
+                            key={job.id}
+                            job={job}
+                            isRead={readJobIds.has(job.id)}
+                            onMarkAsRead={(jobId) => handleMarkJobAsRead(jobId)}
+                            onApply={(j) => {
+                              handleMarkJobAsRead(j.id)
+                              setApplyingJob(j)
+                            }}
+                            onMatchCandidates={(j) => {
+                              handleMarkJobAsRead(j.id)
+                              setCandidateSearchQuery(j.title)
+                              setCandidateSearchJd(`${j.title}\n${j.description}`)
+                              setActiveTab('candidates')
+                              showToast(`Matching candidates for: ${j.title}`, 'info')
+                            }}
+                          />
+                        ))
+                      )}
+                    </div>
+
+                    {/* Resume Upload Apply Modal with Cloudflare R2 */}
+                    {applyingJob && (
+                      <JobApplyModal
+                        job={applyingJob}
+                        onClose={() => setApplyingJob(null)}
+                        onSuccess={() => {
+                          setApplyingJob(null)
+                          loadJobs()
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* TAB 2: HR Post a Job */}
+            {activeTab === 'post-job' && (
+              hasRole(['admin', 'manager']) ? (
+                <PostJobForm
+                  onSuccess={() => {
+                    loadJobs()
+                    setActiveTab('jobs')
+                  }}
+                />
+              ) : (
+                <div className="rounded-xl border border-orange-200 bg-white p-6 sm:p-8 text-center shadow-xs">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-[#EA580C]">
+                    <Briefcase className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {language === 'ta'
+                      ? 'மனிதவள & முதலாளி அனுமதி தேவை'
+                      : language === 'hi'
+                      ? 'एचआर एवं नियोक्ता पहुंच आवश्यक'
+                      : 'HR & Employer Access Required'}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    {language === 'ta'
+                      ? 'வேலை வாய்ப்புகளை இடுவது பதிவு செய்யப்பட்ட முதலாளிகள் மற்றும் மனிதவள ஆட்சேர்ப்பாளர்களுக்கு (மேலாளர் பணி) மட்டுமே அனுமதிக்கப்பட்டுள்ளது.'
+                      : language === 'hi'
+                      ? 'नौकरी पोस्ट करना केवल पंजीकृत नियोक्ताओं और एचआर भर्तीकर्ताओं (प्रबंधक भूमिका) के लिए आरक्षित है।'
+                      : 'Posting job openings is reserved for registered Employers and HR Recruiters (Manager role).'}
+                    {user
+                      ? language === 'ta'
+                        ? ' நீங்கள் தற்போது வேலை தேடுபவராக உள்நுழைந்துள்ளீர்கள்.'
+                        : language === 'hi'
+                        ? ' आप वर्तमान में नौकरी चाहने वाले के रूप में साइन इन हैं।'
+                        : ' You are currently signed in as a Job Seeker (Employee).'
+                      : language === 'ta'
+                      ? ' வேலைகளைப் பதிவிட மனிதவள/முதலாளி கணக்குடன் உள்நுழையவும்.'
+                      : language === 'hi'
+                      ? ' नौकरी पोस्ट करने के लिए कृपया एचआर / नियोक्ता खाते से साइन इन करें।'
+                      : ' Please sign in with an HR / Employer account to publish job openings.'}
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-3">
+                    <button
+                      onClick={() => setActiveTab('jobs')}
+                      className="rounded-lg bg-[#0B2545] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#0B2545]/90 cursor-pointer"
+                    >
+                      {language === 'ta' ? 'வேலைகளை உலாவுக' : language === 'hi' ? 'नौकरियां ब्राउज़ करें' : 'Browse Open Jobs'}
+                    </button>
+                    {!user && (
+                      <button
+                        onClick={() => {
+                          setSelectedRole('manager')
+                          navigateToLogin()
+                        }}
+                        className="rounded-lg border border-[#F97316] bg-white px-4 py-2 text-xs font-bold text-[#EA580C] hover:bg-orange-50 cursor-pointer"
+                      >
+                        {language === 'ta'
+                          ? 'மனிதவளம் / முதலாளியாக உள்நுழைக'
+                          : language === 'hi'
+                          ? 'एचआर / नियोक्ता के रूप में साइन इन करें'
+                          : 'Sign In as HR / Employer'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* TAB 3: Admin Management */}
+            {activeTab === 'admin-panel' && (
+              hasRole(['admin']) ? (
+                <div className="space-y-5">
+                  <AdminStatsGrid stats={adminStats} />
+                  <RoleGuideCard />
+                  <UserDirectoryTable
+                    users={usersList}
+                    onPromote={handlePromote}
+                    onDemote={handleDemote}
+                    onRefresh={loadAdminData}
+                  />
+                  <AdminModerationTable lang={language} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-red-200 bg-white p-6 sm:p-8 text-center shadow-xs">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Admin Portal Restricted
+                  </h3>
+                  <p className="mt-1.5 text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    This control panel is restricted to system administrators. Admin accounts cannot be self-selected during signup and must be manually assigned directly in the database.
+                  </p>
+                  <div className="mt-5 flex justify-center">
+                    <button
+                      onClick={() => setActiveTab('jobs')}
+                      className="rounded-lg bg-[#0B2545] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#0B2545]/90 cursor-pointer"
+                    >
+                      Return to Dashboard
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* TAB 4: Network Feed */}
+            {activeTab === 'feed' && (
+              <FeedView
+                posts={posts}
+                onCreatePost={handleCreatePost}
+                onLikePost={handleLikePost}
+                isLoading={isLoadingPosts}
+              />
+            )}
+
+            {/* TAB 5: HR Candidate Talent Search by AI Skill */}
+            {activeTab === 'candidates' && (
+              hasRole(['admin', 'manager']) ? (
+                <CandidateSearchView
+                  initialQuery={candidateSearchQuery}
+                  initialJd={candidateSearchJd}
+                />
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-xs">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-[#0B2545]">
+                    <Users className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {language === 'ta'
+                      ? 'திறமை வேட்பாளர்கள் அடைவு'
+                      : language === 'hi'
+                      ? 'प्रतिभा उम्मीदवार निर्देशिका'
+                      : 'Candidate Talent Directory'}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                    {language === 'ta'
+                      ? 'வேட்பாளர் சுயவிவரங்கள் மற்றும் திறன்களைத் தேடுவது சரிபார்க்கப்பட்ட மனிதவள ஆட்சேர்ப்பாளர்கள் மற்றும் மேலாளர்களுக்கு மட்டுமே ஒதுக்கப்பட்டுள்ளது.'
+                      : language === 'hi'
+                      ? 'उम्मीदवार के रिज्यूमे और कौशल खोजना केवल सत्यापित एचआर भर्तीकर्ताओं और प्रबंधकों के लिए आरक्षित है।'
+                      : 'Searching candidate resumes and skills is reserved for verified HR Recruiters and Managers.'}
+                  </p>
+                  <div className="mt-5 flex justify-center">
+                    <button
+                      onClick={() => setActiveTab('jobs')}
+                      className="rounded-lg bg-[#0B2545] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#0B2545]/90 cursor-pointer"
+                    >
+                      {language === 'ta' ? 'வேலைகளுக்குத் திரும்பு' : language === 'hi' ? 'नौकरियों पर लौटें' : 'Return to Jobs'}
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+          </section>
+
+          {/* RIGHT SIDEBAR: Production Opportunities & Mobile App */}
+          <aside className={`hidden ${activeTab === 'candidates' ? 'hidden' : 'lg:block lg:col-span-3'} space-y-4`}>
+            {/* Recent Live Opportunities Card */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                <h4 className="text-xs font-semibold text-slate-900 tracking-tight">
+                  {t('trending_jobs_title')}
+                </h4>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  {t('trending_live_badge')}
+                </span>
+              </div>
+              <div className="mt-2 divide-y divide-slate-100">
+                {!user ? (
+                  <div className="py-3 px-1 text-center space-y-2">
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      {language === 'ta'
+                        ? 'தமிழ்நாடு முழுவதும் உள்ள நேரலை வேலை வாய்ப்புகளைக் காண உள்நுழையவும்.'
+                        : language === 'hi'
+                        ? 'तमिलनाडु भर में वास्तविक समय के अवसरों और नौकरियों को देखने के लिए साइन इन करें।'
+                        : 'Sign in to view real-time opportunities and trending jobs across Tamil Nadu.'}
+                    </p>
+                    <button
+                      onClick={navigateToLogin}
+                      className="text-xs font-medium text-[#0B2545] hover:underline cursor-pointer"
+                    >
+                      {t('nav_sign_in_register')} →
+                    </button>
+                  </div>
+                ) : jobs.length === 0 ? (
+                  <p className="text-slate-400 text-xs py-3 text-center">{t('trending_jobs_loading')}</p>
+                ) : (
+                  jobs.slice(0, 4).map((j) => (
+                    <TrendingJobRow
+                      key={j.id}
+                      job={j}
+                      language={language}
+                      onClick={() => {
+                        setActiveTab('jobs')
+                        setSearchQuery(j.title)
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* LinkedIn Footer Links */}
+            <footer className="px-2 text-center text-[11px] text-slate-400 space-y-1.5">
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                <a href="#" className="hover:underline">{t('footer_about')}</a>
+                <a href="#" className="hover:underline">{t('footer_accessibility')}</a>
+                <a href="#" className="hover:underline">{t('footer_help')}</a>
+                <a href="#" className="hover:underline">{t('footer_privacy')}</a>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                {t('footer_copyright')}
+              </p>
+            </footer>
+          </aside>
+        </div>
+      )}
+      </main>
+
+      {/* Rich Profile Edit & Settings Modal */}
+      <ProfileEditModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AuthProvider>
+        <LanguageProvider>
+          <MainContent />
+        </LanguageProvider>
+      </AuthProvider>
+    </ToastProvider>
+  )
+}
