@@ -18,6 +18,7 @@ import {
   translateJobTitleSync,
   translateCompanySync,
 } from '../../../services/googleAiTranslate'
+import { parseSkillsArray } from '../../../utils/skills'
 
 interface JobApplyModalProps {
   job: Job
@@ -115,12 +116,9 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
         try {
           const parsed = await parseResumeWithAi(file, data.url)
           if (parsed.skills && parsed.skills.length > 0) {
-            const existingSkills: string[] = Array.isArray(user.skills)
-              ? user.skills
-              : typeof user.skills === 'string'
-              ? (user.skills as string).split(',').map((s: string) => s.trim()).filter(Boolean)
-              : []
-            const combinedSkills = Array.from(new Set([...existingSkills, ...parsed.skills]))
+            const existingSkills: string[] = parseSkillsArray(user.skills)
+            const parsedSkillsClean: string[] = parseSkillsArray(parsed.skills)
+            const combinedSkills = Array.from(new Set([...existingSkills, ...parsedSkillsClean]))
 
             const finalHeadline = user.headline || parsed.headline
             const finalPosition = user.position || parsed.position

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import type { User, UserRole, SelectableRole } from '../types'
 import { authService, userService, apiClient } from '../services/api'
+import { syncDeviceTokenWithUser } from '../services/notifications'
 import { useToast } from './ToastContext'
 
 interface AuthContextType {
@@ -73,6 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(data.user))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        syncDeviceTokenWithUser(data.user.id, data.token)
         showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
 
         // Ensure user is redirected from login page to home
@@ -110,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(userObj))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        syncDeviceTokenWithUser(userObj.id, data.token)
         showToast(`Welcome back, ${userObj.full_name}! (${userObj.role === 'manager' ? 'HR Recruiter' : userObj.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
 
         // Ensure user is redirected from login page to home
@@ -161,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(data.user))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        syncDeviceTokenWithUser(data.user.id, data.token)
         showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : data.user.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
 
         // Redirect to home page
@@ -250,6 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(parsed)
         setToken(savedToken)
         apiClient.setToken(savedToken)
+        syncDeviceTokenWithUser(parsed.id, savedToken)
 
         // Asynchronously refresh user profile from D1 to get latest avatar_url & details
         authService

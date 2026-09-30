@@ -38,8 +38,8 @@ export type TabType =
 interface NavbarProps {
   activeTab: TabType
   onSelectTab: (tab: TabType) => void
-  jobsCount: number
   unreadMessagesCount?: number
+  unreadNotificationsCount?: number
   searchQuery: string
   onSearchChange: (q: string) => void
   onOpenProfileEdit: () => void
@@ -49,8 +49,8 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onSelectTab,
-  jobsCount,
   unreadMessagesCount = 0,
+  unreadNotificationsCount = 0,
   searchQuery,
   onSearchChange,
   onOpenProfileEdit,
@@ -158,17 +158,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <div className="relative">
                 <Briefcase className="h-5 w-5 shrink-0" />
-                {jobsCount > 0 && (
-                  <span className="absolute -top-1 -right-2.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-[#F97316] px-1 text-[9px] font-bold text-white">
-                    {jobsCount}
-                  </span>
-                )}
               </div>
               <span className="mt-0.5">{t('nav_jobs')}</span>
             </button>
 
-            {/* Social Network / Discover Connections */}
-            {user && (
+            {/* Social Network / Discover Connections (Employees/Job Seekers only) */}
+            {user && !hasRole(['admin', 'manager']) && (
               <button
                 onClick={() => onSelectTab('connections')}
                 className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
@@ -413,19 +408,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Mobile Search Bar (Only on mobile < md) */}
-        <div className="md:hidden border-t border-gray-100 px-3 py-2 bg-[#F8FAFC]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder={t('nav_search_placeholder')}
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full rounded-md border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-xs text-[#0F172A] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
-            />
+        {/* Mobile Search Bar (Hidden on tabs that provide their own search/filter bar like jobs and messages) */}
+        {activeTab !== 'jobs' && activeTab !== 'messages' && activeTab !== 'candidates' && (
+          <div className="md:hidden border-t border-gray-100 px-3 py-2 bg-[#F8FAFC]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder={t('nav_search_placeholder')}
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="w-full rounded-md border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-xs text-[#0F172A] placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* Mobile Fixed Bottom Navigation Bar (LinkedIn Style for Phones) */}
@@ -450,16 +447,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="relative">
             <Briefcase className="h-5 w-5" />
-            {jobsCount > 0 && (
-              <span className="absolute -top-1 -right-2 flex h-3 min-w-[12px] items-center justify-center rounded-full bg-[#F97316] px-0.5 text-[8px] font-bold text-white">
-                {jobsCount}
-              </span>
-            )}
           </div>
           <span>{t('nav_jobs')}</span>
         </button>
 
-        {user && (
+        {user && !hasRole(['admin', 'manager']) && (
           <button
             onClick={() => onSelectTab('connections')}
             className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
@@ -529,11 +521,18 @@ export const Navbar: React.FC<NavbarProps> = ({
         {user && (
           <button
             onClick={() => onSelectTab('notifications')}
-            className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
+            className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer relative ${
               activeTab === 'notifications' ? 'text-[#0B2545] font-bold' : 'text-slate-500'
             }`}
           >
-            <Bell className="h-5 w-5" />
+            <div className="relative">
+              <Bell className="h-5 w-5" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 px-1 text-[9px] font-bold text-white shadow-xs">
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </div>
             <span>{t('notif_title')}</span>
           </button>
         )}

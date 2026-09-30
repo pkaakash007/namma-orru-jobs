@@ -22,20 +22,21 @@ import { ConnectionsView } from './components/features/connections/ConnectionsVi
 import { PublicUserProfileView } from './components/features/profile/PublicUserProfileView'
 import { MessagesView } from './components/features/messages/MessagesView'
 import { AdminModerationTable } from './components/features/admin/AdminModerationTable'
-import { adminService, feedService, chatService, jobReadService } from './services/api'
+import { adminService, feedService, chatService, notificationService } from './services/api'
 import { initPushNotifications } from './services/notifications'
 import { ApkReleasePage } from './components/features/releases/ApkReleasePage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { PublicHomePage } from './components/features/home/PublicHomePage'
 import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
-import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, CheckCheck } from 'lucide-react'
+import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus } from 'lucide-react'
 import type { Job } from './types'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { fetchJobs } from './store/jobsSlice'
 import { fetchPosts, postAdded, postLiked } from './store/postsSlice'
 import { fetchAdminData, userRoleUpdated } from './store/adminSlice'
 import { translateLocationSync, translateJobTitleSync, translateCompanySync } from './services/googleAiTranslate'
+import { parseSkillsArray } from './utils/skills'
 
 const isLoginPath = () => {
   if (typeof window === 'undefined') return false
@@ -83,6 +84,7 @@ const isReleasePath = () => {
 
 function MainContent() {
   const { user, role, hasRole, setSelectedRole } = useAuth()
+  const isRecruiter = hasRole(['admin', 'manager'])
   const [isLoginRoute, setIsLoginRoute] = useState(() => isLoginPath())
   const [isReleaseRoute, setIsReleaseRoute] = useState(() => isReleasePath())
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -142,40 +144,6 @@ function MainContent() {
   const [viewingPublicProfileId, setViewingPublicProfileId] = useState<string | null>(null)
   const [chatRecipientId, setChatRecipientId] = useState<string | null>(null)
 
-  // Dynamic Read / Unread Jobs State
-  const [readJobIds, setReadJobIds] = useState<Set<string>>(() =>
-    jobReadService.getReadJobIds(user?.id)
-  )
-
-  useEffect(() => {
-    const handleReadJobsUpdate = () => {
-      setReadJobIds(jobReadService.getReadJobIds(user?.id))
-    }
-    window.addEventListener('namma_jobs_read_updated', handleReadJobsUpdate)
-    return () => window.removeEventListener('namma_jobs_read_updated', handleReadJobsUpdate)
-  }, [user?.id])
-
-  // Calculate dynamic unread jobs count
-  const unreadJobsCount = jobs.filter((j) => !readJobIds.has(j.id)).length
-
-  const handleMarkJobAsRead = (jobId: string) => {
-    jobReadService.markJobAsRead(jobId, user?.id)
-  }
-
-  const handleMarkAllJobsAsRead = () => {
-    jobReadService.markAllJobsAsRead(
-      jobs.map((j) => j.id),
-      user?.id
-    )
-    showToast(
-      language === 'ta'
-        ? 'அனைத்து வேலைகளும் படித்ததாகக் குறிக்கப்பட்டன'
-        : language === 'hi'
-        ? 'सभी नौकरियों को पढ़ा हुआ चिह्नित किया गया'
-        : 'All jobs marked as read',
-      'info'
-    )
-  }
 
   // Dynamic Unread Messages State
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0)
@@ -186,8 +154,10 @@ function MainContent() {
         setUnreadMessagesCount(0)
         return
       }
-      const count = await chatService.getUnreadMessagesCount()
-      setUnreadMessagesCount(count)
+      try {
+        const count = await chatService.getUnreadMessagesCount()
+        setUnreadMessagesCount(count)
+      } catch {}
     }
 
     loadUnreadCount()
@@ -195,12 +165,53 @@ function MainContent() {
       loadUnreadCount()
     }
     window.addEventListener('namma_messages_updated', handleMessagesUpdate)
-    const interval = setInterval(loadUnreadCount, 8000)
+
+    // Only poll when actively on the 'messages' tab, at a 1-minute interval
+    let interval: any = null
+    if (activeTab === 'messages') {
+      interval = setInterval(loadUnreadCount, 60000)
+    }
+
     return () => {
       window.removeEventListener('namma_messages_updated', handleMessagesUpdate)
-      clearInterval(interval)
+      if (interval) clearInterval(interval)
     }
-  }, [user])
+  }, [user, activeTab])
+
+  // Dynamic Unread Notifications State
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0)
+
+  useEffect(() => {
+    const loadUnreadNotifs = async () => {
+      if (!user) {
+        setUnreadNotificationsCount(0)
+        return
+      }
+      try {
+        const data = await notificationService.getNotifications(false)
+        if (typeof data?.unread_count === 'number') {
+          setUnreadNotificationsCount(data.unread_count)
+        }
+      } catch {}
+    }
+
+    loadUnreadNotifs()
+    const handleNotifsUpdate = () => {
+      loadUnreadNotifs()
+    }
+    window.addEventListener('namma_notifications_updated', handleNotifsUpdate)
+
+    // Relaxed 1-minute interval strictly while on notifications tab
+    let interval: any = null
+    if (activeTab === 'notifications') {
+      interval = setInterval(loadUnreadNotifs, 60000)
+    }
+
+    return () => {
+      window.removeEventListener('namma_notifications_updated', handleNotifsUpdate)
+      if (interval) clearInterval(interval)
+    }
+  }, [user, activeTab])
 
   const { showToast } = useToast()
   const { t, language } = useLanguage()
@@ -343,13 +354,24 @@ function MainContent() {
       setIsLoginRoute(isLoginPath())
       setIsReleaseRoute(isReleasePath())
     }
+    // namma:navigate fires from GoogleSignInButton after successful login
+    // This ensures we navigate home even if popstate timing is off in Capacitor WebView
+    const handleNammaNavigate = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path
+      if (path === '/') {
+        navigateToHome()
+      }
+    }
     window.addEventListener('popstate', handleRouteChange)
     window.addEventListener('hashchange', handleRouteChange)
+    window.addEventListener('namma:navigate', handleNammaNavigate)
     return () => {
       window.removeEventListener('popstate', handleRouteChange)
       window.removeEventListener('hashchange', handleRouteChange)
+      window.removeEventListener('namma:navigate', handleNammaNavigate)
     }
-  }, [])
+  }, [navigateToHome])
+
 
   // Auto-redirect authenticated user away from login route to jobs feed
   useEffect(() => {
@@ -393,8 +415,16 @@ function MainContent() {
     )
   }
 
+  // Recruiter's own posted jobs
+  const myPostedJobs = jobs.filter((j) => j.poster_id === user?.id)
+
   // Filter jobs
   const filteredJobs = jobs.filter((j) => {
+    // For HR / Recruiters, only display jobs they created themselves
+    if (isRecruiter && j.poster_id !== user?.id) {
+      return false
+    }
+
     const q = searchQuery.toLowerCase().trim()
     const matchesSearch =
       !q ||
@@ -495,8 +525,8 @@ function MainContent() {
           setViewingPublicProfileId(null)
           setActiveTab(tab)
         }}
-        jobsCount={user ? unreadJobsCount : (totalJobsCount || 0)}
         unreadMessagesCount={unreadMessagesCount}
+        unreadNotificationsCount={unreadNotificationsCount}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onOpenProfileEdit={() => setActiveTab('profile')}
@@ -551,6 +581,12 @@ function MainContent() {
                 setActiveTab('jobs')
                 if (jobTitle) setSearchQuery(jobTitle)
               }}
+              onSelectUser={(uid) => setViewingPublicProfileId(uid)}
+              onSelectConversation={(uid) => {
+                if (uid) setChatRecipientId(uid)
+                setActiveTab('messages')
+              }}
+              onSelectFeed={() => setActiveTab('feed')}
             />
           </div>
         ) : activeTab === 'profile' && user ? (
@@ -560,8 +596,8 @@ function MainContent() {
         ) : activeTab === 'saved-jobs' ? (
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
             <SavedJobsView
-              onApply={(job) => setApplyingJob(job)}
-              onMatchCandidates={(job) => {
+              onApply={(job: Job) => setApplyingJob(job)}
+              onMatchCandidates={(job: Job) => {
                 setCandidateSearchQuery(job.title)
                 setCandidateSearchJd(`${job.title}\n${job.description}`)
                 setActiveTab('candidates')
@@ -634,26 +670,30 @@ function MainContent() {
                         </span>
                       )}
                     </div>
-                    {user.skills && (Array.isArray(user.skills) ? user.skills.length > 0 : String(user.skills).length > 0) ? (
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap gap-1">
-                          {(Array.isArray(user.skills) ? user.skills : String(user.skills).split(','))
-                            .slice(0, 4)
-                            .map((s: string) => (
-                              <span key={s} className="px-1.5 py-0.5 bg-slate-100 text-[#0B2545] font-semibold rounded text-[10px]">
-                                {s.trim()}
+                    {(() => {
+                      const userSkillsList = parseSkillsArray(user.skills)
+                      return userSkillsList.length > 0 ? (
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap gap-1">
+                            {userSkillsList.slice(0, 4).map((s: string) => (
+                              <span
+                                key={s}
+                                className="px-2 py-0.5 bg-slate-100 text-[#0B2545] font-semibold rounded-full text-[10px] border border-slate-200/80"
+                              >
+                                {s}
                               </span>
                             ))}
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            {t('app_discoverable_by_hr')}
+                          </p>
                         </div>
-                        <p className="text-[10px] text-slate-400">
-                          {t('app_discoverable_by_hr')}
+                      ) : (
+                        <p className="text-[10px] text-slate-500">
+                          {t('app_upload_resume_prompt')}
                         </p>
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-500">
-                        {t('app_upload_resume_prompt')}
-                      </p>
-                    )}
+                      )
+                    })()}
                     <button
                       onClick={() => setActiveTab('profile')}
                       className="mt-2 w-full flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-dashed border-[#0B2545]/30 text-[#0B2545] bg-[#0B2545]/5 hover:bg-[#0B2545]/10 text-[11px] font-bold transition cursor-pointer"
@@ -686,9 +726,9 @@ function MainContent() {
                     }}
                     className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
                   >
-                    <span>{t('sidebar_live_openings')}</span>
+                    <span>{isRecruiter ? 'My Job Postings' : t('sidebar_live_openings')}</span>
                     <span className="font-bold text-[#0B2545]">
-                      {user ? jobs.length : (totalJobsCount || 50)} {t('sidebar_active_count')}
+                      {isRecruiter ? myPostedJobs.length : (user ? jobs.length : (totalJobsCount || 50))} {t('sidebar_active_count')}
                     </span>
                   </div>
                   {user && (
@@ -735,7 +775,7 @@ function MainContent() {
                   >
                     <Compass className="h-4 w-4 text-[#0B2545]" />
                     <span>
-                      {t('sidebar_explore_all')} ({user ? jobs.length : (totalJobsCount || 50)})
+                      {isRecruiter ? 'My Listings' : t('sidebar_explore_all')} ({isRecruiter ? myPostedJobs.length : (user ? jobs.length : (totalJobsCount || 50))})
                     </span>
                   </div>
                 </div>
@@ -744,7 +784,7 @@ function MainContent() {
 
             {/* HR Recruiter Quick Access Card */}
             {hasRole(['admin', 'manager']) && (
-              <div className="rounded-lg border border-[#E0DFDC] bg-white p-3.5 shadow-xs text-xs space-y-2">
+              <div className="rounded-xl border border-[#E0DFDC] bg-white p-3.5 shadow-xs text-xs space-y-2.5">
                 <div className="flex items-center justify-between text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                   <span className="flex items-center gap-1 text-[#0B2545]">
                     <Briefcase className="h-3 w-3 text-[#0B2545]" />
@@ -754,6 +794,13 @@ function MainContent() {
                     {t('app_talent_tag')}
                   </span>
                 </div>
+                <button
+                  onClick={() => setActiveTab('post-job')}
+                  className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-[#0B2545] hover:bg-[#081a31] text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-98"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Post New Job</span>
+                </button>
                 <button
                   onClick={() => setActiveTab('candidates')}
                   className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition font-semibold cursor-pointer ${
@@ -884,6 +931,29 @@ function MainContent() {
                   />
                 ) : (
                   <div className="space-y-4">
+                    {/* Recruiter Header Bar */}
+                    {isRecruiter && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                        <div>
+                          <h2 className="text-base font-bold text-[#0F172A] tracking-tight">
+                            My Job Postings
+                          </h2>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {myPostedJobs.length === 0
+                              ? 'You have not published any job openings yet'
+                              : `Managing ${myPostedJobs.length} active job listings published by you`}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setActiveTab('post-job')}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B2545] hover:bg-[#081a31] text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-98 shrink-0"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Post New Job</span>
+                        </button>
+                      </div>
+                    )}
+
                     <JobSearchFilters
                       searchQuery={searchQuery}
                       onSearchChange={setSearchQuery}
@@ -900,13 +970,8 @@ function MainContent() {
                         <span>
                           {t('jobs_showing')}{' '}
                           <strong className="text-[#0B2545]">{filteredJobs.length}</strong>{' '}
-                          {t('jobs_opportunities')}
+                          {isRecruiter ? 'of your job listings' : t('jobs_opportunities')}
                         </span>
-                        {unreadJobsCount > 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-50 text-[#F97316] border border-orange-200/80 font-bold text-[11px]">
-                            {unreadJobsCount} {language === 'ta' ? 'புதியவை' : language === 'hi' ? 'नए' : 'unread'}
-                          </span>
-                        )}
                         {selectedDistrict && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-[#0B2545] font-bold text-[11px]">
                             <span>{translateLocationSync(selectedDistrict, language)}</span>
@@ -921,17 +986,6 @@ function MainContent() {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        {unreadJobsCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleMarkAllJobsAsRead}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B2545] hover:underline cursor-pointer"
-                            title="Mark all jobs as read"
-                          >
-                            <CheckCheck className="h-3.5 w-3.5 text-[#0B2545]" />
-                            <span>{language === 'ta' ? 'அனைத்தையும் படித்ததாகக் குறிக்க' : language === 'hi' ? 'सभी को पढ़ा हुआ चिह्नित करें' : 'Mark all as read'}</span>
-                          </button>
-                        )}
                         {searchQuery && (
                           <button
                             onClick={() => setSearchQuery('')}
@@ -945,23 +999,46 @@ function MainContent() {
 
                     <div className="space-y-3">
                       {filteredJobs.length === 0 ? (
-                        <div className="rounded-lg border border-[#E0DFDC] bg-white p-8 text-center text-slate-500">
-                          <p className="font-semibold text-slate-700">{t('jobs_no_found')}</p>
-                          <p className="mt-1 text-xs">{t('jobs_no_found_sub')}</p>
-                        </div>
+                        isRecruiter ? (
+                          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center space-y-3 shadow-xs">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 border border-slate-200 text-[#0B2545] shadow-2xs">
+                              <Briefcase className="h-7 w-7" />
+                            </div>
+                            <div>
+                              <h3 className="text-base font-bold text-slate-900">
+                                {searchQuery || selectedDistrict || selectedType !== 'All'
+                                  ? 'No matching job postings found'
+                                  : "You haven't posted any jobs yet"}
+                              </h3>
+                              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                                {searchQuery || selectedDistrict || selectedType !== 'All'
+                                  ? 'Try clearing your filters to see all your posted jobs.'
+                                  : 'Create and publish your first job opening to start receiving verified applications from talent across Tamil Nadu.'}
+                              </p>
+                            </div>
+                            <div className="pt-2">
+                              <button
+                                onClick={() => setActiveTab('post-job')}
+                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0B2545] hover:bg-[#081a31] text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-98"
+                              >
+                                <Plus className="h-4 w-4" />
+                                <span>Post New Job</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-[#E0DFDC] bg-white p-8 text-center text-slate-500">
+                            <p className="font-semibold text-slate-700">{t('jobs_no_found')}</p>
+                            <p className="mt-1 text-xs">{t('jobs_no_found_sub')}</p>
+                          </div>
+                        )
                       ) : (
                         filteredJobs.map((job) => (
                           <JobCard
                             key={job.id}
                             job={job}
-                            isRead={readJobIds.has(job.id)}
-                            onMarkAsRead={(jobId) => handleMarkJobAsRead(jobId)}
-                            onApply={(j) => {
-                              handleMarkJobAsRead(j.id)
-                              setApplyingJob(j)
-                            }}
+                            onApply={(j) => setApplyingJob(j)}
                             onMatchCandidates={(j) => {
-                              handleMarkJobAsRead(j.id)
                               setCandidateSearchQuery(j.title)
                               setCandidateSearchJd(`${j.title}\n${j.description}`)
                               setActiveTab('candidates')
@@ -993,9 +1070,10 @@ function MainContent() {
               hasRole(['admin', 'manager']) ? (
                 <PostJobForm
                   onSuccess={() => {
-                    loadJobs()
+                    loadJobs(true)
                     setActiveTab('jobs')
                   }}
+                  onCancel={() => setActiveTab('jobs')}
                 />
               ) : (
                 <div className="rounded-xl border border-orange-200 bg-white p-6 sm:p-8 text-center shadow-xs">
@@ -1107,6 +1185,7 @@ function MainContent() {
                 <CandidateSearchView
                   initialQuery={candidateSearchQuery}
                   initialJd={candidateSearchJd}
+                  onOpenProfile={(candidateId) => setViewingPublicProfileId(candidateId)}
                 />
               ) : (
                 <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-xs">
@@ -1142,14 +1221,14 @@ function MainContent() {
 
           {/* RIGHT SIDEBAR: Production Opportunities & Mobile App */}
           <aside className={`hidden ${activeTab === 'candidates' ? 'hidden' : 'lg:block lg:col-span-3'} space-y-4`}>
-            {/* Recent Live Opportunities Card */}
+            {/* Recent Live Opportunities / Recruiter Operations */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
               <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                 <h4 className="text-xs font-semibold text-slate-900 tracking-tight">
-                  {t('trending_jobs_title')}
+                  {isRecruiter ? 'Recruiter Suite' : t('trending_jobs_title')}
                 </h4>
                 <span className="text-[11px] text-slate-400 font-normal">
-                  {t('trending_live_badge')}
+                  {isRecruiter ? 'Active' : t('trending_live_badge')}
                 </span>
               </div>
               <div className="mt-2 divide-y divide-slate-100">
@@ -1169,8 +1248,29 @@ function MainContent() {
                       {t('nav_sign_in_register')} →
                     </button>
                   </div>
+                ) : isRecruiter ? (
+                  <div className="py-2 space-y-3">
+                    <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                      <div className="text-[11px] text-slate-500 font-medium">Your Active Openings</div>
+                      <div className="text-lg font-black text-[#0B2545]">{myPostedJobs.length}</div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('post-job')}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#0B2545] text-white text-xs font-bold hover:bg-[#081a31] transition shadow-xs cursor-pointer active:scale-98"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Create Job Opening</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('candidates')}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      <Users className="h-3.5 w-3.5 text-[#F97316]" />
+                      <span>Search Candidates</span>
+                    </button>
+                  </div>
                 ) : jobs.length === 0 ? (
-                  <p className="text-slate-400 text-xs py-3 text-center">{t('trending_jobs_loading')}</p>
+                  <p className="text-slate-400 text-xs py-3 text-center">No active job openings available</p>
                 ) : (
                   jobs.slice(0, 4).map((j) => (
                     <TrendingJobRow

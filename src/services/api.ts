@@ -33,6 +33,8 @@ class ApiClient {
 
   setToken(t: string | null) {
     this.token = t
+    cachedNotifications = null
+    lastNotificationsFetch = 0
     if (t) {
       localStorage.setItem('namma_token', t)
       localStorage.setItem('auth_token', t)
@@ -201,6 +203,7 @@ export const jobsService = {
   async postJob(payload: {
     title: string
     company_name: string
+    company_logo?: string
     location: string
     workplace_type: string
     employment_type: string
@@ -406,6 +409,11 @@ let cachedNotifications: { notifications: AppNotification[]; unread_count: numbe
 let lastNotificationsFetch = 0
 
 export const notificationService = {
+  clearCache() {
+    cachedNotifications = null
+    lastNotificationsFetch = 0
+  },
+
   async getNotifications(forceRefresh = false) {
     const now = Date.now()
     if (!forceRefresh && cachedNotifications && now - lastNotificationsFetch < 60000) {
@@ -423,19 +431,27 @@ export const notificationService = {
 
   async markAsRead(id: string) {
     cachedNotifications = null
-    return apiClient.request<{ success: boolean; id: string }>(`/api/notifications/${id}/read`, {
+    const res = await apiClient.request<{ success: boolean; id: string }>(`/api/notifications/${id}/read`, {
       method: 'PATCH',
     })
+    try {
+      window.dispatchEvent(new Event('namma_notifications_updated'))
+    } catch {}
+    return res
   },
 
   async markAllAsRead() {
     cachedNotifications = null
-    return apiClient.request<{ success: boolean; message: string }>(
+    const res = await apiClient.request<{ success: boolean; message: string }>(
       '/api/notifications/mark-all-read',
       {
         method: 'POST',
       }
     )
+    try {
+      window.dispatchEvent(new Event('namma_notifications_updated'))
+    } catch {}
+    return res
   },
 }
 
@@ -534,19 +550,29 @@ export const socialService = {
   },
 
   async followUser(userId: string): Promise<{ success: boolean; is_following: boolean; followers_count: number }> {
-    return await apiClient.request<{
+    const res = await apiClient.request<{
       success: boolean
       is_following: boolean
       followers_count: number
     }>(`/api/users/${userId}/follow`, { method: 'POST' })
+    notificationService.clearCache()
+    try {
+      window.dispatchEvent(new Event('namma_notifications_updated'))
+    } catch {}
+    return res
   },
 
   async unfollowUser(userId: string): Promise<{ success: boolean; is_following: boolean; followers_count: number }> {
-    return await apiClient.request<{
+    const res = await apiClient.request<{
       success: boolean
       is_following: boolean
       followers_count: number
     }>(`/api/users/${userId}/follow`, { method: 'DELETE' })
+    notificationService.clearCache()
+    try {
+      window.dispatchEvent(new Event('namma_notifications_updated'))
+    } catch {}
+    return res
   },
 
   async getFollowers(userId: string, params: { page?: number; limit?: number } = {}): Promise<{ followers: User[] }> {

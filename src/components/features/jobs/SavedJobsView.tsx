@@ -5,7 +5,7 @@ import { savedJobService } from '../../../services/api'
 import { useLanguage } from '../../../context/LanguageContext'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Bookmark, Search, ArrowLeft, RefreshCw, Briefcase, CheckCircle2 } from 'lucide-react'
+import { Bookmark, Search, ArrowLeft, Briefcase, CheckCircle2 } from 'lucide-react'
 
 interface SavedJobsViewProps {
   onApply: (job: Job) => void
@@ -24,12 +24,8 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [isRefreshing, setIsRefreshing] = useState(false)
-
-  const loadSavedJobs = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setIsRefreshing(true)
-    else setLoading(true)
-
+  const loadSavedJobs = useCallback(async () => {
+    setLoading(true)
     try {
       const data = await savedJobService.getSavedJobs()
       setJobs(data)
@@ -37,7 +33,6 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
       console.error('Failed to load saved jobs:', err)
     } finally {
       setLoading(false)
-      setIsRefreshing(false)
     }
   }, [])
 
@@ -53,7 +48,7 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
           setJobs((prev) => prev.filter((j) => j.id !== custom.detail.jobId))
         } else {
           // Refresh list to pull full job data
-          loadSavedJobs(true)
+          loadSavedJobs()
         }
       }
     }
@@ -98,27 +93,14 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
                 <h1 className="text-lg sm:text-xl font-black text-[#0B2545] tracking-tight">
                   {t('saved_jobs_title') || 'Saved Jobs'}
                 </h1>
-                <span className="rounded-full bg-[#0B2545] px-2.5 py-0.5 text-xs font-bold text-white">
-                  {jobs.length}
-                </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('saved_jobs_subtitle') || 'Jobs you have bookmarked for later. Synced securely to your account.'}
+                {t('saved_jobs_subtitle') || 'Jobs you have bookmarked for later.'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-center">
-            <button
-              type="button"
-              onClick={() => loadSavedJobs(true)}
-              disabled={isRefreshing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-slate-700 transition cursor-pointer disabled:opacity-50"
-              title="Refresh saved jobs"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-[#0B2545]' : 'text-slate-500'}`} />
-              <span>{isRefreshing ? 'Syncing...' : 'Sync'}</span>
-            </button>
             {(onBrowseJobs || onBack) && (
               <Button
                 variant="outline"

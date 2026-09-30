@@ -83,65 +83,26 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
     onExploreJobs(skillsQuery.trim(), locationQuery.trim())
   }
 
-  // Curated sectors with modern visual styling
+  // Curated sectors — counts computed dynamically from live DB jobs
   const curatedSectors = [
-    {
-      title: 'Software & IT',
-      query: 'Software',
-      count: '18+ jobs',
-      icon: <Monitor className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-blue-50/80',
-    },
-    {
-      title: 'Remote Work',
-      query: 'Remote',
-      count: '15+ jobs',
-      icon: <Home className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-emerald-50/80',
-    },
-    {
-      title: 'MNC & Corporate',
-      query: 'MNC',
-      count: '12+ jobs',
-      icon: <Building2 className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-indigo-50/80',
-    },
-    {
-      title: 'Sales & Growth',
-      query: 'Sales',
-      count: '10+ jobs',
-      icon: <TrendingUp className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-orange-50/80',
-    },
-    {
-      title: 'HR & Recruiting',
-      query: 'HR',
-      count: '8+ jobs',
-      icon: <Users2 className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-purple-50/80',
-    },
-    {
-      title: 'Data & Analytics',
-      query: 'Data Analytics',
-      count: '9+ jobs',
-      icon: <BarChart3 className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-cyan-50/80',
-    },
-    {
-      title: 'Engineering',
-      query: 'Engineering',
-      count: '11+ jobs',
-      icon: <Settings className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-amber-50/80',
-    },
-    {
-      title: 'Fresher Roles',
-      query: 'Fresher',
-      count: '14+ jobs',
-      icon: <GraduationCap className="h-5 w-5 text-[#0B2545]" />,
-      bg: 'bg-teal-50/80',
-    },
+    { title: 'Software & IT',    query: 'Software',      keywords: ['software', 'it', 'developer', 'engineer', 'react', 'node', 'java', 'python', 'fullstack'], icon: <Monitor className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-blue-50/80' },
+    { title: 'Remote Work',      query: 'Remote',        keywords: ['remote', 'work from home', 'wfh', 'hybrid'],                                              icon: <Home className="h-5 w-5 text-[#0B2545]" />,    bg: 'bg-emerald-50/80' },
+    { title: 'MNC & Corporate',  query: 'MNC',           keywords: ['mnc', 'corporate', 'global', 'multinational'],                                            icon: <Building2 className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-indigo-50/80' },
+    { title: 'Sales & Growth',   query: 'Sales',         keywords: ['sales', 'business development', 'bde', 'growth', 'marketing'],                           icon: <TrendingUp className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-orange-50/80' },
+    { title: 'HR & Recruiting',  query: 'HR',            keywords: ['hr', 'human resource', 'recruiter', 'talent'],                                            icon: <Users2 className="h-5 w-5 text-[#0B2545]" />,    bg: 'bg-purple-50/80' },
+    { title: 'Data & Analytics', query: 'Data Analytics',keywords: ['data', 'analytics', 'bi', 'tableau', 'sql', 'analyst'],                                   icon: <BarChart3 className="h-5 w-5 text-[#0B2545]" />,  bg: 'bg-cyan-50/80' },
+    { title: 'Engineering',      query: 'Engineering',   keywords: ['mechanical', 'civil', 'electrical', 'engineer', 'manufacturing', 'production'],           icon: <Settings className="h-5 w-5 text-[#0B2545]" />,   bg: 'bg-amber-50/80' },
+    { title: 'Fresher Roles',    query: 'Fresher',       keywords: ['fresher', 'trainee', 'intern', 'entry level', 'graduate'],                                icon: <GraduationCap className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-teal-50/80' },
   ]
+
+  // Compute dynamic sector counts from real DB jobs
+  const getSectorCount = (keywords: string[]): number => {
+    if (featuredJobs.length === 0) return 0
+    return featuredJobs.filter((j) => {
+      const hay = `${j.title} ${j.description || ''} ${j.workplace_type || ''}`.toLowerCase()
+      return keywords.some((kw) => hay.includes(kw))
+    }).length
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans selection:bg-[#0B2545] selection:text-white">
@@ -575,25 +536,28 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5">
-            {curatedSectors.map((sector) => (
-              <div
-                key={sector.title}
-                onClick={() => onExploreJobs(sector.query)}
-                className="group p-3 sm:p-4 rounded-xl border border-slate-200/90 bg-white shadow-2xs hover:border-[#0B2545] hover:shadow-xs transition cursor-pointer active:scale-[0.98] flex items-center gap-3"
-              >
-                <div className={`h-10 w-10 rounded-xl ${sector.bg} flex items-center justify-center shrink-0 transition group-hover:scale-105`}>
-                  {sector.icon}
+            {curatedSectors.map((sector) => {
+              const count = getSectorCount(sector.keywords)
+              return (
+                <div
+                  key={sector.title}
+                  onClick={() => onExploreJobs(sector.query)}
+                  className="group p-3 sm:p-4 rounded-xl border border-slate-200/90 bg-white shadow-2xs hover:border-[#0B2545] hover:shadow-xs transition cursor-pointer active:scale-[0.98] flex items-center gap-3"
+                >
+                  <div className={`h-10 w-10 rounded-xl ${sector.bg} flex items-center justify-center shrink-0 transition group-hover:scale-105`}>
+                    {sector.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-xs sm:text-sm text-slate-900 truncate group-hover:text-[#0B2545] transition">
+                      {sector.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                      {count > 0 ? `${count} open role${count !== 1 ? 's' : ''}` : 'Explore jobs'}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-xs sm:text-sm text-slate-900 truncate group-hover:text-[#0B2545] transition">
-                    {sector.title}
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                    {sector.count}
-                  </p>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
 
@@ -693,7 +657,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
               Hiring talent in Tamil Nadu?
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Connect with 10,000+ verified professionals and freshers across all districts.
+              {totalJobsCount > 0
+                ? `${totalJobsCount}+ verified openings live now — post a job and connect with local talent.`
+                : 'Post a job and connect with verified professionals and freshers across Tamil Nadu.'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

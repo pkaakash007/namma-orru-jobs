@@ -8,9 +8,15 @@ import {
   Calendar,
   Building,
   CheckCircle2,
+  Briefcase,
+  FileText,
+  Users,
 } from 'lucide-react'
 import type { PublicProfile, Language } from '../../../types'
 import { socialService } from '../../../services/api'
+import { useAuth } from '../../../context/AuthContext'
+import { parseDateUTC } from '../../../utils/date'
+import { parseSkillsArray } from '../../../utils/skills'
 
 interface PublicUserProfileViewProps {
   userId: string
@@ -25,21 +31,59 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   onBack,
   onOpenChat,
 }) => {
+  const { hasRole } = useAuth()
+  const isRecruiter = hasRole(['admin', 'manager'])
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isRestrictedRecruiter, setIsRestrictedRecruiter] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
   // Translations
   const t = {
-    back: lang === 'ta' ? 'பின்செல்க' : lang === 'hi' ? 'वापस' : 'Back to Network',
+    back: isRecruiter
+      ? (lang === 'ta' ? 'விண்ணப்பதாரர்களுக்குத் திரும்பு' : lang === 'hi' ? 'उम्मीदवारों पर वापस जाएं' : 'Back to Candidates')
+      : (lang === 'ta' ? 'பின்செல்க' : lang === 'hi' ? 'वापस' : 'Back to Network'),
     follow: lang === 'ta' ? 'பின்தொடர்' : lang === 'hi' ? 'फॉलो करें' : 'Follow',
     following: lang === 'ta' ? 'பின்தொடர்கிறீர்கள்' : lang === 'hi' ? 'फॉलोइंग' : 'Following',
     message: lang === 'ta' ? 'செய்தி அனுப்புக' : lang === 'hi' ? 'संदेश भेजें' : 'Send Message',
     followers: lang === 'ta' ? 'பின்தொடர்பவர்கள்' : lang === 'hi' ? 'फॉलोअर्स' : 'Followers',
     followingCount: lang === 'ta' ? 'பின்தொடர்பவை' : lang === 'hi' ? 'फॉलो कर रहे हैं' : 'Following',
-    about: lang === 'ta' ? 'சுயவிவரக் குறிப்பு' : lang === 'hi' ? 'के बारे में' : 'About',
-    skills: lang === 'ta' ? 'திறன்கள்' : lang === 'hi' ? 'कौशल' : 'Skills & Endorsements',
+    about: lang === 'ta' ? 'சுயவிவரக் குறிப்பு' : lang === 'hi' ? 'बायो' : 'About / Bio',
+    noBio: lang === 'ta' ? 'சுயவிவரக் குறிப்பு எதுவும் சேர்க்கப்படவில்லை.' : lang === 'hi' ? 'कोई बायो अभी तक नहीं जोड़ा गया है।' : 'No bio added yet.',
+    skills: lang === 'ta' ? 'திறன்கள்' : lang === 'hi' ? 'कौशल' : 'Skills & Expertise',
+    noSkills: lang === 'ta' ? 'திறன்கள் எதுவும் பட்டியலிடப்படவில்லை.' : lang === 'hi' ? 'अभी तक कोई कौशल सूचीबद्ध नहीं किया गया है।' : 'No skills listed yet.',
+    experience: lang === 'ta' ? 'அனுபவம் & பணி' : lang === 'hi' ? 'कार्य अनुभव' : 'Professional Role',
+    notFound: lang === 'ta' ? 'பயனர் சுயவிவரம் கிடைக்கவில்லை' : lang === 'hi' ? 'प्रोफ़ाइल नहीं मिली' : 'User profile could not be found.',
+  }
+
+  const fetchProfile = async () => {
+    setLoading(true)
+    setError(null)
+    setIsRestrictedRecruiter(false)
+    try {
+      const res = await socialService.getUserProfile(userId)
+      if (res?.profile) {
+        setProfile(res.profile)
+      } else {
+        setError(t.notFound)
+      }
+    } catch (err: any) {
+      const errMsg = String(err?.message || '')
+      if (
+        errMsg.toLowerCase().includes('recruiter') ||
+        errMsg.toLowerCase().includes('candidate') ||
+        errMsg.includes('403') ||
+        (isRecruiter && errMsg.includes('Failed request'))
+      ) {
+        setIsRestrictedRecruiter(true)
+      } else {
+        setError(t.notFound)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }perience: lang === 'ta' ? 'அனுபவம் & பணி' : lang === 'hi' ? 'कार्य अनुभव' : 'Professional Role',
     notFound: lang === 'ta' ? 'பயனர் சுயவிவரம் கிடைக்கவில்லை' : lang === 'hi' ? 'प्रोफ़ाइल नहीं मिली' : 'User profile could not be found.',
   }
 
@@ -144,6 +188,51 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     )
   }
 
+  const isRecruiter = hasRole(['admin', 'manager'])
+  const isOtherRecruiter = isRecruiter && (profile.role === 'manager' || profile.role === 'admin') && !profile.is_self
+
+  if (isOtherRecruiter) {
+    return (
+      <div className="w-full space-y-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B2545] transition px-2.5 py-1.5 rounded-lg hover:bg-white cursor-pointer border border-transparent hover:border-gray-200"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>{lang === 'ta' ? 'விண்ணப்பதாரர்களுக்குத் திரும்பு' : lang === 'hi' ? 'उम्मीदवारों पर वापस जाएं' : 'Back to Candidates'}</span>
+        </button>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-xs space-y-3">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-[#0B2545] border border-slate-200 shadow-2xs">
+            <Users className="h-7 w-7" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">
+              {lang === 'ta' ? 'விண்ணப்பதாரர் விவரங்கள் மட்டுமே' : lang === 'hi' ? 'केवल उम्मीदवार विवरण' : 'Candidate Profiles Only'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              {lang === 'ta'
+                ? 'வேலைவாய்ப்பு சூழலில், விண்ணப்பதாரர்கள் மற்றும் பணியாளர்களின் விவரங்கள் மட்டுமே காட்டப்படும்.'
+                : lang === 'hi'
+                ? 'भर्ती वातावरण में केवल नौकरी चाहने वालों और उम्मीदवारों के विवरण प्रदर्शित किए जाते हैं।'
+                : 'In the recruiter environment, only job seekers and candidate profiles are displayed. Other recruiter profiles are restricted.'}
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-5 py-2.5 bg-[#0B2545] text-white rounded-xl font-bold text-xs shadow-xs hover:bg-[#071A31] transition cursor-pointer"
+            >
+              {lang === 'ta' ? 'விண்ணப்பதாரர்களுக்குத் திரும்பு' : lang === 'hi' ? 'उम्मीदवार खोज पर वापस जाएं' : 'Return to Candidates'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="w-full space-y-4 animate-in fade-in duration-150">
       {/* Top Back Navigation */}
@@ -175,7 +264,7 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
         <div className="px-6 sm:px-8 pb-8 pt-0 relative">
           {/* Avatar & Action Buttons */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between -mt-16 sm:-mt-20 mb-5 gap-4">
-            <div className="relative inline-block">
+            <div className="relative shrink-0">
               {profile.avatar_url ? (
                 <img
                   src={profile.avatar_url}
@@ -187,7 +276,6 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
                   {profile.full_name.charAt(0)}
                 </div>
               )}
-              <span className="absolute bottom-1.5 right-1.5 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full shadow-2xs" />
             </div>
 
             {/* Follow & Message CTA buttons */}
@@ -265,7 +353,7 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             {profile.created_at && (
               <div className="flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+                <span>Joined {parseDateUTC(profile.created_at).toLocaleDateString()}</span>
               </div>
             )}
           </div>
@@ -293,33 +381,96 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             </div>
           </div>
 
-          {/* Bio Section */}
-          {profile.bio && (
-            <div className="mt-5">
-              <h3 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider mb-2">
+          {/* Bio / About Section */}
+          <div className="mt-6 pt-5 border-t border-slate-100">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="h-6 w-6 rounded-lg bg-blue-50 text-[#0B2545] flex items-center justify-center">
+                <FileText className="h-3.5 w-3.5" />
+              </div>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                 {t.about}
               </h3>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line bg-slate-50 p-4 rounded-xl border border-gray-100">
-                {profile.bio}
-              </p>
             </div>
-          )}
+            {profile.bio && profile.bio.trim() ? (
+              <div className="rounded-2xl border border-slate-200/90 bg-slate-50/60 p-4 text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line shadow-2xs">
+                {profile.bio.trim()}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-xs text-slate-400 italic">
+                {t.noBio}
+              </div>
+            )}
+          </div>
 
-          {/* Skills Section */}
-          {profile.skills && profile.skills.length > 0 && (
-            <div className="mt-5">
-              <h3 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider mb-2">
-                {t.skills}
-              </h3>
-              <div className="flex flex-wrap gap-1.5">
-                {profile.skills.map((skill, idx) => (
-                  <span
-                    key={idx}
-                    className="px-3 py-1 bg-slate-100 text-[#0B2545] rounded-full text-xs font-semibold border border-gray-200"
-                  >
-                    {skill}
-                  </span>
-                ))}
+          {/* Skills & Expertise Section */}
+          {(() => {
+            const skillsList = parseSkillsArray(profile.skills)
+            return (
+              <div className="mt-6 pt-5 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                      <Briefcase className="h-3.5 w-3.5" />
+                    </div>
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      {t.skills}
+                    </h3>
+                  </div>
+                  {skillsList.length > 0 && (
+                    <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                      {skillsList.length} {skillsList.length === 1 ? 'skill' : 'skills'}
+                    </span>
+                  )}
+                </div>
+
+                {skillsList.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {skillsList.map((skill, idx) => (
+                      <span
+                        key={`${skill}-${idx}`}
+                        className="inline-flex items-center px-3.5 py-1.5 bg-white text-[#0B2545] rounded-full text-xs font-semibold border border-slate-200/90 shadow-2xs hover:border-slate-300 transition"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-xs text-slate-400 italic">
+                    {t.noSkills}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Current Experience Role Card */}
+          {(profile.position || profile.company) && (
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-6 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
+                  <Building className="h-3.5 w-3.5" />
+                </div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  {t.experience}
+                </h3>
+              </div>
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900">
+                    {profile.position || 'Professional Member'}
+                  </p>
+                  {profile.company && (
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                      {profile.company}
+                    </p>
+                  )}
+                </div>
+                {profile.location && (
+                  <div className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-full shrink-0 self-start sm:self-auto">
+                    <MapPin className="h-3 w-3 text-[#EA580C]" />
+                    <span>{profile.location}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

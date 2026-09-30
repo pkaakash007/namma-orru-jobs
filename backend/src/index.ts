@@ -502,6 +502,15 @@ export async function ensureProductionSchema(db: D1Database) {
   schemaInitialized = true
 }
 
+async function extractUserIdFromToken(token: string, secret: string): Promise<string | null> {
+  try {
+    const payload = (await verify(token, secret, 'HS256')) as any
+    return payload?.id || payload?.sub || null
+  } catch {
+    return null
+  }
+}
+
 // Authentication Middleware
 const requireAuth = async (c: any, next: any) => {
   const authHeader = c.req.header('Authorization')
@@ -815,11 +824,19 @@ app.post('/api/auth/google', async (c) => {
     }
 
     const ALLOWED_CLIENT_IDS = [
-      '1081442493959-s9906ironh3oq1vcso7hbbje8qi6uj65.apps.googleusercontent.com', // Web Client ID
-      '1081442493959-foa9uho91jn2avckegn9fcf7q3cvai4g.apps.googleusercontent.com', // Android Client ID
+      '1081442493959-s9906ironh3oq1vcso7hbbje8qi6uj65.apps.googleusercontent.com', // Web Client ID (old)
+      '1081442493959-foa9uho91jn2avckegn9fcf7q3cvai4g.apps.googleusercontent.com', // Android Client ID (old)
+      '981989878451-2j3pp40gsk8p5on5opovma836st7j6k5.apps.googleusercontent.com', // Namma Ooru Jobs Android Client ID
+      '981989878451-nltb7s56th0aor7nrold8ooj9u3lnk10.apps.googleusercontent.com', // Namma Ooru Jobs Web Client ID
     ]
 
-    if (googlePayload.aud && !ALLOWED_CLIENT_IDS.includes(googlePayload.aud)) {
+    const isAllowedAud =
+      !googlePayload.aud ||
+      ALLOWED_CLIENT_IDS.includes(googlePayload.aud) ||
+      googlePayload.aud.startsWith('981989878451-') ||
+      googlePayload.aud.startsWith('1081442493959-')
+
+    if (!isAllowedAud) {
       return c.json({ error: 'Unauthorized: Token audience does not match configured Google Client IDs' }, 401)
     }
 
@@ -1890,6 +1907,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
     const {
       title,
       company_name,
+      company_logo,
       location,
       workplace_type,
       employment_type,
@@ -1899,6 +1917,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
 
     const titleClean = (title || '').trim()
     const companyClean = (company_name || '').trim()
+    const logoClean = (company_logo || '').trim()
     const locationClean = (location || '').trim()
     const descClean = (description || '').trim()
     const salaryClean = (salary_range || '').trim().slice(0, 100)
@@ -1925,14 +1944,15 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
     const jobId = 'job_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 
     await c.env.DB.prepare(
-      `INSERT INTO jobs (id, poster_id, title, company_name, location, workplace_type, employment_type, description, salary_range)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (id, poster_id, title, company_name, company_logo, location, workplace_type, employment_type, description, salary_range)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         jobId,
         user.id,
         titleClean,
         companyClean,
+        logoClean,
         locationClean,
         safeWorkplace,
         safeEmployment,
@@ -1940,6 +1960,8 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
         salaryClean
       )
       .run()
+
+    invalidateEdgeCache('jobs')
 
     // 1. Create In-App Notification record
     const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -2195,6 +2217,57 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
 
     invalidateEdgeCache('jobs:')
 
+    // Notify Job Poster / Recruiter
+    if (job.poster_id && job.poster_id !== user.id) {
+      try {
+        const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+        const notifTitle = 'New Application Received'
+        const notifMessage = `${candidate_name} applied for "${job.title}" at ${job.company_name}`
+        const notifData = JSON.stringify({
+          type: 'application_received',
+          job_id: jobId,
+          applicant_id: user.id,
+          applicant_name: candidate_name,
+          applicant_avatar: user.avatar_url || null,
+        })
+
+        // 1. In-app notification
+        await c.env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+           VALUES (?, ?, 'application_received', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+        )
+          .bind(notifId, job.poster_id, notifTitle, notifMessage, notifData)
+          .run()
+
+        // 2. Native push notification via FCM
+        const { results: posterTokens } = await c.env.DB.prepare(
+          'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+        )
+          .bind(job.poster_id)
+          .all()
+
+        const tokens = (posterTokens || []).map((r: any) => r.token as string)
+        if (tokens.length > 0) {
+          c.executionCtx.waitUntil(
+            Promise.allSettled(
+              tokens.map((token) =>
+                sendFcmNotification(serviceAccount, token, {
+                  title: notifTitle,
+                  body: notifMessage,
+                  data: {
+                    type: 'application_received',
+                    job_id: jobId,
+                  },
+                })
+              )
+            )
+          )
+        }
+      } catch (appNotifErr) {
+        console.warn('Failed to send job application notification:', appNotifErr)
+      }
+    }
+
     return c.json({
       success: true,
       message: `Application submitted successfully to ${job.company_name}`,
@@ -2371,9 +2444,9 @@ app.post('/api/posts/:id/like', async (c) => {
   try {
     const postId = c.req.param('id')
 
-    const existingPost = await c.env.DB.prepare('SELECT id, likes_count FROM posts WHERE id = ?')
+    const existingPost = await c.env.DB.prepare('SELECT id, author_id, likes_count FROM posts WHERE id = ?')
       .bind(postId)
-      .first() as { id: string; likes_count: number } | null
+      .first() as { id: string; author_id: string; likes_count: number } | null
 
     if (!existingPost) {
       return c.json({ error: 'Post not found' }, 404)
@@ -2384,6 +2457,72 @@ app.post('/api/posts/:id/like', async (c) => {
       .run()
 
     invalidateEdgeCache('posts:')
+
+    // Resolve liking user from Authorization header
+    let likerName = 'Someone'
+    let likerAvatar: string | null = null
+    let likerId: string | null = null
+    const authHeader = c.req.header('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      likerId = await extractUserIdFromToken(authHeader.substring(7), secret)
+      if (likerId) {
+        const user = (await c.env.DB.prepare('SELECT full_name, avatar_url FROM users WHERE id = ?').bind(likerId).first()) as any
+        if (user?.full_name) likerName = user.full_name
+        likerAvatar = user?.avatar_url || null
+      }
+    }
+
+    // Dispatch in-app and native push notification to post author
+    if (existingPost.author_id && existingPost.author_id !== likerId) {
+      try {
+        const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+        const notifTitle = 'New Reaction'
+        const notifMessage = `${likerName} liked your post on Namma Ooru Jobs`
+        const notifData = JSON.stringify({
+          type: 'post_like',
+          post_id: postId,
+          liker_id: likerId,
+          liker_name: likerName,
+          liker_avatar: likerAvatar,
+        })
+
+        // 1. In-app notification
+        await c.env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+           VALUES (?, ?, 'post_like', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+        )
+          .bind(notifId, existingPost.author_id, notifTitle, notifMessage, notifData)
+          .run()
+
+        // 2. Native push notification via FCM
+        const { results: authorTokens } = await c.env.DB.prepare(
+          'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+        )
+          .bind(existingPost.author_id)
+          .all()
+
+        const tokens = (authorTokens || []).map((r: any) => r.token as string)
+        if (tokens.length > 0) {
+          c.executionCtx.waitUntil(
+            Promise.allSettled(
+              tokens.map((token) =>
+                sendFcmNotification(serviceAccount, token, {
+                  title: notifTitle,
+                  body: notifMessage,
+                  data: {
+                    type: 'post_like',
+                    post_id: postId,
+                  },
+                })
+              )
+            )
+          )
+        }
+      } catch (likeNotifErr) {
+        console.warn('Failed to send post reaction notification:', likeNotifErr)
+      }
+    }
 
     return c.json({
       success: true,
@@ -2561,17 +2700,46 @@ app.delete('/api/media/*', requireAuth, async (c) => {
 // 1. Get In-App Notifications (Latest 50, with unread count)
 app.get('/api/notifications', async (c) => {
   try {
-    const { results } = await c.env.DB.prepare(
-      'SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50'
-    ).all()
+    let userId: string | null = null
+    const authHeader = c.req.header('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      userId = await extractUserIdFromToken(authHeader.substring(7), secret)
+    }
 
-    const unreadCount =
-      (await c.env.DB.prepare('SELECT count(*) as count FROM notifications WHERE is_read = 0').first(
-        'count'
-      )) || 0
+    const { results } = userId
+      ? await c.env.DB.prepare(
+          'SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50'
+        ).bind(userId).all()
+      : await c.env.DB.prepare(
+          'SELECT * FROM notifications WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 50'
+        ).all()
+
+    const unreadCount = userId
+      ? ((await c.env.DB.prepare(
+          'SELECT count(*) as count FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0'
+        ).bind(userId).first('count')) || 0)
+      : ((await c.env.DB.prepare(
+          'SELECT count(*) as count FROM notifications WHERE user_id IS NULL AND is_read = 0'
+        ).first('count')) || 0)
+
+    const formattedNotifications = (results || []).map((notif: any) => {
+      let createdAt = notif.created_at
+      if (typeof createdAt === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}/.test(createdAt)) {
+          createdAt = createdAt.replace(' ', 'T') + 'Z'
+        } else if (!createdAt.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(createdAt)) {
+          createdAt = createdAt + 'Z'
+        }
+      }
+      return {
+        ...notif,
+        created_at: createdAt
+      }
+    })
 
     return c.json({
-      notifications: results || [],
+      notifications: formattedNotifications,
       unread_count: unreadCount,
     })
   } catch (err: any) {
@@ -2596,7 +2764,19 @@ app.patch('/api/notifications/:id/read', async (c) => {
 // 3. Mark All Notifications as Read
 app.post('/api/notifications/mark-all-read', async (c) => {
   try {
-    await c.env.DB.prepare('UPDATE notifications SET is_read = 1').run()
+    let userId: string | null = null
+    const authHeader = c.req.header('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      userId = await extractUserIdFromToken(authHeader.substring(7), secret)
+    }
+    if (userId) {
+      await c.env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? OR user_id IS NULL')
+        .bind(userId)
+        .run()
+    } else {
+      await c.env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE user_id IS NULL').run()
+    }
     return c.json({ success: true, message: 'All notifications marked as read' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -2614,7 +2794,12 @@ app.post('/api/notifications/register-token', async (c) => {
     const token = (body.token || '').trim()
     const rawPlatform = (body.platform || 'android').toLowerCase().trim()
     const platform = ['android', 'ios', 'web'].includes(rawPlatform) ? rawPlatform : 'android'
-    const user_id = body.user_id ? String(body.user_id).trim().slice(0, 50) : null
+    let user_id = body.user_id ? String(body.user_id).trim().slice(0, 50) : null
+    const authHeader = c.req.header('Authorization')
+    if (!user_id && authHeader?.startsWith('Bearer ')) {
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      user_id = await extractUserIdFromToken(authHeader.substring(7), secret)
+    }
 
     if (!token || token.length < 10 || token.length > 500) {
       return c.json({ error: 'Valid FCM registration token is required' }, 400)
@@ -2630,7 +2815,7 @@ app.post('/api/notifications/register-token', async (c) => {
       .bind(tokenId, user_id, token, platform)
       .run()
 
-    return c.json({ success: true, message: 'FCM device token registered' })
+    return c.json({ success: true, message: 'FCM device token registered', user_id })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -2719,6 +2904,9 @@ app.get('/api/users/discover', requireAuth, async (c) => {
       FROM users
       WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'
     `
+    if (currentUser.role === 'manager') {
+      query += ` AND role = 'employee'`
+    }
     const params: any[] = [currentUser.id]
 
     if (search) {
@@ -2756,6 +2944,9 @@ app.get('/api/users/discover', requireAuth, async (c) => {
 
     // Count total for pagination
     let countQuery = `SELECT count(*) as total FROM users WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'`
+    if (currentUser.role === 'manager') {
+      countQuery += ` AND role = 'employee'`
+    }
     const countParams: any[] = [currentUser.id]
     if (search) {
       countQuery += ` AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(headline) LIKE ? OR LOWER(bio) LIKE ? OR LOWER(skills) LIKE ?)`
@@ -2789,7 +2980,7 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
     const targetId = c.req.param('id')
 
     const targetUser = await c.env.DB.prepare(
-      `SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, language, followers_count, following_count, connections_count, is_active, status, deactivated_until, created_at 
+      `SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, role, language, followers_count, following_count, connections_count, is_active, status, deactivated_until, created_at 
        FROM users WHERE id = ?`
     )
       .bind(targetId)
@@ -2797,6 +2988,15 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
 
     if (!targetUser) {
       return c.json({ error: 'User not found' }, 404)
+    }
+
+    // For recruiters/managers, do not allow viewing other recruiters/managers
+    if (
+      currentUser.role === 'manager' &&
+      (targetUser.role === 'manager' || targetUser.role === 'admin') &&
+      currentUser.id !== targetId
+    ) {
+      return c.json({ error: 'Recruiters can only view candidate and employee profiles' }, 403)
     }
 
     // Exclude deactivated accounts for non-admin viewers
@@ -2832,6 +3032,7 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
       profile: {
         id: targetUser.id,
         full_name: targetUser.full_name,
+        role: targetUser.role,
         username: targetUser.username || targetUser.email.split('@')[0],
         headline: targetUser.headline || '',
         avatar_url: targetUser.avatar_url || '',
@@ -2840,7 +3041,18 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
         location: targetUser.location || '',
         company: targetUser.company || '',
         position: targetUser.position || '',
-        skills: typeof targetUser.skills === 'string' ? JSON.parse(targetUser.skills || '[]') : (targetUser.skills || []),
+        skills: (() => {
+          if (!targetUser.skills) return []
+          if (Array.isArray(targetUser.skills)) return targetUser.skills
+          if (typeof targetUser.skills === 'string') {
+            try {
+              const parsed = JSON.parse(targetUser.skills)
+              if (Array.isArray(parsed)) return parsed
+            } catch {}
+            return targetUser.skills.replace(/[\[\]"'{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean)
+          }
+          return []
+        })(),
         followers_count: followersCountRow?.count ?? (targetUser.followers_count || 0),
         following_count: followingCountRow?.count ?? (targetUser.following_count || 0),
         is_following: Boolean(followCheck),
@@ -2907,6 +3119,54 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
       .run()
 
     const updatedTarget = await c.env.DB.prepare('SELECT followers_count FROM users WHERE id = ?').bind(targetId).first() as any
+
+    // Dispatch in-app and native push notification to target user
+    try {
+      const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const notifTitle = 'New Follower'
+      const notifMessage = `${currentUser.full_name || 'A user'} started following you on Namma Ooru Jobs`
+      const notifData = JSON.stringify({
+        type: 'user_follow',
+        follower_id: currentUser.id,
+        follower_name: currentUser.full_name,
+        follower_avatar: currentUser.avatar_url,
+      })
+
+      // 1. In-app notification for notifications bell
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+         VALUES (?, ?, 'user_follow', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+      )
+        .bind(notifId, targetId, notifTitle, notifMessage, notifData)
+        .run()
+
+      // 2. Native push notification via FCM
+      const { results: targetTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      )
+        .bind(targetId)
+        .all()
+
+      const tokens = (targetTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        c.executionCtx.waitUntil(
+          Promise.allSettled(
+            tokens.map((token) =>
+              sendFcmNotification(serviceAccount, token, {
+                title: notifTitle,
+                body: notifMessage,
+                data: {
+                  type: 'user_follow',
+                  follower_id: currentUser.id,
+                },
+              })
+            )
+          )
+        )
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send follow push notification:', pushErr)
+    }
 
     return c.json({
       success: true,
@@ -3334,6 +3594,58 @@ app.post('/api/conversations/:id/messages', requireAuth, async (c) => {
     )
       .bind(conversationId)
       .run()
+
+    // Dispatch in-app and native push notification to other participant
+    if (otherParticipant?.id) {
+      try {
+        const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+        const notifTitle = currentUser.full_name || 'New Message'
+        const notifBody = content.length > 120 ? content.slice(0, 117) + '...' : content
+        const notifData = JSON.stringify({
+          type: 'chat_message',
+          conversation_id: conversationId,
+          sender_id: currentUser.id,
+          sender_name: currentUser.full_name,
+          sender_avatar: currentUser.avatar_url || null,
+        })
+
+        // 1. In-app notification for notifications bell
+        await c.env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+           VALUES (?, ?, 'chat_message', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+        )
+          .bind(notifId, otherParticipant.id, notifTitle, notifBody, notifData)
+          .run()
+
+        // 2. Native push notification via FCM
+        const { results: recipientTokens } = await c.env.DB.prepare(
+          'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+        )
+          .bind(otherParticipant.id)
+          .all()
+
+        const tokens = (recipientTokens || []).map((r: any) => r.token as string)
+        if (tokens.length > 0) {
+          c.executionCtx.waitUntil(
+            Promise.allSettled(
+              tokens.map((token) =>
+                sendFcmNotification(serviceAccount, token, {
+                  title: notifTitle,
+                  body: notifBody,
+                  data: {
+                    type: 'chat_message',
+                    conversation_id: conversationId,
+                    sender_id: currentUser.id,
+                  },
+                })
+              )
+            )
+          )
+        }
+      } catch (pushErr) {
+        console.warn('Failed to send chat push notification:', pushErr)
+      }
+    }
 
     return c.json({
       success: true,

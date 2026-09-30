@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colors for Namma Ooru Jobs -->
+    <color name="colorPrimary">#0B2545</color>
+    <color name="colorPrimaryDark">#081B33</color>
+    <color name="colorAccent">#F97316</color>
+    <color name="colorBackground">#F8FAFC</color>
+    <color name="splashBackground">#0B2545</color>
+</resources>

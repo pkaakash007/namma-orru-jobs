@@ -5,7 +5,6 @@ import {
   FileText,
   UploadCloud,
   Check,
-  CheckCircle2,
   Languages,
   ExternalLink,
   ArrowLeft,
@@ -16,18 +15,48 @@ import {
   Save,
   Camera,
   Trash2,
+  X,
+  Plus,
 } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
 import { useLanguage } from '../../../context/LanguageContext'
 import { Badge } from '../../ui/Badge'
 import { uploadService } from '../../../services/api'
-import {
-  parseResumeWithAi,
-  type ExtractedResumeData,
-} from '../../../services/resumeParser'
+import { parseResumeWithAi } from '../../../services/resumeParser'
 import type { SupportedLanguage } from '../../../utils/i18n'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
+import { parseSkillsArray, cleanSkillString } from '../../../utils/skills'
+
+const SUGGESTED_SKILLS = [
+  'React',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'Python',
+  'SQL',
+  'Cloudflare D1',
+  'Workers',
+  'Hono',
+  'Sales',
+  'Accounting',
+  'Tally',
+  'Digital Marketing',
+  'Graphic Design',
+  'Customer Support',
+  'Management',
+]
+
+function cleanResumeFileName(url?: string): string {
+  if (!url) return 'Resume.pdf'
+  const raw = url.split('/').pop() || 'Resume.pdf'
+  const cleaned = raw.replace(/^\d+_[a-f0-9]+_/, '').replace(/^resumes_/, '')
+  try {
+    return decodeURIComponent(cleaned) || 'Resume.pdf'
+  } catch {
+    return cleaned || 'Resume.pdf'
+  }
+}
 
 export interface UserProfilePageProps {
   onBack?: () => void
@@ -56,9 +85,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [company, setCompany] = useState(user?.company || '')
   const [position, setPosition] = useState(user?.position || '')
   const [bio, setBio] = useState(user?.bio || '')
-  const [skills, setSkills] = useState(
-    Array.isArray(user?.skills) ? user.skills.join(', ') : (user?.skills as any) || ''
-  )
+  const [skillsList, setSkillsList] = useState<string[]>(() => parseSkillsArray(user?.skills))
+  const [skillInput, setSkillInput] = useState('')
   const [resumeUrl, setResumeUrl] = useState(user?.resume_url || '')
   const [selectedLang, setSelectedLang] = useState<SupportedLanguage>(
     (user?.language as SupportedLanguage) || language
@@ -68,8 +96,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [isUploadingBanner, setIsUploadingBanner] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [isExtractingAi, setIsExtractingAi] = useState(false)
-  const [aiExtractedSkills, setAiExtractedSkills] = useState<string[]>([])
-  const [extractedSummary, setExtractedSummary] = useState<ExtractedResumeData | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   // Keep form in sync if user changes
@@ -77,8 +103,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     if (user) {
       if (!fullName) setFullName(user.full_name || '')
       if (!headline) setHeadline(user.headline || '')
-      if (user.avatar_url) setAvatarUrl(user.avatar_url)
-      if (user.banner_url) setBannerUrl(user.banner_url)
+      if (!isUploadingAvatar && user.avatar_url !== undefined) setAvatarUrl(user.avatar_url || '')
+      if (!isUploadingBanner && user.banner_url !== undefined) setBannerUrl(user.banner_url || '')
       if (!age && user.age) setAge(String(user.age))
       if (!dob && user.date_of_birth) setDob(user.date_of_birth)
       if (!phone && user.phone) setPhone(user.phone)
@@ -87,11 +113,36 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       if (!position && user.position) setPosition(user.position)
       if (!bio && user.bio) setBio(user.bio)
       if (!resumeUrl && user.resume_url) setResumeUrl(user.resume_url)
-      if (!skills && user.skills) {
-        setSkills(Array.isArray(user.skills) ? user.skills.join(', ') : String(user.skills))
+      if (user.skills && skillsList.length === 0) {
+        setSkillsList(parseSkillsArray(user.skills))
       }
     }
-  }, [user])
+  }, [user, isUploadingAvatar, isUploadingBanner])
+
+  const handleAddSkill = (skillText: string) => {
+    if (!skillText) return
+    const parsed = parseSkillsArray(skillText)
+    if (parsed.length > 0) {
+      const newSkills = parsed.filter(
+        (p) => !skillsList.some((s) => s.toLowerCase() === p.toLowerCase())
+      )
+      if (newSkills.length > 0) {
+        setSkillsList([...skillsList, ...newSkills])
+      }
+      setSkillInput('')
+      return
+    }
+
+    const cleaned = cleanSkillString(skillText)
+    if (cleaned && !skillsList.some((s) => s.toLowerCase() === cleaned.toLowerCase())) {
+      setSkillsList([...skillsList, cleaned])
+    }
+    setSkillInput('')
+  }
+
+  const handleRemoveSkill = (indexToRemove: number) => {
+    setSkillsList(skillsList.filter((_, idx) => idx !== indexToRemove))
+  }
 
   // Auto-calculate age when DOB changes
   const handleDobChange = (newDob: string) => {
@@ -142,11 +193,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       const parsedData = await parseResumeWithAi(file, uploaded.url)
 
       // Merge skills
-      const existingList = (skills || '')
-        .split(',')
-        .map((s: string) => s.trim())
-        .filter(Boolean)
-      const combinedSkills = Array.from(new Set([...existingList, ...(parsedData.skills || [])]))
+      const newExtracted = parseSkillsArray(parsedData.skills)
+      const combinedSkills = Array.from(new Set([...skillsList, ...newExtracted]))
 
       // Populate user details form fields from extracted content
       if (parsedData.fullName && (!fullName || fullName.trim() === '')) {
@@ -158,9 +206,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       if (parsedData.location) setLocation(parsedData.location)
       if (parsedData.bio) setBio(parsedData.bio)
       if (parsedData.phone && (!phone || phone.trim() === '')) setPhone(parsedData.phone)
-      setSkills(combinedSkills.join(', '))
-      setAiExtractedSkills(parsedData.skills)
-      setExtractedSummary(parsedData)
+      setSkillsList(combinedSkills)
 
       // Store all extracted content directly onto users table in Cloudflare D1
       const finalName =
@@ -189,7 +235,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
 
       showToast(
-        `Extracted ${parsedData.skills.length} skills & synced candidate profile to database!`,
+        language === 'ta'
+          ? 'தன்விவரக் குறிப்பு விவரங்கள் வெற்றிகரமாக புதுப்பிக்கப்பட்டன'
+          : language === 'hi'
+          ? 'बायोडाटा विवरण सफलतापूर्वक अपडेट किए गए'
+          : 'Resume uploaded and profile details updated',
         'success'
       )
     } catch (err: any) {
@@ -200,7 +250,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     }
   }
 
-  // Handle Cover Photo Upload
+  // Handle Cover Photo Upload with Instant Optimistic Preview
   const handleCoverFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -225,7 +275,12 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       return
     }
 
+    // Instant local preview in 0ms
+    const prevBanner = bannerUrl
+    const objectUrl = URL.createObjectURL(file)
+    setBannerUrl(objectUrl)
     setIsUploadingBanner(true)
+
     try {
       const data = await uploadService.uploadFile(file, 'avatars')
       setBannerUrl(data.url)
@@ -239,14 +294,21 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         'success'
       )
     } catch (err: any) {
+      setBannerUrl(prevBanner)
       showToast(err.message || 'Failed to upload cover photo', 'error')
     } finally {
       setIsUploadingBanner(false)
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(objectUrl)
+        } catch {}
+      }, 5000)
       e.target.value = ''
     }
   }
 
   const handleRemoveCover = async () => {
+    const prevBanner = bannerUrl
     setBannerUrl('')
     try {
       await updateUserProfile({ banner_url: '' })
@@ -258,10 +320,13 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           : 'Cover photo removed',
         'info'
       )
-    } catch {}
+    } catch (err: any) {
+      setBannerUrl(prevBanner)
+      showToast(err.message || 'Failed to remove cover photo', 'error')
+    }
   }
 
-  // Handle Avatar Photo Upload
+  // Handle Avatar Photo Upload with Instant Optimistic Preview
   const handleAvatarFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -286,7 +351,12 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       return
     }
 
+    // Instant local preview in 0ms
+    const prevAvatar = avatarUrl
+    const objectUrl = URL.createObjectURL(file)
+    setAvatarUrl(objectUrl)
     setIsUploadingAvatar(true)
+
     try {
       const data = await uploadService.uploadFile(file, 'avatars')
       setAvatarUrl(data.url)
@@ -300,9 +370,15 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         'success'
       )
     } catch (err: any) {
+      setAvatarUrl(prevAvatar)
       showToast(err.message || 'Failed to upload profile photo', 'error')
     } finally {
       setIsUploadingAvatar(false)
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(objectUrl)
+        } catch {}
+      }, 5000)
       e.target.value = ''
     }
   }
@@ -338,11 +414,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
     setIsSaving(true)
     try {
-      const skillsArray = (skills || '')
-        .split(',')
-        .map((s: string) => s.trim())
-        .filter(Boolean)
-
       await updateUserProfile({
         full_name: fullName.trim(),
         headline: headline.trim(),
@@ -353,7 +424,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         company: company.trim() || undefined,
         position: position.trim() || undefined,
         bio: bio.trim() || undefined,
-        skills: skillsArray,
+        skills: skillsList,
         resume_url: resumeUrl || undefined,
         banner_url: bannerUrl || undefined,
         avatar_url: avatarUrl || undefined,
@@ -367,11 +438,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       setIsSaving(false)
     }
   }
-
-  const skillsList: string[] = (skills || '')
-    .split(',')
-    .map((s: string) => s.trim())
-    .filter(Boolean)
 
   return (
     <div className={`space-y-6 pb-12 ${className}`}>
@@ -429,9 +495,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         <div className="h-44 sm:h-52 md:h-60 bg-gradient-to-r from-[#0B2545] via-[#163866] to-[#0B2545] relative overflow-hidden group">
           {bannerUrl ? (
             <img
+              key={bannerUrl}
               src={bannerUrl}
               alt="Profile Cover Banner"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover transition-all duration-300"
             />
           ) : (
             <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#F97316_1px,transparent_1px)] [background-size:12px_12px]" />
@@ -482,9 +549,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               <div className="relative group shrink-0">
                 {avatarUrl ? (
                   <img
+                    key={avatarUrl}
                     src={avatarUrl}
                     alt={fullName || 'User'}
-                    className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover border-4 border-white shadow-md bg-white"
+                    className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover border-4 border-white shadow-md bg-white transition-all duration-300"
                   />
                 ) : (
                   <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-[#0B2545] text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center border-4 border-white shadow-md">
@@ -752,44 +820,98 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             </div>
           </div>
 
-          {/* Key Skills */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
+          {/* Key Skills - Apple iOS Options Style */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-700">
                 {t('profile_skills')}
               </label>
-              <span className="text-[10px] text-slate-400">Comma-separated</span>
+              <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                {skillsList.length} {skillsList.length === 1 ? 'skill' : 'skills'}
+              </span>
             </div>
-            <input
-              type="text"
-              placeholder={t('profile_skills_placeholder')}
-              value={skills}
-              onChange={(e) => setSkills(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
-            />
-            {skillsList.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-slate-100">
-                {skillsList.map((skill: string, index: number) => (
-                  <span
-                    key={`${skill}-${index}`}
-                    className="inline-flex items-center gap-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 text-xs font-semibold text-slate-700 transition"
-                  >
-                    <span>{skill}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const remaining = skillsList.filter((_: string, i: number) => i !== index)
-                        setSkills(remaining.join(', '))
-                      }}
-                      className="text-slate-400 hover:text-red-500 font-bold ml-0.5 cursor-pointer"
-                      title="Remove skill"
+
+            <div className="rounded-2xl border border-slate-200/90 bg-slate-50/60 p-3.5 sm:p-4 space-y-3">
+              {/* Active Selected Skills (iOS Option Pills) */}
+              {skillsList.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {skillsList.map((skill: string, index: number) => (
+                    <span
+                      key={`${skill}-${index}`}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200/90 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs group hover:border-slate-300 transition"
                     >
-                      ×
-                    </button>
-                  </span>
-                ))}
+                      <span>{skill}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSkill(index)}
+                        className="flex items-center justify-center h-4 w-4 rounded-full bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-600 hover:!bg-red-500 hover:!text-white transition cursor-pointer"
+                        title="Remove"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic py-1">
+                  No skills added yet. Add from suggestions below or type your own.
+                </p>
+              )}
+
+              {/* iOS Style Add Skill Input */}
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Type a skill and press Enter (e.g. React, UI/UX)..."
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault()
+                        handleAddSkill(skillInput)
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddSkill(skillInput)}
+                  disabled={!skillInput.trim()}
+                  className="inline-flex items-center gap-1 rounded-xl bg-[#0B2545] px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-[#133966] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add</span>
+                </button>
               </div>
-            )}
+
+              {/* iOS Suggested Options Pills */}
+              {SUGGESTED_SKILLS.filter(
+                (s) => !skillsList.some((ex) => ex.toLowerCase() === s.toLowerCase())
+              ).length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Suggested options:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SUGGESTED_SKILLS.filter(
+                      (s) => !skillsList.some((ex) => ex.toLowerCase() === s.toLowerCase())
+                    ).map((suggested) => (
+                      <button
+                        key={suggested}
+                        type="button"
+                        onClick={() => handleAddSkill(suggested)}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 bg-white/90 hover:bg-blue-50/80 hover:border-blue-400 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:text-[#0B2545] transition cursor-pointer active:scale-95"
+                      >
+                        <Plus className="h-3 w-3 text-slate-400" />
+                        <span>{suggested}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Bio / Summary */}
@@ -807,129 +929,109 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           </div>
         </div>
 
-        {/* Section 3: Resume & AI Content Intelligence */}
+        {/* Section 3: Resume Document (Simple Human iOS Design) */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-blue-50 flex items-center justify-center text-[#0B2545]">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-xl bg-slate-100 text-[#0B2545] flex items-center justify-center">
                 <FileText className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                <h3 className="text-xs font-bold text-slate-900 tracking-tight">
                   {t('profile_resume_heading')}
                 </h3>
                 <p className="text-[11px] text-slate-500">{t('profile_resume_desc')}</p>
               </div>
             </div>
             {resumeUrl && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                <Check className="h-3 w-3" /> Stored on Cloudflare R2
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/80">
+                <Check className="h-3 w-3" /> Ready
               </span>
             )}
           </div>
 
-          {resumeUrl && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900 gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span className="font-semibold truncate">
-                  {resumeUrl.split('/').pop() || 'Uploaded_Resume.pdf'}
-                </span>
+          {/* Active Attached Resume Card (iOS Files Style) */}
+          {resumeUrl ? (
+            <div className="rounded-2xl border border-slate-200/90 bg-slate-50/50 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 text-[#0B2545] flex items-center justify-center shrink-0 shadow-2xs">
+                  <FileText className="h-5 w-5 text-red-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900 truncate">
+                    {cleanResumeFileName(resumeUrl)}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Attached to your application profile
+                  </p>
+                </div>
               </div>
-              <a
-                href={resumeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-bold text-emerald-800 hover:text-emerald-950 hover:underline shrink-0"
-              >
-                <span>{t('profile_view_resume')}</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={resumeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer"
+                >
+                  <span>{t('profile_view_resume')}</span>
+                  <ExternalLink className="h-3 w-3 text-slate-400" />
+                </a>
+
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0B2545] hover:bg-[#133966] text-xs font-semibold text-white shadow-2xs transition cursor-pointer">
+                  {isUploadingResume ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-3.5 w-3.5" />
+                  )}
+                  <span>{isUploadingResume ? 'Updating...' : 'Replace'}</span>
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf,.docx,.doc,.txt,text/plain"
+                    disabled={isUploadingResume}
+                    onChange={handleResumeFileSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : (
+            /* Upload Dropzone when no resume attached */
+            <div>
+              <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 p-6 hover:border-[#0B2545] hover:bg-slate-50/50 transition cursor-pointer group">
+                <div className="h-10 w-10 rounded-full bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center text-slate-500 group-hover:text-[#0B2545] transition mb-2">
+                  <UploadCloud className="h-5 w-5" />
+                </div>
+                <span className="text-xs font-bold text-[#0B2545] group-hover:underline">
+                  {isUploadingResume ? t('profile_uploading_resume') : t('profile_upload_resume')}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-0.5">
+                  PDF or Word document (up to 10MB)
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf,.docx,.doc,.txt,text/plain"
+                  disabled={isUploadingResume}
+                  onChange={handleResumeFileSelect}
+                  className="hidden"
+                />
+              </label>
             </div>
           )}
 
-          {/* AI Extracted Banner if available */}
-          {extractedSummary && (
-            <div className="rounded-xl border border-emerald-300 bg-emerald-50/90 p-4 space-y-2 text-xs shadow-xs">
-              <div className="flex items-center gap-2 text-emerald-950 font-bold">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span className="text-xs sm:text-sm">
-                  {language === 'ta'
-                    ? 'தன்விவரக் குறிப்பு விவரங்கள் வெற்றிகரமாக சேமிக்கப்பட்டன!'
-                    : language === 'hi'
-                    ? 'बायोडाटा सामग्री सफलतापूर्वक सुरक्षित की गई!'
-                    : 'Resume Content Extracted & Stored in Database!'}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {extractedSummary.skills?.map((sk) => (
-                  <span
-                    key={sk}
-                    className="px-2 py-0.5 rounded-md bg-white text-[#0B2545] font-bold text-[10px] border border-emerald-200 shadow-2xs"
-                  >
-                    ✓ {sk}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* Loading state while uploading / parsing */}
           {isExtractingAi && (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-orange-50 border border-orange-200 text-xs text-[#EA580C]">
-              <div className="h-4 w-4 rounded-full border-2 border-[#EA580C] border-t-transparent animate-spin shrink-0" />
-              <span className="font-semibold">
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin text-[#0B2545] shrink-0" />
+              <span>
                 {language === 'ta'
-                  ? 'தன்விவரக் குறிப்பிலிருந்து விவரங்கள் பெறப்படுகின்றன...'
+                  ? 'தன்விவரக் குறிப்பு பகுப்பாய்வு செய்யப்படுகிறது...'
                   : language === 'hi'
-                  ? 'बायोडाटा से विवरण प्राप्त किए जा रहे हैं...'
-                  : 'Analyzing resume to extract skills, experience & location...'}
+                  ? 'बायोडाटा का विश्लेषण किया जा रहा है...'
+                  : 'Analyzing resume and updating profile details...'}
               </span>
             </div>
           )}
-
-          {aiExtractedSkills.length > 0 && !isExtractingAi && (
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#0B2545]">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                <span>
-                  {t('cs_extracted_skills')} ({t('app_skills_in_hr_search')}):
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {aiExtractedSkills.map((sk) => (
-                  <span
-                    key={sk}
-                    className="px-2.5 py-0.5 rounded-md bg-[#0B2545] text-white text-[11px] font-semibold flex items-center gap-1 shadow-2xs"
-                  >
-                    <Check className="h-2.5 w-2.5 text-emerald-400" />
-                    <span>{sk}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Upload Dropzone */}
-          <div>
-            <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 p-6 hover:border-[#0B2545] hover:bg-slate-50/50 transition cursor-pointer group">
-              <div className="h-10 w-10 rounded-full bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center text-slate-500 group-hover:text-[#0B2545] transition mb-2">
-                <UploadCloud className="h-5 w-5" />
-              </div>
-              <span className="text-xs font-bold text-[#0B2545] group-hover:underline">
-                {isUploadingResume ? t('profile_uploading_resume') : t('profile_upload_resume')}
-              </span>
-              <span className="text-[11px] text-slate-400 mt-0.5">
-                PDF, Word (DOCX/DOC), or TXT (Max 10MB) • Stored on Cloudflare R2
-              </span>
-              <input
-                type="file"
-                accept="application/pdf,.pdf,.docx,.doc,.txt,text/plain"
-                disabled={isUploadingResume}
-                onChange={handleResumeFileSelect}
-                className="hidden"
-              />
-            </label>
-          </div>
         </div>
 
       </form>

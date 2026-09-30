@@ -16,21 +16,18 @@ import {
   translatePosterName,
   formatSalary,
 } from '../../../services/googleAiTranslate'
+import { parseDateUTC } from '../../../utils/date'
 
 interface JobCardProps {
   job: Job
   onApply: (job: Job) => void
   onMatchCandidates?: (job: Job) => void
-  isRead?: boolean
-  onMarkAsRead?: (jobId: string) => void
 }
 
 export const JobCard: React.FC<JobCardProps> = ({
   job,
   onApply,
   onMatchCandidates,
-  isRead = true,
-  onMarkAsRead,
 }) => {
   const { t, language } = useLanguage()
   const { user, hasRole } = useAuth()
@@ -189,10 +186,7 @@ export const JobCard: React.FC<JobCardProps> = ({
   }
 
   return (
-    <Card
-      onClick={() => onMarkAsRead?.(job.id)}
-      className="flex flex-col justify-between p-5 transition hover:shadow-md cursor-pointer relative"
-    >
+    <Card className="flex flex-col justify-between p-5 transition hover:shadow-md cursor-pointer relative">
       <div className="flex items-start gap-3.5">
         {/* Company Avatar / Logo */}
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-[#F8FAFC] text-[#0B2545] overflow-hidden">
@@ -215,11 +209,6 @@ export const JobCard: React.FC<JobCardProps> = ({
                 <h3 className="text-base font-bold text-[#0B2545] hover:underline cursor-pointer">
                   {displayTitle}
                 </h3>
-                {!isRead && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-[#F97316] text-white uppercase tracking-wider shadow-2xs">
-                    {language === 'ta' ? 'புதியது' : language === 'hi' ? 'नया' : 'New'}
-                  </span>
-                )}
               </div>
               <p className="text-sm font-medium text-[#1E293B]">{displayCompany}</p>
             </div>
@@ -303,7 +292,7 @@ export const JobCard: React.FC<JobCardProps> = ({
           <div className="mt-3 flex items-center gap-2 text-[11px] text-[#94A3B8]">
             <Clock className="h-3 w-3" />
             <span>
-              {t('jobs_posted')} {new Date(job.created_at).toLocaleDateString()}
+              {t('jobs_posted')} {parseDateUTC(job.created_at).toLocaleDateString()}
             </span>
             <span>•</span>
             <span>
@@ -313,18 +302,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-        <span className="text-xs text-slate-500 font-medium">
-          {job.applicants_count
-            ? `${job.applicants_count} ${
-                language === 'ta' ? 'விண்ணப்பதாரர்கள்' : language === 'hi' ? 'आवेदक' : 'applicants'
-              }`
-            : language === 'ta'
-            ? 'முதலில் விண்ணப்பியுங்கள்'
-            : language === 'hi'
-            ? 'शीघ्र आवेदन करें'
-            : 'Be an early applicant'}
-        </span>
+      <div className="mt-4 flex items-center justify-end border-t border-gray-100 pt-3">
         {isHR ? (
           <Button
             size="sm"

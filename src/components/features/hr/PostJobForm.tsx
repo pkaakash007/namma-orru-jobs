@@ -1,8 +1,13 @@
 import React, { useState } from 'react'
-import { Briefcase, UploadCloud, Check } from 'lucide-react'
-import { Card } from '../../ui/Card'
-import { Input } from '../../ui/Input'
-import { Button } from '../../ui/Button'
+import {
+  Briefcase,
+  Check,
+  Building2,
+  Banknote,
+  X,
+  ArrowLeft,
+  Image as ImageIcon,
+} from 'lucide-react'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { jobsService, uploadService } from '../../../services/api'
 import { useToast } from '../../../context/ToastContext'
@@ -13,16 +18,20 @@ import { jobAdded } from '../../../store/jobsSlice'
 
 interface PostJobFormProps {
   onSuccess: () => void
+  onCancel?: () => void
 }
 
-export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess }) => {
+const WORKPLACE_OPTIONS = ['Remote', 'Hybrid', 'On-site'] as const
+const EMPLOYMENT_OPTIONS = ['Full-time', 'Part-time', 'Contract', 'Internship'] as const
+
+export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel }) => {
   const dispatch = useAppDispatch()
   const { user } = useAuth()
   const [title, setTitle] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [location, setLocation] = useState('')
-  const [workplaceType, setWorkplaceType] = useState('Remote')
-  const [employmentType, setEmploymentType] = useState('Full-time')
+  const [workplaceType, setWorkplaceType] = useState<string>('Remote')
+  const [employmentType, setEmploymentType] = useState<string>('Full-time')
   const [salaryRange, setSalaryRange] = useState('')
   const [description, setDescription] = useState('')
   const [companyLogo, setCompanyLogo] = useState('')
@@ -30,7 +39,7 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const { showToast } = useToast()
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -93,26 +102,30 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess }) => {
       const res = await jobsService.postJob({
         title: title.trim(),
         company_name: companyName.trim(),
+        company_logo: companyLogo.trim() || undefined,
         location: location.trim(),
         workplace_type: workplaceType,
         employment_type: employmentType,
         salary_range: salaryRange.trim(),
         description: description.trim(),
       })
+
       showToast('Job opportunity published successfully!', 'success')
+
       dispatch(
         jobAdded({
           id: res.job_id || 'job_' + Date.now(),
           poster_id: user?.id || 'hr',
           poster_name: user?.full_name || 'HR Recruiter',
           poster_avatar: user?.avatar_url,
-          title,
-          company_name: companyName,
-          location,
+          title: title.trim(),
+          company_name: companyName.trim(),
+          company_logo: companyLogo.trim() || undefined,
+          location: location.trim(),
           workplace_type: workplaceType as 'Remote' | 'Hybrid' | 'On-site',
           employment_type: employmentType as 'Full-time' | 'Part-time' | 'Contract' | 'Internship',
-          salary_range: salaryRange,
-          description,
+          salary_range: salaryRange.trim(),
+          description: description.trim(),
           applicants_count: 0,
           created_at: new Date().toISOString(),
         })
@@ -126,136 +139,265 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess }) => {
   }
 
   return (
-    <Card className="mx-auto max-w-2xl p-6 sm:p-8 shadow-sm">
-      <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#0B2545] text-white">
-          <Briefcase className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-[#0F172A]">{t('hr_post_title')}</h2>
-          <p className="text-xs text-[#64748B]">{t('hr_post_subtitle')}</p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <Input
-          label={`${t('hr_job_title')} *`}
-          required
-          placeholder="e.g. Senior Frontend React Engineer"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label={`${t('hr_company_name')} *`}
-            required
-            placeholder="e.g. Zoho Corp / Freshworks"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-          />
-          <GoogleLocationSearchInput
-            label={`${t('hr_location')} *`}
-            required
-            placeholder="e.g. Chennai, Coimbatore, Madurai"
-            value={location}
-            onChange={setLocation}
-            inputClassName="rounded-md border-[#CDCBC7]"
-          />
-        </div>
-
-        {/* Company Logo */}
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-[#475569]">
-            Company Logo (PNG, JPG, WebP, SVG • Max 10MB)
-          </label>
+    <div className="mx-auto max-w-2xl">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xs">
+        {/* iOS Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 pb-5">
           <div className="flex items-center gap-3">
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-gray-100 transition">
-              <UploadCloud className="h-4 w-4 text-[#F97316]" />
-              <span>{isUploadingLogo ? 'Uploading logo...' : 'Choose Logo File'}</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                className="hidden"
-                disabled={isUploadingLogo}
-              />
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="p-1.5 -ml-1 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+                title="Back to jobs"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            )}
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B2545] text-white shadow-2xs">
+              <Briefcase className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-[#0F172A] tracking-tight">
+                {language === 'ta' ? 'புதிய வேலை வாய்ப்பைப் பகிர்க' : language === 'hi' ? 'नई नौकरी पोस्ट करें' : 'Post New Job Opening'}
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {language === 'ta'
+                  ? 'தகுதியான விண்ணப்பதாரர்களை ஈர்க்க வேலை விவரங்களை உள்ளிடவும்'
+                  : language === 'hi'
+                  ? 'योग्य उम्मीदवारों को आकर्षित करने के लिए नौकरी का विवरण भरें'
+                  : 'Reach qualified candidates and manage incoming applications'}
+              </p>
+            </div>
+          </div>
+
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+          {/* 1. Job Title */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
+              {t('hr_job_title')} <span className="text-red-500">*</span>
             </label>
-            {companyLogo && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
-                <Check className="h-4 w-4" />
-                <span>Uploaded</span>
+            <div className="relative">
+              <Briefcase className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                required
+                placeholder="e.g. Senior React Native Developer / Sales Executive"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+              />
+            </div>
+          </div>
+
+          {/* 2. Company Name & Location */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
+                {t('hr_company_name')} <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <Building2 className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Zoho Technologies / Tata Electronics"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+                />
               </div>
+            </div>
+
+            <div>
+              <GoogleLocationSearchInput
+                label={`${t('hr_location')} *`}
+                required
+                placeholder="e.g. Chennai, Coimbatore, Madurai"
+                value={location}
+                onChange={setLocation}
+                inputClassName="rounded-xl border-slate-200 py-2.5 text-xs shadow-2xs"
+              />
+            </div>
+          </div>
+
+          {/* 3. Company Logo / Job Image Upload (Apple iOS clean style) */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
+              Company Logo / Job Image
+            </label>
+            {companyLogo ? (
+              <div className="flex items-center gap-3.5 p-3 rounded-2xl border border-slate-200 bg-slate-50/70">
+                <div className="h-14 w-14 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xs flex items-center justify-center overflow-hidden shrink-0">
+                  <img
+                    src={companyLogo}
+                    alt="Company Logo Preview"
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
+                    <Check className="h-4 w-4" />
+                    <span>Image uploaded successfully</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate mt-0.5">{companyLogo}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCompanyLogo('')}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition cursor-pointer"
+                  title="Remove image"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex flex-col sm:flex-row items-center gap-3 p-3.5 rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400 cursor-pointer transition">
+                <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#0B2545] shadow-2xs shrink-0">
+                  {isUploadingLogo ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-[#0B2545] border-t-transparent animate-spin" />
+                  ) : (
+                    <ImageIcon className="h-5 w-5 text-slate-500" />
+                  )}
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <span className="text-xs font-semibold text-[#0B2545]">
+                    {isUploadingLogo ? 'Uploading logo to cloud...' : 'Click to upload company logo or recruitment poster'}
+                  </span>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    PNG, JPG, WebP, SVG • Maximum 10MB
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                  disabled={isUploadingLogo}
+                />
+              </label>
             )}
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* 4. Workplace Type (iOS Segmented Control) */}
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[#475569]">
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
               {t('hr_workplace_type')}
             </label>
-            <select
-              value={workplaceType}
-              onChange={(e) => setWorkplaceType(e.target.value)}
-              className="w-full rounded-md border border-[#CDCBC7] bg-white p-2 text-xs text-[#0F172A] focus:border-[#0B2545] focus:outline-none"
-            >
-              <option value="Remote">Remote</option>
-              <option value="Hybrid">Hybrid</option>
-              <option value="On-site">On-site</option>
-            </select>
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/60">
+              {WORKPLACE_OPTIONS.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setWorkplaceType(type)}
+                  className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    workplaceType === type
+                      ? 'bg-white text-[#0B2545] font-bold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* 5. Employment Type (iOS Segmented Control) */}
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[#475569]">
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
               {t('hr_employment_type')}
             </label>
-            <select
-              value={employmentType}
-              onChange={(e) => setEmploymentType(e.target.value)}
-              className="w-full rounded-md border border-[#CDCBC7] bg-white p-2 text-xs text-[#0F172A] focus:border-[#0B2545] focus:outline-none"
-            >
-              <option value="Full-time">Full-time</option>
-              <option value="Part-time">Part-time</option>
-              <option value="Contract">Contract</option>
-              <option value="Internship">Internship</option>
-            </select>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200/60">
+              {EMPLOYMENT_OPTIONS.map((emp) => (
+                <button
+                  key={emp}
+                  type="button"
+                  onClick={() => setEmploymentType(emp)}
+                  className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    employmentType === emp
+                      ? 'bg-white text-[#0B2545] font-bold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {emp}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <Input
-            label={t('hr_salary_range')}
-            placeholder="e.g. ₹10 - 16 LPA"
-            value={salaryRange}
-            onChange={(e) => setSalaryRange(e.target.value)}
-          />
-        </div>
+          {/* 6. Salary Range */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
+              {t('hr_salary_range')}
+            </label>
+            <div className="relative">
+              <Banknote className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="e.g. ₹8 - 14 LPA or ₹25,000 - 35,000 / month"
+                value={salaryRange}
+                onChange={(e) => setSalaryRange(e.target.value)}
+                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+              />
+            </div>
+          </div>
 
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-[#475569]">
-            {t('hr_description')} *
-          </label>
-          <textarea
-            rows={4}
-            required
-            placeholder="Describe key responsibilities, qualifications, and benefits..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-md border border-[#CDCBC7] p-3 text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
-          />
-        </div>
+          {/* 7. Description */}
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
+              {t('hr_description')} <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              rows={5}
+              required
+              placeholder="Detail key responsibilities, required qualifications, technical skills, and candidate benefits..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs leading-relaxed"
+            />
+          </div>
 
-        <div className="pt-2">
-          <Button
-            type="submit"
-            variant="orange"
-            size="lg"
-            isLoading={isSubmitting}
-            className="w-full font-bold shadow-sm cursor-pointer"
-          >
-            {isSubmitting ? t('hr_publishing_btn') : t('hr_publish_btn')}
-          </Button>
-        </div>
-      </form>
-    </Card>
+          {/* 8. Action Buttons */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full sm:flex-1 py-3 px-6 rounded-xl bg-[#0B2545] hover:bg-[#081a31] text-white text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  <span>{t('hr_publishing_btn')}</span>
+                </>
+              ) : (
+                <span>{t('hr_publish_btn')}</span>
+              )}
+            </button>
+
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isSubmitting}
+                className="w-full sm:w-auto py-3 px-6 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }

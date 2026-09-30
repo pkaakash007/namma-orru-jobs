@@ -89,7 +89,7 @@ export interface ApiResponse<T> {
 export interface AppNotification {
   id: string
   user_id?: string | null
-  type: 'job_posted' | 'application_received' | 'system'
+  type: 'job_posted' | 'application_received' | 'system' | 'user_follow' | 'chat_message' | 'post_like'
   title: string
   message: string
   data?: string
@@ -107,6 +107,7 @@ export interface UserFollow {
 export interface PublicProfile {
   id: string
   full_name: string
+  role?: UserRole
   username: string
   headline?: string
   avatar_url?: string

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { Conversation, ChatMessage, User, Language } from '../../../types'
 import { chatService } from '../../../services/api'
+import { parseDateUTC } from '../../../utils/date'
 
 interface MessagesViewProps {
   currentUser: User | null
@@ -119,9 +120,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
   useEffect(() => {
     loadConversations(true)
+    // 1-minute interval while user is on Messages tab
     const interval = setInterval(() => {
       loadConversations(false)
-    }, 10000)
+    }, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -141,12 +143,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     }
 
     fetchMessages()
+    // 1-minute interval for messages in active conversation
     const msgInterval = setInterval(async () => {
       try {
         const res = await chatService.getMessages(activeConversation.id)
         setMessages(res.messages)
       } catch {}
-    }, 4000)
+    }, 60000)
 
     return () => clearInterval(msgInterval)
   }, [activeConversation?.id])
@@ -332,7 +335,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         </div>
                         {conv.last_message && (
                           <span className={`text-[10px] shrink-0 ml-1 ${isUnread ? 'font-bold text-[#0B2545]' : 'text-slate-400'}`}>
-                            {new Date(conv.last_message.created_at).toLocaleTimeString([], {
+                            {parseDateUTC(conv.last_message.created_at).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}
@@ -449,7 +452,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 
                       <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400 px-1">
                         <span>
-                          {new Date(msg.created_at).toLocaleTimeString([], {
+                          {parseDateUTC(msg.created_at).toLocaleTimeString([], {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}

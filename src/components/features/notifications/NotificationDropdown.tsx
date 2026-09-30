@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Bell, Briefcase } from 'lucide-react'
+import { Bell, Briefcase, UserPlus, MessageSquare, ThumbsUp, FileText } from 'lucide-react'
 import { notificationService } from '../../../services/api'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useToast } from '../../../context/ToastContext'
@@ -11,6 +11,7 @@ import {
   translateJobTitleSync,
   translateCompanySync,
 } from '../../../services/googleAiTranslate'
+import { formatRelativeTime } from '../../../utils/date'
 
 interface NotificationDropdownProps {
   onSelectJob?: (jobId: string, jobTitle?: string) => void
@@ -26,10 +27,10 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
   const { t, language } = useLanguage()
   const { showToast } = useToast()
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async (force = false) => {
     if (!user) return
     try {
-      const data = await notificationService.getNotifications()
+      const data = await notificationService.getNotifications(force)
       if (data?.notifications) {
         setNotifications(data.notifications)
         setUnreadCount(data.unread_count || 0)
@@ -46,14 +47,17 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
       setUnreadCount(0)
       return
     }
-    fetchNotifications()
+    fetchNotifications(true)
   }, [user?.id, fetchNotifications])
 
-  // Refresh whenever user actively opens the notifications menu
+  // Poll only at 1-minute interval when dropdown is actively open
   useEffect(() => {
-    if (isOpen && user?.id) {
-      fetchNotifications()
-    }
+    if (!isOpen || !user?.id) return
+    fetchNotifications(true)
+    const interval = setInterval(() => {
+      fetchNotifications(true)
+    }, 60000)
+    return () => clearInterval(interval)
   }, [isOpen, user?.id, fetchNotifications])
 
   // Close dropdown on outside click
@@ -106,23 +110,35 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
           setIsOpen(false)
         }
       } catch {}
+    } else if (notif.type === 'user_follow') {
+      try {
+        const parsed = notif.data ? JSON.parse(notif.data) : null
+        if (parsed?.follower_id) {
+          window.history.pushState({}, '', `/profile/${parsed.follower_id}`)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+          setIsOpen(false)
+        }
+      } catch {}
+    } else if (notif.type === 'chat_message') {
+      window.history.pushState({}, '', '/messages')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      setIsOpen(false)
+    } else if (notif.type === 'post_like') {
+      window.history.pushState({}, '', '/feed')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      setIsOpen(false)
+    } else if (notif.type === 'application_received' && notif.data) {
+      try {
+        const parsed = JSON.parse(notif.data)
+        if (parsed.job_id && onSelectJob) {
+          onSelectJob(parsed.job_id, 'Applications')
+          setIsOpen(false)
+        }
+      } catch {}
     }
   }
 
-  const formatRelativeTime = (dateStr: string) => {
-    try {
-      const diffMs = Date.now() - new Date(dateStr).getTime()
-      const diffMins = Math.floor(diffMs / 60000)
-      if (diffMins < 1) return 'Just now'
-      if (diffMins < 60) return `${diffMins}m ago`
-      const diffHours = Math.floor(diffMins / 60)
-      if (diffHours < 24) return `${diffHours}h ago`
-      const diffDays = Math.floor(diffHours / 24)
-      return `${diffDays}d ago`
-    } catch {
-      return ''
-    }
-  }
+
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -130,8 +146,9 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
       <button
         type="button"
         onClick={() => {
-          setIsOpen(!isOpen)
-          if (!isOpen) fetchNotifications()
+          const opening = !isOpen
+          setIsOpen(opening)
+          if (opening) fetchNotifications()
         }}
         className="relative flex h-8 w-8 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
         title="Notifications"
@@ -194,6 +211,24 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
                 const location = parsedData?.location || ''
                 const workplaceType = parsedData?.workplace_type || ''
 
+                const avatarUrl =
+                  parsedData?.follower_avatar ||
+                  parsedData?.sender_avatar ||
+                  parsedData?.liker_avatar ||
+                  parsedData?.applicant_avatar ||
+                  parsedData?.company_logo ||
+                  null
+
+                const displayName =
+                  parsedData?.follower_name ||
+                  parsedData?.sender_name ||
+                  parsedData?.liker_name ||
+                  parsedData?.applicant_name ||
+                  companyName ||
+                  notif.title
+
+                const initial = displayName.trim().charAt(0).toUpperCase() || 'U'
+
                 return (
                   <div
                     key={notif.id}
@@ -202,56 +237,120 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
                       isUnread ? 'bg-slate-50/70' : 'bg-white'
                     }`}
                   >
-                    {/* Company Initial or Briefcase */}
-                    <div className="h-9 w-9 rounded-full bg-slate-100 border border-slate-200/80 flex items-center justify-center text-slate-700 font-semibold text-xs shrink-0 select-none">
-                      {companyName ? (
-                        <span>{companyName.charAt(0).toUpperCase()}</span>
-                      ) : (
-                        <Briefcase className="h-4 w-4 text-slate-500" />
-                      )}
+                    {/* Authentic User Profile Picture / Logo with Action Badge */}
+                    <div className="relative shrink-0 select-none">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={displayName}
+                          referrerPolicy="no-referrer"
+                          className="h-9 w-9 rounded-full object-cover border border-slate-200 shadow-xs"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                            if (e.currentTarget.nextElementSibling) {
+                              (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'flex'
+                            }
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        style={{ display: avatarUrl ? 'none' : 'flex' }}
+                        className="h-9 w-9 rounded-full bg-[#0B2545] border border-slate-200 text-white font-bold text-xs items-center justify-center shadow-xs uppercase"
+                      >
+                        {initial}
+                      </div>
+
+                      {/* Action Mini-Badge */}
+                      <div className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-white shadow-xs">
+                        {notif.type === 'user_follow' ? (
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-blue-600">
+                            <UserPlus className="h-2 w-2 text-white" />
+                          </div>
+                        ) : notif.type === 'chat_message' ? (
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-[#EA580C]">
+                            <MessageSquare className="h-2 w-2 text-white" />
+                          </div>
+                        ) : notif.type === 'post_like' ? (
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-[#0A66C2]">
+                            <ThumbsUp className="h-2 w-2 text-white" />
+                          </div>
+                        ) : notif.type === 'application_received' ? (
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-emerald-600">
+                            <FileText className="h-2 w-2 text-white" />
+                          </div>
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-700">
+                            <Briefcase className="h-2 w-2 text-white" />
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Content */}
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs text-slate-800 leading-snug">
-                        {companyName ? (
-                          <>
-                            <span className="font-semibold text-slate-900">
-                              {translateCompanySync(companyName, language) || companyName}
-                            </span>{' '}
-                            {language === 'ta'
-                              ? 'புதிய பணியிடத்தை அறிவித்துள்ளது: '
-                              : language === 'hi'
-                              ? 'ने नई नौकरी पोस्ट की: '
-                              : 'posted a new role: '}
-                            <span className="font-medium text-slate-900">
-                              {translateJobTitleSync(jobTitle, language) || jobTitle}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="font-medium text-slate-900">
-                            {translateJobTitleSync(notif.title.replace(/^New Job:\s*/i, ''), language) || notif.title.replace(/^New Job:\s*/i, '')}
-                          </span>
-                        )}
-                      </p>
+                      {notif.type === 'user_follow' ? (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                        </div>
+                      ) : notif.type === 'chat_message' ? (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
+                          <p className="text-xs text-slate-600 truncate mt-0.5">{notif.message}</p>
+                        </div>
+                      ) : notif.type === 'post_like' ? (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                        </div>
+                      ) : notif.type === 'application_received' ? (
+                        <div>
+                          <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-800 leading-snug">
+                            {companyName ? (
+                              <>
+                                <span className="font-semibold text-slate-900">
+                                  {translateCompanySync(companyName, language) || companyName}
+                                </span>{' '}
+                                {language === 'ta'
+                                  ? 'புதிய பணியிடத்தை அறிவித்துள்ளது: '
+                                  : language === 'hi'
+                                  ? 'ने नई नौकरी पोस्ट की: '
+                                  : 'posted a new role: '}
+                                <span className="font-medium text-slate-900">
+                                  {translateJobTitleSync(jobTitle, language) || jobTitle}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="font-medium text-slate-900">
+                                {translateJobTitleSync(notif.title.replace(/^New Job:\s*/i, ''), language) || notif.title.replace(/^New Job:\s*/i, '')}
+                              </span>
+                            )}
+                          </p>
 
-                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
-                        {location && (
-                          <>
-                            <span className="truncate max-w-[130px]">
-                              {translateLocationSync(location, language)}
-                            </span>
-                            <span>•</span>
-                          </>
-                        )}
-                        {workplaceType && (
-                          <>
-                            <span>{formatWorkplaceType(workplaceType, language)}</span>
-                            <span>•</span>
-                          </>
-                        )}
-                        <span>{formatRelativeTime(notif.created_at)}</span>
-                      </div>
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+                            {location && (
+                              <>
+                                <span className="truncate max-w-[130px]">
+                                  {translateLocationSync(location, language)}
+                                </span>
+                                <span>•</span>
+                              </>
+                            )}
+                            {workplaceType && (
+                              <>
+                                <span>{formatWorkplaceType(workplaceType, language)}</span>
+                                <span>•</span>
+                              </>
+                            )}
+                            <span>{formatRelativeTime(notif.created_at)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Subtle Unread Dot */}

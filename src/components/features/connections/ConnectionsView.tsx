@@ -8,7 +8,6 @@ import {
   MessageSquare,
   RefreshCw,
   X,
-  CheckCircle2,
   Building2,
 } from 'lucide-react'
 import type { User, Language } from '../../../types'
@@ -39,7 +38,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
   const [hasMore, setHasMore] = useState(false)
   const [actionInProgress, setActionInProgress] = useState<Record<string, boolean>>({})
   const [dismissedUserIds, setDismissedUserIds] = useState<string[]>([])
-  const [isFollowingPromoted, setIsFollowingPromoted] = useState(false)
 
   // Multilingual translations
   const t = {
@@ -71,18 +69,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
     message: lang === 'ta' ? 'செய்தி' : lang === 'hi' ? 'संदेश' : 'Message',
     loadMore: lang === 'ta' ? 'மேலும் ஏற்றுக' : lang === 'hi' ? 'और देखें' : 'Load More',
     noUsers: lang === 'ta' ? 'பயனர்கள் எவரும் காணப்படவில்லை' : lang === 'hi' ? 'कोई उपयोगकर्ता नहीं मिला' : 'No users found in this section.',
-    subtitle:
-      lang === 'ta'
-        ? 'தமிழ்நாடு மற்றும் எம்எஸ்எம்இ தொழில்முறை நெட்வொர்க்'
-        : lang === 'hi'
-        ? 'तमिलनाडु एवं एमएसएमई पेशेवर नेटवर्क'
-        : 'People in the Tamil Nadu & MSME Professional Network',
-    promotedDesc:
-      lang === 'ta'
-        ? 'வேலைவாய்ப்பு மற்றும் திறன் பற்றிய அறிவிப்புகளை உடனுக்குடன் பெற பின்தொடரவும்!'
-        : lang === 'hi'
-        ? 'नवीनतम रोजगार एवं कौशल अपडेट प्राप्त करने के लिए फॉलो करें!'
-        : 'follow Namma Ooru Jobs to get the latest hyper-local jobs and industry updates!',
     mutualConnection: lang === 'ta' ? 'பொதுவான தொடர்பு' : lang === 'hi' ? 'म्यूचुअल कनेक्शन' : 'mutual connection',
     openToWork: 'OPEN TO WORK',
   }
@@ -187,7 +173,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
   }, [users, dismissedUserIds])
 
   const followingCount = users.filter((u) => u.is_following).length
-  const totalConnections = (currentUser?.connections_count || 0) + followingCount
 
   // Subtle gradient headers for each card
   const bannerGradients = [
@@ -212,7 +197,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
           </div>
 
           {/* Quick tab switcher inside network overview */}
-          <div className="p-2 space-y-0.5 border-b border-gray-100 text-xs">
+          <div className="p-2 space-y-0.5 text-xs">
             <button
               onClick={() => setActiveTab('discover')}
               className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-semibold transition cursor-pointer ${
@@ -262,97 +247,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
               </span>
             </button>
           </div>
-
-          {/* Dynamic Network Overview Rows */}
-          <div className="p-3 space-y-2 text-xs">
-            <div className="flex items-center justify-between py-1 px-1 text-slate-600 hover:bg-slate-50 rounded">
-              <span className="font-medium">{t.connections}</span>
-              <span className="font-bold text-[#0B2545]">{totalConnections}</span>
-            </div>
-
-            <div className="flex items-center justify-between py-1 px-1 text-slate-600 hover:bg-slate-50 rounded">
-              <span className="font-medium">{t.following}</span>
-              <span className="font-bold text-[#0B2545]">{followingCount}</span>
-            </div>
-
-            <div className="flex items-center justify-between py-1 px-1 text-slate-600 hover:bg-slate-50 rounded">
-              <span className="font-medium">{t.followers}</span>
-              <span className="font-bold text-[#0B2545]">{currentUser?.followers_count || 0}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Promoted Organization Card (Matching LinkedIn Spotlight) */}
-        <div className="rounded-xl border border-[#E0DFDC] bg-white p-4 shadow-xs text-center space-y-3">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            <span>Promoted</span>
-            <span className="text-slate-400 font-black tracking-widest cursor-pointer">•••</span>
-          </div>
-
-          <div className="flex justify-center">
-            <div className="h-16 w-16 rounded-xl border border-gray-200 bg-white p-2 shadow-2xs flex items-center justify-center">
-              <img
-                src="/logo-icon.png"
-                alt="Namma Ooru Jobs"
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  e.currentTarget.src = '/logo.png'
-                }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-xs font-bold text-[#0F172A] tracking-tight">
-              NAMMA OORU <span className="text-[#F97316]">JOBS</span>
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-              <span className="font-semibold text-slate-700">
-                {currentUser?.full_name ? `${currentUser.full_name.split(' ')[0]}, ` : 'Professional, '}
-              </span>
-              {t.promotedDesc}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsFollowingPromoted(!isFollowingPromoted)}
-            className={`w-full py-1.5 px-4 rounded-full text-xs font-bold transition shadow-2xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-98 ${
-              isFollowingPromoted
-                ? 'border border-gray-300 bg-slate-100 text-slate-700'
-                : 'border border-[#0B2545] text-[#0B2545] hover:bg-[#0B2545]/10'
-            }`}
-          >
-            {isFollowingPromoted ? (
-              <>
-                <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Following</span>
-              </>
-            ) : (
-              <>
-                <UserPlus className="h-3.5 w-3.5 text-[#0B2545]" />
-                <span>{t.follow}</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* 3. Footer Links (Exact LinkedIn Style) */}
-        <div className="px-2 text-center text-[11px] text-slate-400 space-y-2">
-          <div className="flex flex-wrap justify-center gap-x-2.5 gap-y-1">
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">About</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Accessibility</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Help Center</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Privacy & Terms ▾</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Ad Choices</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Advertising</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Business Services ▾</span>
-            <span className="hover:text-[#0B2545] hover:underline cursor-pointer">Get the App</span>
-          </div>
-          <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400 pt-1">
-            <span className="font-bold text-[#0B2545]">NAMMA OORU <span className="text-[#F97316]">JOBS</span></span>
-            <span>Corporation © {new Date().getFullYear()}</span>
-          </div>
         </div>
       </aside>
 
@@ -362,29 +256,14 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
       <section className="lg:col-span-9 space-y-4">
         {/* Header Bar with Search & Location Filter */}
         <div className="rounded-xl border border-[#E0DFDC] bg-white p-4 shadow-xs space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-[#0F172A]">
-                {activeTab === 'discover'
-                  ? t.peopleYouMayKnow
-                  : activeTab === 'following'
-                  ? t.following
-                  : t.followers}
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">{t.subtitle}</p>
-            </div>
-
-            <div className="flex items-center gap-2 self-start sm:self-center">
-              <button
-                type="button"
-                onClick={() => loadData(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition cursor-pointer"
-                title="Refresh network"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-[#0B2545]' : 'text-slate-400'}`} />
-                <span>Sync</span>
-              </button>
-            </div>
+          <div className="flex items-center justify-between">
+            <h1 className="text-base sm:text-lg font-bold text-[#0F172A]">
+              {activeTab === 'discover'
+                ? t.peopleYouMayKnow
+                : activeTab === 'following'
+                ? t.following
+                : t.followers}
+            </h1>
           </div>
 
           {/* Search Inputs Row */}
@@ -455,7 +334,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
             <h3 className="text-base font-bold text-[#0F172A]">{t.noUsers}</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
               {activeTab === 'discover'
-                ? 'Try adjusting your search query or location filter to find more verified professionals.'
+                ? 'Try adjusting your search query or location filter to find people.'
                 : 'Follow colleagues and business owners to build your connections list.'}
             </p>
           </div>
@@ -526,40 +405,39 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
 
                     {/* Profile Information */}
                     <div className="pt-2 px-3 pb-2 text-center">
-                      {/* Name & Verified Check */}
+                      {/* Name */}
                       <div className="flex items-center justify-center gap-1">
-                        <h3 className="text-xs sm:text-[14px] font-bold text-[#0F172A] hover:underline truncate max-w-[140px]">
+                        <h3 className="text-xs sm:text-[14px] font-bold text-[#0F172A] hover:underline truncate max-w-[160px]">
                           {targetUser.full_name}
                         </h3>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-[#0B2545] fill-blue-50 shrink-0" />
                       </div>
 
-                      {/* Headline / Designation (2 lines min-height) */}
-                      <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-0.5 min-h-[32px] leading-snug">
-                        {targetUser.headline ||
-                          (targetUser.position
-                            ? `${targetUser.position}${targetUser.company ? ` at ${targetUser.company}` : ''}`
-                            : targetUser.role === 'manager'
-                            ? 'Hiring Manager'
-                            : 'Verified Professional')}
-                      </p>
+                      {/* Headline / Designation */}
+                      {(targetUser.headline || targetUser.position) && (
+                        <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-0.5 min-h-[32px] leading-snug">
+                          {targetUser.headline ||
+                            (targetUser.position
+                              ? `${targetUser.position}${targetUser.company ? ` at ${targetUser.company}` : ''}`
+                              : '')}
+                        </p>
+                      )}
 
                       {/* Dynamic user location or company from database */}
-                      <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 truncate min-h-[20px]">
-                        {targetUser.location ? (
-                          <>
-                            <MapPin className="h-3 w-3 text-[#F97316] shrink-0" />
-                            <span className="truncate">{targetUser.location}</span>
-                          </>
-                        ) : targetUser.company ? (
-                          <>
-                            <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{targetUser.company}</span>
-                          </>
-                        ) : (
-                          <span className="truncate text-slate-400">{targetUser.role === 'manager' ? 'Recruiter' : 'Member'}</span>
-                        )}
-                      </div>
+                      {(targetUser.location || targetUser.company) ? (
+                        <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 truncate min-h-[20px]">
+                          {targetUser.location ? (
+                            <>
+                              <MapPin className="h-3 w-3 text-[#F97316] shrink-0" />
+                              <span className="truncate">{targetUser.location}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{targetUser.company}</span>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 

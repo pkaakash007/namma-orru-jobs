@@ -3,10 +3,10 @@ import type { UserRole } from '../types'
 export const API_BASE = 'https://namma-ooru-jobs-api.apkavin483.workers.dev'
 
 export const GOOGLE_WEB_CLIENT_ID =
-  '1081442493959-s9906ironh3oq1vcso7hbbje8qi6uj65.apps.googleusercontent.com'
+  '981989878451-nltb7s56th0aor7nrold8ooj9u3lnk10.apps.googleusercontent.com'
 
 export const GOOGLE_ANDROID_CLIENT_ID =
-  '1081442493959-foa9uho91jn2avckegn9fcf7q3cvai4g.apps.googleusercontent.com'
+  '981989878451-2j3pp40gsk8p5on5opovma836st7j6k5.apps.googleusercontent.com'
 
 export const ROLE_CONFIG: Record<
   UserRole,
