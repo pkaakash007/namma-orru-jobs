@@ -440,8 +440,8 @@ function MainContent() {
 
     loadJobs()
     loadPosts()
-    initPushNotifications((title, body) => {
-      showToast(`${title}: ${body}`, 'info')
+    initPushNotifications(() => {
+      // Push notifications are delivered silently — no in-app popup
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
