@@ -381,7 +381,9 @@ export async function ensureProductionSchema(db: D1Database) {
       candidate_email TEXT NOT NULL,
       candidate_phone TEXT DEFAULT '',
       resume_url TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      status TEXT DEFAULT 'applied',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(job_id, applicant_user_id)
     )`,
 
     `CREATE TABLE IF NOT EXISTS user_follows (
@@ -492,6 +494,7 @@ export async function ensureProductionSchema(db: D1Database) {
     'ALTER TABLE users ADD COLUMN pending_profile TEXT DEFAULT NULL',
     'ALTER TABLE job_applications ADD COLUMN applicant_user_id TEXT',
     'ALTER TABLE job_applications ADD COLUMN candidate_phone TEXT DEFAULT ""',
+    'ALTER TABLE job_applications ADD COLUMN status TEXT DEFAULT "applied"',
     'ALTER TABLE chat_messages ADD COLUMN read_at DATETIME DEFAULT NULL',
     'ALTER TABLE chat_messages ADD COLUMN moderation_status TEXT DEFAULT "APPROVED"',
   ]
@@ -511,7 +514,8 @@ export async function ensureProductionSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id)',
     'CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)',
     'CREATE INDEX IF NOT EXISTS idx_job_apps_job ON job_applications(job_id)',
-    'CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(applicant_user_id)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_job_apps_unique_user ON job_applications(job_id, applicant_user_id)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_job_apps_unique_email ON job_applications(job_id, candidate_email)',
     'CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)',
     'CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)',
     'CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status)',
@@ -3572,7 +3576,7 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
 
     // Prevent duplicate applications for the same job posting
     const existingApp = await c.env.DB.prepare(
-      'SELECT id FROM job_applications WHERE job_id = ? AND (applicant_user_id = ? OR candidate_email = ?)'
+      'SELECT id, status FROM job_applications WHERE job_id = ? AND (applicant_user_id = ? OR candidate_email = ?)'
     )
       .bind(jobId, user.id, candidate_email)
       .first()
@@ -3580,8 +3584,9 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
     if (existingApp) {
       return c.json(
         {
-          error: 'You have already submitted an application for this job opening.',
+          error: 'You have already applied for this job opening. You cannot apply again.',
           code: 'DUPLICATE_APPLICATION',
+          status: 'applied',
         },
         409
       )
@@ -3589,12 +3594,26 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
 
     const appId = 'app_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 
-    await c.env.DB.prepare(
-      `INSERT INTO job_applications (id, job_id, applicant_user_id, candidate_name, candidate_email, candidate_phone, resume_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(appId, jobId, user.id, candidate_name, candidate_email, candidate_phone, resume_url)
-      .run()
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO job_applications (id, job_id, applicant_user_id, candidate_name, candidate_email, candidate_phone, resume_url, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'applied')`
+      )
+        .bind(appId, jobId, user.id, candidate_name, candidate_email, candidate_phone, resume_url)
+        .run()
+    } catch (insertErr: any) {
+      if (insertErr.message?.includes('UNIQUE constraint failed')) {
+        return c.json(
+          {
+            error: 'You have already applied for this job opening. You cannot apply again.',
+            code: 'DUPLICATE_APPLICATION',
+            status: 'applied',
+          },
+          409
+        )
+      }
+      throw insertErr
+    }
 
     await c.env.DB.prepare('UPDATE jobs SET applicants_count = applicants_count + 1 WHERE id = ?')
       .bind(jobId)

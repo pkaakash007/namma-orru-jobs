@@ -96,9 +96,11 @@ CREATE TABLE IF NOT EXISTS job_applications (
   candidate_email TEXT NOT NULL,
   candidate_phone TEXT DEFAULT '',
   resume_url TEXT NOT NULL,
+  status TEXT DEFAULT 'applied',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
-  FOREIGN KEY (applicant_user_id) REFERENCES users(id) ON DELETE SET NULL
+  FOREIGN KEY (applicant_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE(job_id, applicant_user_id)
 );
 
 -- 9. User Follows Table
@@ -162,8 +164,8 @@ CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id);
 CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_job_apps_job ON job_applications(job_id);
-CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(applicant_user_id);
-CREATE INDEX IF NOT EXISTS idx_job_apps_email ON job_applications(candidate_email);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_job_apps_unique_user ON job_applications(job_id, applicant_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_job_apps_unique_email ON job_applications(job_id, candidate_email);
 
 -- Social & Moderation Indexes
 CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);

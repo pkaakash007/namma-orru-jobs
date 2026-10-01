@@ -7,7 +7,7 @@ import { uploadService, jobsService } from '../../../services/api'
 import { useToast } from '../../../context/ToastContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useLanguage } from '../../../context/LanguageContext'
-import { FileText, UploadCloud, X, Check, Building2, MapPin } from 'lucide-react'
+import { FileText, UploadCloud, X, Check, Building2, MapPin, CheckCircle2 } from 'lucide-react'
 import { parseResumeWithAi } from '../../../services/resumeParser'
 import { useAppDispatch } from '../../../store/hooks'
 import { jobApplied } from '../../../store/jobsSlice'
@@ -55,6 +55,30 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
   const [isUploading, setIsUploading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; phone?: string; resume?: string }>({})
+
+  // Track if current user has already applied for this specific job
+  const [hasApplied, setHasApplied] = useState<boolean>(() => {
+    try {
+      const cached = sessionStorage.getItem('applied_job_ids')
+      if (cached) {
+        const ids: string[] = JSON.parse(cached)
+        return ids.includes(job.id)
+      }
+    } catch {}
+    return false
+  })
+
+  // Listen to application events in real-time
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<{ jobId: string }>
+      if (custom.detail?.jobId === job.id) {
+        setHasApplied(true)
+      }
+    }
+    window.addEventListener('job_applied', handler)
+    return () => window.removeEventListener('job_applied', handler)
+  }, [job.id])
 
   if (user?.role === 'manager' || user?.role === 'admin') {
     return (
@@ -156,6 +180,18 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (hasApplied) {
+      showToast(
+        language === 'ta'
+          ? 'இந்த வேலைக்கு நீங்கள் ஏற்கனவே விண்ணப்பித்துவிட்டீர்கள்.'
+          : language === 'hi'
+          ? 'आप इस नौकरी के लिए पहले ही आवेदन कर चुके हैं।'
+          : 'You have already applied for this job opening.',
+        'error'
+      )
+      return
+    }
+
     const errors: { name?: string; email?: string; phone?: string; resume?: string } = {}
     const trimmedName = candidateName.trim()
     if (!trimmedName || trimmedName.length < 2) {
@@ -209,7 +245,31 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
 
       onSuccess()
     } catch (err: any) {
-      showToast(err.message || 'Failed to submit application', 'error')
+      const isDuplicate =
+        err?.status === 409 ||
+        err?.code === 'DUPLICATE_APPLICATION' ||
+        err?.message?.toLowerCase().includes('already')
+
+      if (isDuplicate) {
+        setHasApplied(true)
+        try {
+          const cached = sessionStorage.getItem('applied_job_ids')
+          const ids: string[] = cached ? JSON.parse(cached) : []
+          if (!ids.includes(job.id)) ids.push(job.id)
+          sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+        } catch {}
+        window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId: job.id } }))
+        showToast(
+          language === 'ta'
+            ? 'இந்த வேலைக்கு நீங்கள் ஏற்கனவே விண்ணப்பித்துவிட்டீர்கள்.'
+            : language === 'hi'
+            ? 'आप इस नौकरी के लिए पहले ही आवेदन कर चुके हैं।'
+            : 'You have already applied for this job opening.',
+          'error'
+        )
+      } else {
+        showToast(err.message || 'Failed to submit application', 'error')
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -243,6 +303,22 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
             </span>
           </div>
         </div>
+
+        {hasApplied && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/90 p-3.5 text-emerald-800">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-emerald-900 text-sm">{t('jobs_applied')}</p>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                {language === 'ta'
+                  ? 'இந்த வேலைக்கு உங்கள் விண்ணப்பம் ஏற்கெனவே சமர்ப்பிக்கப்பட்டது. நீங்கள் மீண்டும் விண்ணப்பிக்க முடியாது.'
+                  : language === 'hi'
+                  ? 'इस नौकरी के लिए आपका आवेदन पहले ही जमा हो चुका है। आप पुनः आवेदन नहीं कर सकते।'
+                  : 'You have already applied for this job. You cannot submit again.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <div>
@@ -359,18 +435,39 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
 
           <div className="mt-6 flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-              {language === 'ta' ? 'ரத்து செய்' : language === 'hi' ? 'रद्द करें' : 'Cancel'}
+              {hasApplied
+                ? language === 'ta'
+                  ? 'மூடு'
+                  : language === 'hi'
+                  ? 'बंद करें'
+                  : 'Close'
+                : language === 'ta'
+                ? 'ரத்து செய்'
+                : language === 'hi'
+                ? 'रद्द करें'
+                : 'Cancel'}
             </Button>
-            <Button
-              type="submit"
-              variant="orange"
-              size="md"
-              isLoading={isSubmitting}
-              disabled={!resumeUrl || isUploading}
-              className="font-bold shadow-none cursor-pointer"
-            >
-              {isSubmitting ? t('apply_submitting') : t('apply_submit')}
-            </Button>
+            {hasApplied ? (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed select-none"
+              >
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>{t('jobs_applied')}</span>
+              </button>
+            ) : (
+              <Button
+                type="submit"
+                variant="orange"
+                size="md"
+                isLoading={isSubmitting}
+                disabled={!resumeUrl || isUploading}
+                className="font-bold shadow-none cursor-pointer"
+              >
+                {isSubmitting ? t('apply_submitting') : t('apply_submit')}
+              </Button>
+            )}
           </div>
         </form>
       </Card>
