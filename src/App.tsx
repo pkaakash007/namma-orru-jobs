@@ -687,7 +687,7 @@ function MainContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F2EE] text-[#0F172A]">
+    <div className={`min-h-screen ${activeTab === 'messages' ? 'bg-white md:bg-[#F4F2EE]' : 'bg-[#F4F2EE]'} text-[#0F172A]`}>
       <Navbar
         activeTab={activeTab}
         onSelectTab={(tab) => {
@@ -718,10 +718,10 @@ function MainContent() {
         }}
       />
 
-      <main className="mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8">
+      <main className={`mx-auto ${activeTab === 'messages' ? 'max-w-6xl px-0 md:px-6 py-0 md:py-4 pb-14 md:pb-8' : 'max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8'}`}>
         {/* Unverified HR Recruiter Alert Notice on Platform */}
         {isHrUnverified && activeTab !== 'post-job' && activeTab !== 'candidates' && !viewingPublicProfileId && (
-          <div className="mb-5">
+          <div className="mb-5 px-3 md:px-0">
             <HrVerificationPendingView compact onBackToFeed={() => setActiveTab('jobs')} />
           </div>
         )}
@@ -752,7 +752,7 @@ function MainContent() {
             />
           </div>
         ) : activeTab === 'messages' ? (
-          <div className="max-w-6xl mx-auto w-full animate-in fade-in duration-150">
+          <div className="w-full animate-in fade-in duration-150">
             <MessagesView
               currentUser={user}
               lang={language}
@@ -760,6 +760,13 @@ function MainContent() {
               onClearInitialRecipient={() => setChatRecipientId(null)}
               onOpenProfile={(uid) => setViewingPublicProfileId(uid)}
               onUnreadMessagesCountChange={(count) => setUnreadMessagesCount(count)}
+              onExploreAction={() => {
+                if (user?.role === 'manager' || user?.role === 'admin') {
+                  setActiveTab('candidates')
+                } else {
+                  setActiveTab('jobs')
+                }
+              }}
             />
           </div>
         ) : activeTab === 'notifications' && user ? (

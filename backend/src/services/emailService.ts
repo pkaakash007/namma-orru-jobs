@@ -472,3 +472,296 @@ export async function sendHrInterestEmail(payload: HrInterestNotificationPayload
     html,
   }, env)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. SCENARIO: HR RECRUITER ACCOUNT APPROVED / REJECTED BY ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface HrAccountApprovalPayload {
+  recipientEmail: string
+  recipientName: string
+  company?: string
+}
+
+export interface HrAccountRejectionPayload {
+  recipientEmail: string
+  recipientName: string
+  reason: string
+}
+
+export function buildHrApprovedEmailTemplate(payload: HrAccountApprovalPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  const jobsUrl = `${appUrl}/jobs`
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Recruiter Account Has Been Approved</title>
+</head>
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">Namma Ooru Jobs</div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">Hi ${escapeHtml(payload.recipientName)},</p>
+
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                Great news! Your HR recruiter account${payload.company ? ` at <strong>${escapeHtml(payload.company)}</strong>` : ''} has been <strong style="color:#16A34A;">verified and approved</strong> by the Namma Ooru Jobs admin team.
+              </p>
+
+              <div style="border:1px solid #D1FAE5;border-radius:8px;padding:16px 18px;margin:20px 0;background-color:#F0FDF4;">
+                <div style="font-size:14px;font-weight:600;color:#15803D;margin-bottom:6px;">You now have full recruiter access to:</div>
+                <ul style="margin:0;padding-left:18px;font-size:13px;color:#166534;line-height:1.8;">
+                  <li>Post and manage job listings</li>
+                  <li>Search and shortlist candidates</li>
+                  <li>Message job seekers directly</li>
+                </ul>
+              </div>
+
+              <div style="margin:24px 0;">
+                <a href="${jobsUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:6px;">
+                  Get Started
+                </a>
+              </div>
+
+              <p style="font-size:13px;color:#64748B;margin:0;">
+                If you have any questions, feel free to contact our support team.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding-top:20px;border-top:1px solid #E2E8F0;font-size:12px;color:#94A3B8;line-height:1.5;">
+              Namma Ooru Jobs &bull; Professional network for Tamil Nadu
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+export function buildHrRejectedEmailTemplate(payload: HrAccountRejectionPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Update on Your Recruiter Account Verification</title>
+</head>
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">Namma Ooru Jobs</div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">Hi ${escapeHtml(payload.recipientName)},</p>
+
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                We have reviewed your HR recruiter account verification request. Unfortunately, we were unable to approve your account at this time.
+              </p>
+
+              <div style="border-left:3px solid #DC2626;background-color:#FEF2F2;padding:14px 18px;margin:20px 0;border-radius:0 8px 8px 0;">
+                <div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:4px;">Reason:</div>
+                <p style="margin:0;font-size:14px;color:#7F1D1D;line-height:1.6;">${escapeHtml(payload.reason)}</p>
+              </div>
+
+              <p style="font-size:13px;color:#475569;line-height:1.6;margin:0 0 12px 0;">
+                If you believe this is an error or would like to provide additional information, please contact our support team and we will be happy to assist you.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding-top:20px;border-top:1px solid #E2E8F0;font-size:12px;color:#94A3B8;line-height:1.5;">
+              Namma Ooru Jobs &bull; Professional network for Tamil Nadu
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+export async function sendHrApprovedEmail(payload: HrAccountApprovalPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const html = buildHrApprovedEmailTemplate(payload, config.appUrl)
+  await sendEmail({
+    to: payload.recipientEmail,
+    subject: 'Your Recruiter Account Has Been Approved — Namma Ooru Jobs',
+    html,
+  }, env)
+}
+
+export async function sendHrRejectedEmail(payload: HrAccountRejectionPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const html = buildHrRejectedEmailTemplate(payload, config.appUrl)
+  await sendEmail({
+    to: payload.recipientEmail,
+    subject: 'Update on Your Recruiter Account Verification — Namma Ooru Jobs',
+    html,
+  }, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. SCENARIO: HR PROFILE CHANGES APPROVED / REJECTED BY ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProfileChangeApprovalPayload {
+  recipientEmail: string
+  recipientName: string
+}
+
+export interface ProfileChangeRejectionPayload {
+  recipientEmail: string
+  recipientName: string
+  reason: string
+}
+
+export function buildProfileApprovedEmailTemplate(payload: ProfileChangeApprovalPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  const profileUrl = `${appUrl}/profile`
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Profile Changes Have Been Approved</title>
+</head>
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
+
+          <tr>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">Namma Ooru Jobs</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">Hi ${escapeHtml(payload.recipientName)},</p>
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                Your recent profile update request has been <strong style="color:#16A34A;">reviewed and approved</strong> by the admin team. Your updated information is now live on your profile.
+              </p>
+              <div style="margin:24px 0;">
+                <a href="${profileUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:6px;">
+                  View Your Profile
+                </a>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding-top:20px;border-top:1px solid #E2E8F0;font-size:12px;color:#94A3B8;line-height:1.5;">
+              Namma Ooru Jobs &bull; Professional network for Tamil Nadu
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+export function buildProfileRejectedEmailTemplate(payload: ProfileChangeRejectionPayload): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Profile Update Was Not Approved</title>
+</head>
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
+
+          <tr>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">Namma Ooru Jobs</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">Hi ${escapeHtml(payload.recipientName)},</p>
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                Your recent profile update request was reviewed by our admin team. Unfortunately, your changes were <strong>not approved</strong> at this time.
+              </p>
+              <div style="border-left:3px solid #DC2626;background-color:#FEF2F2;padding:14px 18px;margin:20px 0;border-radius:0 8px 8px 0;">
+                <div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:4px;">Reason:</div>
+                <p style="margin:0;font-size:14px;color:#7F1D1D;line-height:1.6;">${escapeHtml(payload.reason)}</p>
+              </div>
+              <p style="font-size:13px;color:#475569;line-height:1.6;margin:0;">
+                Please update your profile with accurate, professional information and resubmit for review.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding-top:20px;border-top:1px solid #E2E8F0;font-size:12px;color:#94A3B8;line-height:1.5;">
+              Namma Ooru Jobs &bull; Professional network for Tamil Nadu
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+export async function sendProfileApprovedEmail(payload: ProfileChangeApprovalPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const html = buildProfileApprovedEmailTemplate(payload, config.appUrl)
+  await sendEmail({
+    to: payload.recipientEmail,
+    subject: 'Your Profile Changes Have Been Approved — Namma Ooru Jobs',
+    html,
+  }, env)
+}
+
+export async function sendProfileRejectedEmail(payload: ProfileChangeRejectionPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const html = buildProfileRejectedEmailTemplate(payload)
+  await sendEmail({
+    to: payload.recipientEmail,
+    subject: 'Your Profile Update Was Not Approved — Namma Ooru Jobs',
+    html,
+  }, env)
+}

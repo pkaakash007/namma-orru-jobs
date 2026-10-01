@@ -24,6 +24,10 @@ import {
   sendEmail,
   sendNewFollowerEmail,
   sendHrInterestEmail,
+  sendHrApprovedEmail,
+  sendHrRejectedEmail,
+  sendProfileApprovedEmail,
+  sendProfileRejectedEmail,
 } from './services/emailService'
 
 export type UserRole = 'admin' | 'manager' | 'employee'
@@ -2048,7 +2052,7 @@ app.post('/api/admin/hr-profile-requests/:id/approve', requireAuth, requireRole(
     invalidateEdgeCache('candidates:')
     invalidateEdgeCache(`user:status:${targetUserId}`)
 
-    // Notify the HR user
+    // Notify the HR user in-app
     try {
       const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       await c.env.DB.prepare(
@@ -2056,6 +2060,52 @@ app.post('/api/admin/hr-profile-requests/:id/approve', requireAuth, requireRole(
          VALUES (?, ?, 'system', 'Profile Update Approved', 'Your profile changes have been reviewed and approved by the admin team. Your updated information is now live.', '{}', 0, CURRENT_TIMESTAMP)`
       ).bind(notifId, targetUserId).run()
     } catch {}
+
+    // FCM push notification
+    try {
+      const { results: deviceTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      ).bind(targetUserId).all()
+
+      const tokens = (deviceTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: 'Profile Update Approved',
+              body: 'Your profile changes have been approved and are now live.',
+              data: { type: 'profile_update_approved' },
+            })
+          )
+        )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send profile approval push notification:', pushErr)
+    }
+
+    // Email notification
+    if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
+      try {
+        const emailPromise = sendProfileApprovedEmail({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.full_name,
+        }, c.env)
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(emailPromise)
+          }
+        } catch {
+          emailPromise.catch((e) => console.warn('Profile approval email warning:', e))
+        }
+      } catch (emailErr) {
+        console.warn('Failed to initiate profile approval email:', emailErr)
+      }
+    }
 
     return c.json({ success: true, message: 'Profile changes approved and merged successfully.' })
   } catch (err: any) {
@@ -2072,8 +2122,8 @@ app.post('/api/admin/hr-profile-requests/:id/reject', requireAuth, requireRole([
     const reason = (body.reason || 'Profile update rejected by admin').trim().slice(0, 500)
 
     const targetUser = await c.env.DB.prepare(
-      'SELECT id, role, full_name, pending_profile FROM users WHERE id = ?'
-    ).bind(targetUserId).first() as { id: string; role: string; full_name: string; pending_profile: string | null } | null
+      'SELECT id, role, email, full_name, pending_profile FROM users WHERE id = ?'
+    ).bind(targetUserId).first() as { id: string; role: string; email: string; full_name: string; pending_profile: string | null } | null
 
     if (!targetUser) return c.json({ error: 'User not found' }, 404)
     if (targetUser.role !== 'manager') return c.json({ error: 'Target user is not an HR recruiter' }, 400)
@@ -2084,6 +2134,7 @@ app.post('/api/admin/hr-profile-requests/:id/reject', requireAuth, requireRole([
 
     invalidateEdgeCache(`user:status:${targetUserId}`)
 
+    // In-app notification
     try {
       const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       await c.env.DB.prepare(
@@ -2091,6 +2142,53 @@ app.post('/api/admin/hr-profile-requests/:id/reject', requireAuth, requireRole([
          VALUES (?, ?, 'system', 'Profile Update Not Approved', ?, '{}', 0, CURRENT_TIMESTAMP)`
       ).bind(notifId, targetUserId, `Your profile update request was not approved. Reason: ${reason}`).run()
     } catch {}
+
+    // FCM push notification
+    try {
+      const { results: deviceTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      ).bind(targetUserId).all()
+
+      const tokens = (deviceTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: 'Profile Update Not Approved',
+              body: `Your profile update request was not approved. Reason: ${reason.slice(0, 100)}`,
+              data: { type: 'profile_update_rejected' },
+            })
+          )
+        )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send profile rejection push notification:', pushErr)
+    }
+
+    // Email notification
+    if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
+      try {
+        const emailPromise = sendProfileRejectedEmail({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.full_name,
+          reason,
+        }, c.env)
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(emailPromise)
+          }
+        } catch {
+          emailPromise.catch((e) => console.warn('Profile rejection email warning:', e))
+        }
+      } catch (emailErr) {
+        console.warn('Failed to initiate profile rejection email:', emailErr)
+      }
+    }
 
     return c.json({ success: true, message: 'Profile update rejected.' })
   } catch (err: any) {
@@ -2149,6 +2247,53 @@ app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['a
         .bind(notifId, targetUserId)
         .run()
     } catch {}
+
+    // FCM push notification to recruiter's device(s)
+    try {
+      const { results: deviceTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      ).bind(targetUserId).all()
+
+      const tokens = (deviceTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: 'Account Approved',
+              body: 'Your HR recruiter account has been verified. You can now post jobs and search talent.',
+              data: { type: 'hr_account_approved' },
+            })
+          )
+        )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send HR approval push notification:', pushErr)
+    }
+
+    // Email notification to recruiter
+    if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
+      try {
+        const emailPromise = sendHrApprovedEmail({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.full_name,
+          company: (targetUser as any).company || undefined,
+        }, c.env)
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(emailPromise)
+          }
+        } catch {
+          emailPromise.catch((e) => console.warn('HR approval email warning:', e))
+        }
+      } catch (emailErr) {
+        console.warn('Failed to initiate HR approval email:', emailErr)
+      }
+    }
 
     const updatedUser = await c.env.DB.prepare(
       'SELECT id, email, full_name, role, status, rejection_reason, verified_at, verified_by, assigned_by FROM users WHERE id = ?'
@@ -2216,6 +2361,53 @@ app.post('/api/admin/hr-verifications/:id/reject', requireAuth, requireRole(['ad
         .bind(notifId, targetUserId, `Your HR recruiter account verification was not approved. Reason: ${reason}`)
         .run()
     } catch {}
+
+    // FCM push notification to recruiter's device(s)
+    try {
+      const { results: deviceTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      ).bind(targetUserId).all()
+
+      const tokens = (deviceTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: 'Verification Update',
+              body: `Your HR account verification was not approved. Reason: ${reason.slice(0, 100)}`,
+              data: { type: 'hr_account_rejected' },
+            })
+          )
+        )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send HR rejection push notification:', pushErr)
+    }
+
+    // Email notification to recruiter
+    if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
+      try {
+        const emailPromise = sendHrRejectedEmail({
+          recipientEmail: targetUser.email,
+          recipientName: targetUser.full_name,
+          reason,
+        }, c.env)
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(emailPromise)
+          }
+        } catch {
+          emailPromise.catch((e) => console.warn('HR rejection email warning:', e))
+        }
+      } catch (emailErr) {
+        console.warn('Failed to initiate HR rejection email:', emailErr)
+      }
+    }
 
     const updatedUser = await c.env.DB.prepare(
       'SELECT id, email, full_name, role, status, rejection_reason, verified_at, verified_by, assigned_by FROM users WHERE id = ?'

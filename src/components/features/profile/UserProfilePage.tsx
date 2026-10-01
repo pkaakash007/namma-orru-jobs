@@ -1527,8 +1527,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
       {/* Requirement 17: Interactive User Review Modal for Detected Resume Information */}
       {reviewModalOpen && reviewData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-left my-8 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-[#F2F2F7]/95 backdrop-blur-2xl rounded-[22px] border border-white/60 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-left my-8 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">

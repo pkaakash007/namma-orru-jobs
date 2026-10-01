@@ -58,8 +58,8 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
 
   if (user?.role === 'manager' || user?.role === 'admin') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-        <Card className="w-full max-w-md p-6 text-center space-y-4 bg-white border-[#E0DFDC] shadow-xl">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-md">
+        <Card className="w-full max-w-md p-6 text-center space-y-4 rounded-[22px] bg-[#F2F2F7]/95 backdrop-blur-2xl border-white/60 shadow-2xl">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-[#EA580C]">
             <Building2 className="h-6 w-6" />
           </div>
@@ -206,8 +206,8 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-      <Card className="relative w-full max-w-lg border-[#E0DFDC] bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-md">
+      <Card className="relative w-full max-w-lg rounded-[22px] border-white/60 bg-[#F2F2F7]/95 backdrop-blur-2xl p-6 shadow-2xl">
         <button
           onClick={onClose}
           className="absolute right-4 top-4 rounded-full p-1.5 text-slate-500 hover:bg-gray-100 hover:text-slate-800 transition cursor-pointer"

@@ -81,9 +81,9 @@ export const HrProfileSetupModal: React.FC<HrProfileSetupModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-md">
       <div
-        className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
+        className="relative w-full max-w-lg rounded-[22px] bg-[#F2F2F7]/95 backdrop-blur-2xl shadow-2xl border border-white/60 overflow-hidden"
         style={{ maxHeight: '90vh' }}
       >
         {/* iOS-style header */}

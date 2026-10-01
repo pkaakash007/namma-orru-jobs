@@ -2,20 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react'
 import type { HrVerificationAccount, HrVerificationsResponse } from '../../../types'
 import { adminService, hrService } from '../../../services/api'
 import { useToast } from '../../../context/ToastContext'
-import { Badge } from '../../ui/Badge'
 import { Card } from '../../ui/Card'
 import {
-  ShieldAlert,
-  Clock,
-  Building2,
   Briefcase,
-  Phone,
-  Check,
-  X,
   Eye,
   RefreshCw,
   UserCheck,
   Search,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 
 interface HrVerificationTableProps {
@@ -37,7 +32,6 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
   const [inspectUser, setInspectUser] = useState<HrVerificationAccount | null>(null)
   const [approvingUser, setApprovingUser] = useState<HrVerificationAccount | null>(null)
   const [rejectingUser, setRejectingUser] = useState<HrVerificationAccount | null>(null)
-  const [approvalNotes, setApprovalNotes] = useState('')
   const [rejectionReason, setRejectionReason] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
 
@@ -73,10 +67,9 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
     if (!approvingUser) return
     setIsProcessing(true)
     try {
-      const res = await adminService.approveHrVerification(approvingUser.id, approvalNotes)
+      const res = await adminService.approveHrVerification(approvingUser.id)
       showToast(res.message || `Approved ${approvingUser.full_name}`, 'success')
       setApprovingUser(null)
-      setApprovalNotes('')
       await fetchVerifications(activeFilter)
       if (onRefreshStats) onRefreshStats()
     } catch (err: any) {
@@ -157,59 +150,82 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
   const getStatusBadge = (status: string) => {
     const s = (status || '').toUpperCase()
     if (s === 'ACTIVE' || s === 'APPROVED') {
-      return <Badge variant="success">ACTIVE</Badge>
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Active
+        </span>
+      )
     }
     if (s === 'REJECTED') {
-      return <Badge variant="danger">REJECTED</Badge>
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+          Rejected
+        </span>
+      )
     }
-    return <Badge variant="warning">PENDING VERIFICATION</Badge>
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+        Pending Review
+      </span>
+    )
   }
 
   return (
     <div className="space-y-4">
       {/* Recruiter Accounts Table */}
       <Card className="overflow-hidden border-slate-200/90 shadow-xs">
-        <div className="border-b border-gray-100 p-4 sm:p-5 bg-white space-y-4">
+        <div className="border-b border-slate-100 p-4 sm:p-5 bg-white space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-bold text-[#0B2545]">HR Recruiter Verifications</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Audit employer credentials before granting job publishing privileges.
-              </p>
+            <h3 className="text-base font-bold text-slate-900">Recruiter Verifications</h3>
+
+            <div className="flex items-center gap-2">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search recruiters..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-8.5 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-[#0B2545] focus:outline-none transition-colors"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => fetchVerifications(activeFilter)}
+                disabled={isLoading}
+                title="Refresh list"
+                className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => fetchVerifications(activeFilter)}
-              disabled={isLoading}
-              className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 disabled:opacity-50 transition cursor-pointer shadow-2xs"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Queue</span>
-            </button>
           </div>
 
-          {/* Filter Pills & Search */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
-            <div className="flex flex-wrap items-center gap-1.5">
+          {/* Clean Segmented Filter Bar */}
+          <div className="pt-1">
+            <div className="inline-flex p-1 rounded-xl bg-slate-100 text-xs font-medium">
               <button
                 type="button"
                 onClick={() => {
                   setActiveFilter('pending')
                   fetchVerifications('pending')
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   activeFilter === 'pending'
-                    ? 'bg-amber-500 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Clock className="h-3.5 w-3.5" />
-                <span>Pending Review</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
-                  {counts.pending}
-                </span>
+                <span>Pending</span>
+                {counts.pending > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                    {counts.pending}
+                  </span>
+                )}
               </button>
 
               <button
@@ -218,17 +234,14 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   setActiveFilter('active')
                   fetchVerifications('active')
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   activeFilter === 'active'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Check className="h-3.5 w-3.5" />
-                <span>Approved / Active</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeFilter === 'active' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
+                <span>Active</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-600">
                   {counts.active}
                 </span>
               </button>
@@ -239,17 +252,14 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   setActiveFilter('rejected')
                   fetchVerifications('rejected')
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   activeFilter === 'rejected'
-                    ? 'bg-rose-600 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <X className="h-3.5 w-3.5" />
                 <span>Rejected</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-600">
                   {counts.rejected}
                 </span>
               </button>
@@ -260,38 +270,24 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   setActiveFilter('all')
                   fetchVerifications('all')
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   activeFilter === 'all'
-                    ? 'bg-[#0B2545] text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>All Recruiters</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
+                <span>All</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-600">
                   {counts.total}
                 </span>
               </button>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative w-full lg:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search recruiter, company, email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-8.5 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-[#0B2545] focus:outline-none transition-colors"
-              />
             </div>
           </div>
         </div>
 
         {isLoading ? (
           <div className="p-12 text-center">
-            <RefreshCw className="mx-auto h-7 w-7 text-orange-500 animate-spin" />
+            <RefreshCw className="mx-auto h-7 w-7 text-slate-400 animate-spin" />
             <p className="mt-2 text-xs font-semibold text-slate-500">Loading recruiter verifications...</p>
           </div>
         ) : verifications.length === 0 ? (
@@ -310,13 +306,13 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4">Recruiter</th>
-                  <th className="py-3 px-4">Company & Position</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Registered</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3 px-4 font-semibold">Recruiter</th>
+                  <th className="py-3 px-4 font-semibold">Company & Role</th>
+                  <th className="py-3 px-4 font-semibold">Contact</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold">Registered</th>
+                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -326,15 +322,15 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   const isUserRejected = s === 'REJECTED'
 
                   return (
-                    <tr key={recruiter.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr key={recruiter.id} className="hover:bg-slate-50/70 transition-colors">
                       {/* Recruiter Name & Email */}
-                      <td className="py-3 px-4">
+                      <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-700 font-bold text-xs uppercase">
-                            {recruiter.full_name ? recruiter.full_name.charAt(0) : 'H'}
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 font-semibold text-xs uppercase">
+                            {recruiter.full_name ? recruiter.full_name.charAt(0) : 'R'}
                           </div>
                           <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">
+                            <p className="font-semibold text-slate-900 truncate">
                               {recruiter.full_name || 'Unnamed Recruiter'}
                             </p>
                             <p className="text-[11px] text-slate-500 truncate">{recruiter.email}</p>
@@ -342,53 +338,47 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                         </div>
                       </td>
 
-                      {/* Company & Position */}
-                      <td className="py-3 px-4">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 font-semibold text-slate-800">
-                            <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{recruiter.company || 'Not specified'}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                            <Briefcase className="h-3 w-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{recruiter.position || 'Recruiter'}</span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Contact Phone */}
-                      <td className="py-3 px-4 text-slate-600">
-                        {recruiter.phone ? (
-                          <div className="flex items-center gap-1 text-[11px]">
-                            <Phone className="h-3 w-3 text-slate-400" />
-                            <span>{recruiter.phone}</span>
+                      {/* Company & Role */}
+                      <td className="py-3.5 px-4">
+                        {recruiter.company || recruiter.position ? (
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800 truncate">
+                              {recruiter.company || '—'}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {recruiter.position || 'Recruiter'}
+                            </p>
                           </div>
                         ) : (
-                          <span className="text-slate-400 text-[11px]">—</span>
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+
+                      {/* Contact */}
+                      <td className="py-3.5 px-4 text-slate-600">
+                        {recruiter.phone ? (
+                          <span className="text-[11px] text-slate-700 font-medium">{recruiter.phone}</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
                       {/* Status */}
-                      <td className="py-3 px-4">
-                        <div className="space-y-1">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="space-y-0.5">
                           {getStatusBadge(recruiter.status)}
                           {isUserRejected && recruiter.rejection_reason && (
-                            <p className="text-[10px] text-rose-600 truncate max-w-[180px]" title={recruiter.rejection_reason}>
-                              Reason: {recruiter.rejection_reason}
-                            </p>
-                          )}
-                          {recruiter.verified_by && (
-                            <p className="text-[10px] text-slate-400">
-                              By: {recruiter.verified_by}
+                            <p className="text-[10px] text-rose-600 truncate max-w-[160px]" title={recruiter.rejection_reason}>
+                              {recruiter.rejection_reason}
                             </p>
                           )}
                         </div>
                       </td>
 
                       {/* Registration Date */}
-                      <td className="py-3 px-4 text-[11px] text-slate-500 whitespace-nowrap">
+                      <td className="py-3.5 px-4 text-[11px] text-slate-500 whitespace-nowrap">
                         {recruiter.created_at
-                          ? new Date(recruiter.created_at).toLocaleDateString(undefined, {
+                          ? new Date(recruiter.created_at).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',
                               year: 'numeric',
@@ -397,26 +387,15 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setInspectUser(recruiter)}
-                            title="Inspect Details"
-                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-
                           {isPending && (
                             <>
                               <button
                                 type="button"
                                 onClick={() => setApprovingUser(recruiter)}
-                                title="Approve Recruiter"
-                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95 cursor-pointer"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
                               >
-                                <Check className="h-3 w-3" />
                                 Approve
                               </button>
 
@@ -426,10 +405,8 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                                   setRejectingUser(recruiter)
                                   setRejectionReason('')
                                 }}
-                                title="Reject Recruiter"
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 active:scale-95 cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-slate-600 font-medium text-xs transition cursor-pointer"
                               >
-                                <X className="h-3 w-3" />
                                 Reject
                               </button>
                             </>
@@ -439,8 +416,7 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                             <button
                               type="button"
                               onClick={() => setApprovingUser(recruiter)}
-                              title="Reconsider & Approve"
-                              className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium text-xs transition cursor-pointer"
                             >
                               Approve
                             </button>
@@ -453,8 +429,7 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                                 setRejectingUser(recruiter)
                                 setRejectionReason('')
                               }}
-                              title="Revoke Verification"
-                              className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 hover:border-rose-200 hover:text-rose-600 cursor-pointer"
+                              className="px-2 py-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs font-medium transition cursor-pointer"
                             >
                               Revoke
                             </button>
@@ -464,13 +439,20 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                             <button
                               type="button"
                               onClick={() => setProfileEditUser(recruiter)}
-                              title="Review profile edit request"
-                              className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 active:scale-95 cursor-pointer"
+                              className="px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
                             >
-                              <Clock className="h-3 w-3" />
                               Profile Edit
                             </button>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => setInspectUser(recruiter)}
+                            title="View Details"
+                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -482,127 +464,128 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
         )}
       </Card>
 
-      {/* Inspect Recruiter Modal */}
+      {/* Inspect Recruiter Modal (Apple iOS Sheet/Card Theme) */}
+      {/* Inspect Recruiter Modal (Apple iOS Sheet/Card Theme) */}
       {inspectUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-100 text-orange-700">
-                  <Briefcase className="h-4 w-4" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-md select-none animate-in fade-in"
+          onClick={() => setInspectUser(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-[320px] sm:w-[360px] max-w-full rounded-[20px] bg-[#F2F2F7]/92 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.30)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top iOS Symbol Badge */}
+            <div className="pt-5 pb-2 px-5 flex justify-center">
+              <div className="h-10 w-10 rounded-full bg-blue-500/12 text-[#007AFF] flex items-center justify-center shadow-2xs">
+                <Briefcase className="h-5 w-5 stroke-[2.2]" />
+              </div>
+            </div>
+
+            {/* Title & User info */}
+            <h3 className="text-[17px] font-semibold text-slate-900 tracking-tight leading-snug px-5">
+              Recruiter Details
+            </h3>
+            <p className="text-[13px] text-slate-500 mt-0.5 px-5 leading-normal">
+              {inspectUser.full_name} · {inspectUser.email}
+            </p>
+
+            {/* iOS Inset Grouped Section */}
+            <div className="mx-5 my-4 bg-white/75 rounded-xl divide-y divide-slate-200/70 border border-slate-200/60 text-left text-[13px] overflow-hidden">
+              <div className="flex justify-between items-center py-2.5 px-3.5">
+                <span className="text-slate-500">Company</span>
+                <span className="font-medium text-slate-900">{inspectUser.company || 'Not specified'}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-3.5">
+                <span className="text-slate-500">Designation</span>
+                <span className="font-medium text-slate-900">{inspectUser.position || 'Not specified'}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-3.5">
+                <span className="text-slate-500">Phone</span>
+                <span className="font-medium text-slate-900">{inspectUser.phone || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-3.5">
+                <span className="text-slate-500">Status</span>
+                <span>{getStatusBadge(inspectUser.status)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2.5 px-3.5">
+                <span className="text-slate-500">Registered</span>
+                <span className="font-medium text-slate-900">
+                  {inspectUser.created_at ? new Date(inspectUser.created_at).toLocaleDateString() : 'N/A'}
                 </span>
-                <h3 className="font-bold text-slate-900 text-sm">Recruiter Profile Inspection</h3>
               </div>
+            </div>
+
+            {inspectUser.rejection_reason && (
+              <div className="mx-5 mb-3 px-3.5 py-2 rounded-xl bg-rose-50/80 text-rose-800 text-left text-[12px] border border-rose-200/60">
+                <span className="font-semibold block mb-0.5">Rejection Note:</span>
+                {inspectUser.rejection_reason}
+              </div>
+            )}
+
+            {inspectUser.verified_by && (
+              <div className="mx-5 mb-3 px-3.5 py-2 rounded-xl bg-emerald-50/80 text-emerald-800 text-left text-[12px] border border-emerald-200/60">
+                <span className="font-semibold block mb-0.5">Audited By:</span>
+                {inspectUser.verified_by} {inspectUser.verified_at ? `(${new Date(inspectUser.verified_at).toLocaleDateString()})` : ''}
+              </div>
+            )}
+
+            {/* iOS Hairline Action Button */}
+            <div className="border-t border-slate-300/70">
               <button
                 type="button"
                 onClick={() => setInspectUser(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                className="w-full py-3.5 text-[17px] font-semibold text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 transition cursor-pointer select-none text-center"
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50">
-                <div>
-                  <p className="font-bold text-slate-900 text-sm">{inspectUser.full_name}</p>
-                  <p className="text-slate-500">{inspectUser.email}</p>
-                </div>
-                {getStatusBadge(inspectUser.status)}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="rounded-xl border border-slate-100 p-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Company</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">{inspectUser.company || 'Not specified'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-100 p-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Position</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">{inspectUser.position || 'Not specified'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-100 p-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Phone</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">{inspectUser.phone || 'Not provided'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-100 p-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Registered</span>
-                  <p className="font-semibold text-slate-800 mt-0.5">
-                    {inspectUser.created_at ? new Date(inspectUser.created_at).toLocaleString() : 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {inspectUser.rejection_reason && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-rose-900">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Rejection Reason</span>
-                  <p className="mt-0.5 text-xs">{inspectUser.rejection_reason}</p>
-                </div>
-              )}
-
-              {inspectUser.verified_by && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-emerald-950">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Audited By Admin</span>
-                  <p className="mt-0.5 text-xs">
-                    {inspectUser.verified_by} {inspectUser.verified_at ? `on ${new Date(inspectUser.verified_at).toLocaleDateString()}` : ''}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setInspectUser(null)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                Close
+                Done
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Approve Confirmation Modal */}
+      {/* Approve Confirmation Modal (Apple iOS UIAlertController theme) */}
       {approvingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                <Check className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm">Approve HR Recruiter Account</h3>
-                <p className="text-xs text-slate-500">Grants full recruiter & job posting privileges</p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-md select-none animate-in fade-in"
+          onClick={() => {
+            if (!isProcessing) {
+              setApprovingUser(null)
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-[275px] sm:w-[295px] max-w-[90vw] rounded-[20px] bg-[#F2F2F7]/92 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.30)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top iOS Symbol Badge */}
+            <div className="pt-5 pb-2 px-5 flex justify-center">
+              <div className="h-10 w-10 rounded-full bg-emerald-500/12 text-emerald-600 flex items-center justify-center shadow-2xs">
+                <CheckCircle2 className="h-5 w-5 stroke-[2.2]" />
               </div>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Are you sure you want to verify and activate the recruiter account for{' '}
-              <span className="font-bold text-slate-900">{approvingUser.full_name}</span> (
-              {approvingUser.email}) from <span className="font-bold text-slate-900">{approvingUser.company || 'their organization'}</span>?
+            {/* Title & Description */}
+            <h3 className="text-[17px] font-semibold text-slate-900 tracking-tight leading-snug px-5">
+              Approve Recruiter
+            </h3>
+            <p className="text-[13px] text-slate-600 mt-1.5 px-5 pb-5 leading-normal font-normal">
+              Verify and activate recruiter privileges for <strong className="font-semibold text-slate-900">{approvingUser.full_name}</strong> from <strong className="font-semibold text-slate-900">{approvingUser.company || 'their organization'}</strong>?
             </p>
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Verification Notes (Optional)
-              </label>
-              <input
-                type="text"
-                value={approvalNotes}
-                onChange={(e) => setApprovalNotes(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:border-emerald-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            {/* iOS Hairline Action Buttons */}
+            <div className="border-t border-slate-300/70 grid grid-cols-2 text-[17px]">
               <button
                 type="button"
                 onClick={() => {
                   setApprovingUser(null)
-                  setApprovalNotes('')
                 }}
                 disabled={isProcessing}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                className="py-3.5 font-normal text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 border-r border-slate-300/70 transition cursor-pointer select-none disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -610,48 +593,60 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                 type="button"
                 onClick={handleApprove}
                 disabled={isProcessing}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+                className="py-3.5 font-semibold text-emerald-600 hover:bg-emerald-50/50 active:bg-emerald-100/60 transition cursor-pointer select-none disabled:opacity-40"
               >
-                {isProcessing ? 'Activating...' : 'Approve & Activate'}
+                {isProcessing ? 'Activating...' : 'Approve'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Reject Reason Modal */}
+      {/* Reject Reason Modal (Apple iOS UIAlertController theme) */}
       {rejectingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm">Reject HR Recruiter Verification</h3>
-                <p className="text-xs text-slate-500">Provide an audit reason for rejecting this recruiter</p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-md select-none animate-in fade-in"
+          onClick={() => {
+            if (!isProcessing) {
+              setRejectingUser(null)
+              setRejectionReason('')
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-[275px] sm:w-[295px] max-w-[90vw] rounded-[20px] bg-[#F2F2F7]/92 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.30)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top iOS Symbol Badge */}
+            <div className="pt-5 pb-2 px-5 flex justify-center">
+              <div className="h-10 w-10 rounded-full bg-rose-500/12 text-[#FF3B30] flex items-center justify-center shadow-2xs">
+                <AlertCircle className="h-5 w-5 stroke-[2.2]" />
               </div>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Rejecting verification for{' '}
-              <span className="font-bold text-slate-900">{rejectingUser.full_name}</span> (
-              {rejectingUser.email}). The user will see this message upon accessing recruiter features.
+            {/* Title & Description */}
+            <h3 className="text-[17px] font-semibold text-slate-900 tracking-tight leading-snug px-5">
+              Reject Verification
+            </h3>
+            <p className="text-[13px] text-slate-600 mt-1.5 px-5 leading-normal font-normal">
+              Reject verification for <strong className="font-semibold text-slate-900">{rejectingUser.full_name}</strong>? Provide a reason for the recruiter.
             </p>
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                Rejection Reason <span className="text-rose-500">*</span>
-              </label>
+            {/* iOS Inset Textarea */}
+            <div className="px-5 pt-3 pb-4">
               <textarea
-                rows={3}
+                rows={2}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-800 focus:bg-white focus:border-rose-500 focus:outline-none"
+                placeholder="Reason for rejection (required)"
+                className="w-full rounded-xl bg-white/80 px-3.5 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 border border-slate-300/70 focus:outline-none focus:border-[#FF3B30] text-left resize-none"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            {/* iOS Hairline Action Buttons */}
+            <div className="border-t border-slate-300/70 grid grid-cols-2 text-[17px]">
               <button
                 type="button"
                 onClick={() => {
@@ -659,7 +654,7 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   setRejectionReason('')
                 }}
                 disabled={isProcessing}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                className="py-3.5 font-normal text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 border-r border-slate-300/70 transition cursor-pointer select-none disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -667,58 +662,117 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                 type="button"
                 onClick={handleReject}
                 disabled={isProcessing || !rejectionReason.trim()}
-                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-50 cursor-pointer"
+                className="py-3.5 font-semibold text-[#FF3B30] hover:bg-rose-50/50 active:bg-rose-100/60 transition cursor-pointer select-none disabled:opacity-40"
               >
-                {isProcessing ? 'Rejecting...' : 'Confirm Rejection'}
+                {isProcessing ? 'Rejecting...' : 'Reject'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Profile Edit Review Modal */}
+      {/* Profile Edit Review Modal (Apple iOS Theme) */}
       {profileEditUser && (() => {
         let pd: any = null
         try { pd = profileEditUser.pending_profile ? JSON.parse(profileEditUser.pending_profile) : null } catch {}
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-              <div className="px-5 pt-5 pb-4 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-900">Review Profile Edit Request</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{profileEditUser.full_name} — {profileEditUser.email}</p>
-              </div>
-              <div className="px-5 py-4 space-y-3">
-                {pd ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Requested Changes</p>
-                    {pd.full_name && <p className="text-xs text-slate-800"><span className="font-semibold">Name:</span> {pd.full_name}</p>}
-                    {pd.company && <p className="text-xs text-slate-800"><span className="font-semibold">Company:</span> {pd.company}</p>}
-                    {pd.position && <p className="text-xs text-slate-800"><span className="font-semibold">Designation:</span> {pd.position}</p>}
-                    {pd.phone && <p className="text-xs text-slate-800"><span className="font-semibold">Phone:</span> {pd.phone}</p>}
-                    {pd.location && <p className="text-xs text-slate-800"><span className="font-semibold">Location:</span> {pd.location}</p>}
-                    {pd.headline && <p className="text-xs text-slate-800"><span className="font-semibold">Headline:</span> {pd.headline}</p>}
-                    {pd.bio && <p className="text-xs text-slate-800"><span className="font-semibold">About:</span> {pd.bio}</p>}
-                    {pd.submitted_at && <p className="text-[11px] text-slate-400">Submitted: {new Date(pd.submitted_at).toLocaleString()}</p>}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-500">No pending data found.</p>
-                )}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Rejection reason (optional)</label>
-                  <textarea
-                    rows={2}
-                    value={profileRejectReason}
-                    onChange={(e) => setProfileRejectReason(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-800 focus:bg-white focus:border-rose-500 focus:outline-none"
-                  />
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-md select-none animate-in fade-in"
+            onClick={() => {
+              if (!isProfileProcessing) {
+                setProfileEditUser(null)
+                setProfileRejectReason('')
+              }
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="w-[320px] sm:w-[360px] max-w-full rounded-[20px] bg-[#F2F2F7]/92 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.30)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top iOS Symbol Badge */}
+              <div className="pt-5 pb-2 px-5 flex justify-center">
+                <div className="h-10 w-10 rounded-full bg-blue-500/12 text-[#007AFF] flex items-center justify-center shadow-2xs">
+                  <Briefcase className="h-5 w-5 stroke-[2.2]" />
                 </div>
               </div>
-              <div className="flex items-center gap-2 px-5 pb-5 pt-3 border-t border-slate-100">
+
+              {/* Title & Subtitle */}
+              <h3 className="text-[17px] font-semibold text-slate-900 tracking-tight leading-snug px-5">
+                Profile Changes
+              </h3>
+              <p className="text-[13px] text-slate-500 mt-0.5 px-5 leading-normal">
+                {profileEditUser.full_name} · {profileEditUser.email}
+              </p>
+
+              {/* iOS Inset Grouped Section for Changes */}
+              <div className="mx-5 my-3.5 bg-white/75 rounded-xl divide-y divide-slate-200/70 border border-slate-200/60 text-left text-[13px] overflow-hidden max-h-48 overflow-y-auto">
+                {pd ? (
+                  <>
+                    {pd.full_name && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Name</span>
+                        <span className="font-medium text-slate-900">{pd.full_name}</span>
+                      </div>
+                    )}
+                    {pd.company && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Company</span>
+                        <span className="font-medium text-slate-900">{pd.company}</span>
+                      </div>
+                    )}
+                    {pd.position && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Role</span>
+                        <span className="font-medium text-slate-900">{pd.position}</span>
+                      </div>
+                    )}
+                    {pd.phone && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Phone</span>
+                        <span className="font-medium text-slate-900">{pd.phone}</span>
+                      </div>
+                    )}
+                    {pd.location && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Location</span>
+                        <span className="font-medium text-slate-900">{pd.location}</span>
+                      </div>
+                    )}
+                    {pd.headline && (
+                      <div className="flex justify-between items-center py-2 px-3">
+                        <span className="text-slate-500">Headline</span>
+                        <span className="font-medium text-slate-900 truncate max-w-[170px]">{pd.headline}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="py-2.5 px-3 text-slate-500 text-center">No pending changes found</div>
+                )}
+              </div>
+
+              {/* iOS Inset Rejection input */}
+              <div className="px-5 pb-3">
+                <input
+                  type="text"
+                  value={profileRejectReason}
+                  onChange={(e) => setProfileRejectReason(e.target.value)}
+                  placeholder="Rejection reason (if rejecting)"
+                  className="w-full rounded-xl bg-white/80 px-3.5 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 border border-slate-300/70 focus:outline-none focus:border-[#007AFF] text-left"
+                />
+              </div>
+
+              {/* iOS 3-Column Hairline Action Buttons */}
+              <div className="border-t border-slate-300/70 grid grid-cols-3 text-[15px]">
                 <button
                   type="button"
-                  onClick={() => { setProfileEditUser(null); setProfileRejectReason('') }}
+                  onClick={() => {
+                    setProfileEditUser(null)
+                    setProfileRejectReason('')
+                  }}
                   disabled={isProfileProcessing}
-                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                  className="py-3.5 font-normal text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 border-r border-slate-300/70 transition cursor-pointer select-none disabled:opacity-40"
                 >
                   Cancel
                 </button>
@@ -726,17 +780,17 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
                   type="button"
                   onClick={handleRejectProfileEdit}
                   disabled={isProfileProcessing}
-                  className="flex-1 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
+                  className="py-3.5 font-semibold text-[#FF3B30] hover:bg-rose-50/50 active:bg-rose-100/60 border-r border-slate-300/70 transition cursor-pointer select-none disabled:opacity-40"
                 >
-                  {isProfileProcessing ? 'Processing...' : 'Reject'}
+                  {isProfileProcessing ? '...' : 'Reject'}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApproveProfileEdit(profileEditUser.id, profileEditUser.full_name)}
                   disabled={isProfileProcessing}
-                  className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+                  className="py-3.5 font-semibold text-emerald-600 hover:bg-emerald-50/50 active:bg-emerald-100/60 transition cursor-pointer select-none disabled:opacity-40"
                 >
-                  {isProfileProcessing ? 'Processing...' : 'Approve & Merge'}
+                  {isProfileProcessing ? '...' : 'Approve'}
                 </button>
               </div>
             </div>

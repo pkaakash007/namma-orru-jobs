@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react'
 
 export type AlertType = 'success' | 'error' | 'info' | 'warning'
 
@@ -48,23 +48,47 @@ export interface ToastContextType {
 const ToastContext = createContext<ToastContextType | undefined>(undefined)
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [toasts, setToasts] = useState<ToastItem[]>([])
   const [currentAlert, setCurrentAlert] = useState<AlertConfig | null>(null)
 
-  // Non-blocking Apple iOS Toast notification (floating top pill, auto-dismisses in 3s)
+  // Apple iOS System Alert Modal (centered on page with iOS frosted glass theme)
   const showToast = useCallback((message: string, type: AlertType = 'success', title?: string) => {
-    const id = Math.random().toString(36).substring(2, 9)
-    setToasts((prev) => [...prev.slice(-2), { id, message, type, title }])
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 3200)
+    setCurrentAlert((prev) => {
+      // Do not overwrite an active user confirmation dialog with a background notification
+      if (prev?.isConfirm) return prev
+
+      const id = Math.random().toString(36).substring(2, 9)
+      let finalTitle = title
+      let finalMessage = message
+
+      if (!finalTitle) {
+        if (message.startsWith('Welcome, ')) {
+          finalTitle = 'Welcome'
+          finalMessage = message.replace(/^Welcome,\s*/, '')
+        } else {
+          finalTitle =
+            type === 'error'
+              ? 'Error'
+              : type === 'warning'
+              ? 'Notice'
+              : type === 'info'
+              ? 'Notice'
+              : 'Success'
+        }
+      }
+
+      return {
+        id,
+        title: finalTitle,
+        message: finalMessage,
+        type,
+        confirmText: 'OK',
+        isConfirm: false,
+        autoDismissMs: 3200,
+      }
+    })
   }, [])
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }, [])
-
-  // Explicit iOS Alert modal (only when explicitly requested)
+  // Explicit iOS Alert modal
   const showAlert = useCallback(
     (options: {
       title?: string
@@ -76,12 +100,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const id = Math.random().toString(36).substring(2, 9)
       setCurrentAlert({
         id,
-        title: options.title || 'Notice',
+        title: options.title || (options.type === 'error' ? 'Error' : 'Notice'),
         message: options.message,
         type: options.type || 'info',
         confirmText: options.confirmText || 'OK',
         isConfirm: false,
-        autoDismissMs: options.autoDismissMs,
+        autoDismissMs: options.autoDismissMs || 0,
       })
     },
     []
@@ -175,52 +199,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <ToastContext.Provider value={{ showToast, showAlert, showConfirm, dismissAlert }}>
       {children}
 
-      {/* ── Apple iOS Non-blocking Floating Toast Capsule ── */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[110] flex flex-col items-center gap-2 pointer-events-none max-w-[92vw] sm:max-w-md w-full">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            role="status"
-            aria-live="polite"
-            onClick={() => dismissToast(toast.id)}
-            className="pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-slate-900/95 text-white shadow-[0_12px_30px_-6px_rgba(0,0,0,0.4)] backdrop-blur-xl border border-white/15 text-xs sm:text-sm font-medium transition-all duration-200 animate-in slide-in-from-top-3 fade-in cursor-pointer select-none hover:scale-102 active:scale-98"
-          >
-            {toast.type === 'error' ? (
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-500/20 text-rose-400">
-                <AlertCircle className="h-3.5 w-3.5 stroke-[2.2]" />
-              </span>
-            ) : toast.type === 'warning' ? (
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400">
-                <AlertTriangle className="h-3.5 w-3.5 stroke-[2.2]" />
-              </span>
-            ) : toast.type === 'info' ? (
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-sky-400">
-                <Info className="h-3.5 w-3.5 stroke-[2.2]" />
-              </span>
-            ) : (
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
-                <CheckCircle2 className="h-3.5 w-3.5 stroke-[2.2]" />
-              </span>
-            )}
-            <span className="truncate max-w-[280px] sm:max-w-sm">{toast.message}</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                dismissToast(toast.id)
-              }}
-              className="ml-1 text-slate-400 hover:text-white transition cursor-pointer"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Native Apple iOS UIAlertController Modal Component (Explicit Modals / Confirms Only) ── */}
+      {/* ── Native Apple iOS UIAlertController Centered Modal ── */}
       {currentAlert && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs transition-opacity duration-200 animate-in fade-in"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/35 backdrop-blur-md select-none transition-opacity duration-200 animate-in fade-in"
           onClick={(e) => {
             if (e.target === e.currentTarget && !currentAlert.isConfirm) {
               dismissAlert()
@@ -230,47 +212,47 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           <div
             role="dialog"
             aria-modal="true"
-            className="w-[290px] sm:w-[320px] max-w-full rounded-[22px] bg-white/95 dark:bg-[#1C1C1E]/95 backdrop-blur-2xl border border-black/5 dark:border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
+            className="w-[275px] sm:w-[295px] max-w-[90vw] rounded-[20px] bg-[#F2F2F7]/92 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.30)] text-center overflow-hidden animate-in zoom-in-95 duration-200 ease-out select-none"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* iOS System Icon */}
-            <div className="pt-6 pb-2 px-5 flex justify-center">
+            {/* iOS System SF Symbol Icon */}
+            <div className="pt-5 pb-2 px-5 flex justify-center">
               {currentAlert.type === 'error' ? (
-                <div className="h-12 w-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shadow-2xs">
-                  <AlertCircle className="h-6 w-6 stroke-[2.2]" />
+                <div className="h-10 w-10 rounded-full bg-rose-500/12 text-[#FF3B30] flex items-center justify-center shadow-2xs">
+                  <AlertCircle className="h-5 w-5 stroke-[2.2]" />
                 </div>
               ) : currentAlert.type === 'warning' ? (
-                <div className="h-12 w-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shadow-2xs">
-                  <AlertTriangle className="h-6 w-6 stroke-[2.2]" />
+                <div className="h-10 w-10 rounded-full bg-amber-500/12 text-amber-600 flex items-center justify-center shadow-2xs">
+                  <AlertTriangle className="h-5 w-5 stroke-[2.2]" />
                 </div>
               ) : currentAlert.type === 'info' ? (
-                <div className="h-12 w-12 rounded-full bg-blue-50 text-[#0B2545] flex items-center justify-center shadow-2xs">
-                  <Info className="h-6 w-6 stroke-[2.2]" />
+                <div className="h-10 w-10 rounded-full bg-blue-500/12 text-[#007AFF] flex items-center justify-center shadow-2xs">
+                  <Info className="h-5 w-5 stroke-[2.2]" />
                 </div>
               ) : (
-                <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs">
-                  <CheckCircle2 className="h-6 w-6 stroke-[2.2]" />
+                <div className="h-10 w-10 rounded-full bg-emerald-500/12 text-emerald-600 flex items-center justify-center shadow-2xs">
+                  <CheckCircle2 className="h-5 w-5 stroke-[2.2]" />
                 </div>
               )}
             </div>
 
             {/* iOS Alert Title */}
-            <h3 className="text-[17px] font-bold text-slate-900 tracking-tight leading-snug px-5">
+            <h3 className="text-[17px] font-semibold text-slate-900 tracking-tight leading-snug px-5">
               {currentAlert.title}
             </h3>
 
             {/* iOS Alert Message Body */}
-            <p className="text-[13px] text-slate-600 mt-1.5 px-5 pb-5 leading-relaxed font-normal">
+            <p className="text-[13px] text-slate-600 mt-1.5 px-5 pb-5 leading-normal font-normal break-words">
               {currentAlert.message}
             </p>
 
             {/* iOS Action Buttons with 1px Hairline Dividers */}
             {currentAlert.isConfirm ? (
-              <div className="border-t border-slate-200/80 grid grid-cols-2 text-[16px]">
+              <div className="border-t border-slate-300/70 grid grid-cols-2 text-[17px]">
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="py-3.5 font-normal text-slate-600 hover:bg-slate-100/60 active:bg-slate-200/60 border-r border-slate-200/80 transition cursor-pointer select-none"
+                  className="py-3.5 font-normal text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 border-r border-slate-300/70 transition cursor-pointer select-none"
                 >
                   {currentAlert.cancelText || 'Cancel'}
                 </button>
@@ -279,19 +261,19 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   onClick={handleConfirm}
                   className={`py-3.5 font-semibold transition cursor-pointer select-none ${
                     currentAlert.isDestructive
-                      ? 'text-rose-600 hover:bg-rose-50/50 active:bg-rose-100/50'
-                      : 'text-[#0B2545] hover:bg-slate-100/60 active:bg-slate-200/60'
+                      ? 'text-[#FF3B30] hover:bg-rose-50/50 active:bg-rose-100/60'
+                      : 'text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70'
                   }`}
                 >
                   {currentAlert.confirmText || 'Confirm'}
                 </button>
               </div>
             ) : (
-              <div className="border-t border-slate-200/80">
+              <div className="border-t border-slate-300/70">
                 <button
                   type="button"
                   onClick={dismissAlert}
-                  className="w-full py-3.5 text-[16px] font-semibold text-[#0B2545] hover:bg-slate-100/60 active:bg-slate-200/60 transition cursor-pointer select-none"
+                  className="w-full py-3.5 text-[17px] font-semibold text-[#007AFF] hover:bg-slate-200/40 active:bg-slate-200/70 transition cursor-pointer select-none text-center"
                 >
                   {currentAlert.confirmText || 'OK'}
                 </button>

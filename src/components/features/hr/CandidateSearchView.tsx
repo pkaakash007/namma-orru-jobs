@@ -747,8 +747,8 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
 
       {/* 5. Complete Candidate Profile Detail Modal */}
       {selectedCandidate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-md">
+          <div className="relative w-full max-w-xl rounded-[22px] bg-[#F2F2F7]/95 backdrop-blur-2xl p-6 shadow-2xl border border-white/60 max-h-[90vh] overflow-y-auto space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start justify-between pb-3 border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <Avatar src={selectedCandidate.avatar_url} name={selectedCandidate.full_name} size="lg" />
