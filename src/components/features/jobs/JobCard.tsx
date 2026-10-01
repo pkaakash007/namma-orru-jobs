@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { Job } from '../../../types'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Building2, MapPin, Clock, Bookmark, Users, Languages, CheckCircle2, FileText } from 'lucide-react'
+import { Building2, MapPin, Clock, Bookmark, Users, Languages, Check, FileText } from 'lucide-react'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
@@ -363,13 +363,13 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
           </>
         ) : isApplied ? (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold bg-slate-100 text-slate-600 select-none cursor-default"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              <span>{t('jobs_applied')}</span>
-            </span>
-          ) : (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200/60 select-none cursor-default"
+          >
+            <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.4} />
+            <span>{t('jobs_applied')}</span>
+          </span>
+        ) : (
             <Button
               size="sm"
               variant="orange"

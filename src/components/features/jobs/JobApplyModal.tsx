@@ -7,7 +7,7 @@ import { uploadService, jobsService } from '../../../services/api'
 import { useToast } from '../../../context/ToastContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useLanguage } from '../../../context/LanguageContext'
-import { FileText, UploadCloud, X, Check, Building2, MapPin, CheckCircle2 } from 'lucide-react'
+import { FileText, UploadCloud, X, Check, Building2, MapPin } from 'lucide-react'
 import { parseResumeWithAi } from '../../../services/resumeParser'
 import { useAppDispatch } from '../../../store/hooks'
 import { jobApplied } from '../../../store/jobsSlice'
@@ -306,7 +306,7 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
 
         {hasApplied && (
           <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <Check className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" strokeWidth={2.4} />
             <div>
               <p className="font-semibold text-slate-900 text-xs">
                 {language === 'ta'
@@ -455,9 +455,9 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
             </Button>
             {hasApplied ? (
               <span
-                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold bg-slate-100 text-slate-600 select-none cursor-default"
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200/60 select-none cursor-default"
               >
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.4} />
                 <span>{t('jobs_applied')}</span>
               </span>
             ) : (
