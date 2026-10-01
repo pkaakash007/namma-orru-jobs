@@ -849,7 +849,6 @@ function MainContent() {
                 setCandidateSearchQuery(job.title)
                 setCandidateSearchJd(`${job.title}\n${job.description}`)
                 setActiveTab('candidates')
-                showToast(`Matching candidates for: ${job.title}`, 'info')
               }}
               onBack={() => setActiveTab('jobs')}
               onBrowseJobs={() => setActiveTab('jobs')}
@@ -1302,7 +1301,6 @@ function MainContent() {
                               setCandidateSearchQuery(j.title)
                               setCandidateSearchJd(`${j.title}\n${j.description}`)
                               setActiveTab('candidates')
-                              showToast(`Matching candidates for: ${j.title}`, 'info')
                             }}
                           />
                         ))
