@@ -488,6 +488,12 @@ export async function ensureProductionSchema(db: D1Database) {
     'ALTER TABLE users ADD COLUMN verification_notes TEXT DEFAULT ""',
     'ALTER TABLE users ADD COLUMN verified_at DATETIME DEFAULT NULL',
     'ALTER TABLE users ADD COLUMN verified_by TEXT DEFAULT NULL',
+    // Missing migrations that caused production D1 errors
+    'ALTER TABLE users ADD COLUMN pending_profile TEXT DEFAULT NULL',
+    'ALTER TABLE job_applications ADD COLUMN applicant_user_id TEXT',
+    'ALTER TABLE job_applications ADD COLUMN candidate_phone TEXT DEFAULT ""',
+    'ALTER TABLE chat_messages ADD COLUMN read_at DATETIME DEFAULT NULL',
+    'ALTER TABLE chat_messages ADD COLUMN moderation_status TEXT DEFAULT "APPROVED"',
   ]
 
   for (const colSql of columnMigrations) {
@@ -3563,21 +3569,6 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
       return c.json({ error: 'Candidate phone number cannot exceed 25 characters' }, 400)
     }
 
-    // Ensure job_applications table exists with applicant_user_id
-    await c.env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS job_applications (
-        id TEXT PRIMARY KEY,
-        job_id TEXT NOT NULL,
-        applicant_user_id TEXT,
-        candidate_name TEXT NOT NULL,
-        candidate_email TEXT NOT NULL,
-        candidate_phone TEXT DEFAULT '',
-        resume_url TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
-        FOREIGN KEY (applicant_user_id) REFERENCES users(id) ON DELETE SET NULL
-      )`
-    ).run()
 
     // Prevent duplicate applications for the same job posting
     const existingApp = await c.env.DB.prepare(
