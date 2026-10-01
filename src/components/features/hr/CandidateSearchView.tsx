@@ -13,6 +13,7 @@ import { translateLocationSync } from '../../../services/googleAiTranslate'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { parseSkillsArray } from '../../../utils/skills'
 import { candidateService } from '../../../services/api'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
 import {
   Search,
   MapPin,
@@ -562,9 +563,11 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                       </div>
 
                       {(cand.headline || cand.position) && (
-                        <p className="text-xs font-semibold text-[#0B2545] mt-0.5 line-clamp-1">
-                          {cand.headline || cand.position}
-                        </p>
+                        <DynamicTranslatedText
+                          text={cand.headline || cand.position}
+                          as="p"
+                          className="text-xs font-semibold text-[#0B2545] mt-0.5 line-clamp-1"
+                        />
                       )}
 
                       <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
@@ -600,9 +603,12 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
 
                   {/* Bio */}
                   {cand.bio && (
-                    <p className="text-xs text-slate-600 mt-3 line-clamp-2 leading-relaxed">
-                      {cand.bio}
-                    </p>
+                    <DynamicTranslatedText
+                      text={cand.bio}
+                      as="p"
+                      className="text-xs text-slate-600 mt-3 line-clamp-2 leading-relaxed"
+                      showOriginalToggle
+                    />
                   )}
 
                   {/* Skills Section */}
@@ -752,9 +758,11 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                       {selectedCandidate.full_name}
                     </h3>
                   </div>
-                  <p className="text-xs font-semibold text-[#0B2545]">
-                    {selectedCandidate.headline || selectedCandidate.position}
-                  </p>
+                  <DynamicTranslatedText
+                    text={selectedCandidate.headline || selectedCandidate.position}
+                    as="p"
+                    className="text-xs font-semibold text-[#0B2545]"
+                  />
                   <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
                     Candidate ID: {selectedCandidate.id}
                   </p>
@@ -814,9 +822,12 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
                   {t('cs_about')}
                 </h4>
-                <p className="text-xs text-slate-700 leading-relaxed bg-white p-3.5 rounded-xl border border-gray-100">
-                  {selectedCandidate.bio}
-                </p>
+                <DynamicTranslatedText
+                  text={selectedCandidate.bio}
+                  as="p"
+                  className="text-xs text-slate-700 leading-relaxed bg-white p-3.5 rounded-xl border border-gray-100"
+                  showOriginalToggle
+                />
               </div>
             )}
 

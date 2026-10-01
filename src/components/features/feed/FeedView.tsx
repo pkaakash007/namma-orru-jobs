@@ -22,6 +22,7 @@ import {
   CheckCheck,
 } from 'lucide-react'
 import { uploadService, postReadService } from '../../../services/api'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
 
 interface FeedViewProps {
   posts: Post[]
@@ -251,7 +252,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       <Badge variant="role" role={post.author_role} />
                     )}
                   </div>
-                  <p className="text-xs text-[#64748B]">{post.author_headline}</p>
+                  <DynamicTranslatedText
+                    text={post.author_headline}
+                    as="p"
+                    className="text-xs text-[#64748B]"
+                  />
                   <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
                     <span>{post.created_at}</span>
                     <span>•</span>
@@ -266,9 +271,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
 
           {/* Post Body */}
-          <p className="mt-3 text-sm leading-relaxed text-[#1E293B] whitespace-pre-line">
-            {post.content}
-          </p>
+          <DynamicTranslatedText
+            text={post.content}
+            as="p"
+            className="mt-3 text-sm leading-relaxed text-[#1E293B] whitespace-pre-line"
+            showOriginalToggle
+          />
 
           {/* Reactions Count Bar */}
           <div className="mt-4 flex items-center justify-between border-b border-gray-100 pb-2 text-xs text-slate-500">

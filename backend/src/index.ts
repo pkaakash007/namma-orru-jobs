@@ -326,15 +326,6 @@ export async function ensureProductionSchema(db: D1Database) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
-    `CREATE TABLE IF NOT EXISTS connections (
-      id TEXT PRIMARY KEY,
-      requester_id TEXT NOT NULL,
-      receiver_id TEXT NOT NULL,
-      status TEXT CHECK(status IN ('pending', 'accepted', 'rejected')) DEFAULT 'pending',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(requester_id, receiver_id)
-    )`,
-
     `CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
       author_id TEXT NOT NULL,
@@ -375,15 +366,6 @@ export async function ensureProductionSchema(db: D1Database) {
       description TEXT NOT NULL,
       salary_range TEXT DEFAULT '',
       applicants_count INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`,
-
-    `CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      sender_id TEXT NOT NULL,
-      receiver_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      is_read INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
@@ -518,8 +500,6 @@ export async function ensureProductionSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)',
     'CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id)',
     'CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)',
-    'CREATE INDEX IF NOT EXISTS idx_connections_users ON connections(requester_id, receiver_id)',
-    'CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, created_at)',
     'CREATE INDEX IF NOT EXISTS idx_job_apps_job ON job_applications(job_id)',
     'CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(applicant_user_id)',
     'CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)',
@@ -681,12 +661,10 @@ app.get('/api/health', async (c) => {
 
   const tables = [
     'users',
-    'connections',
     'posts',
     'likes',
     'comments',
     'jobs',
-    'messages',
     'job_applications',
     'user_follows',
     'conversations',
@@ -1055,7 +1033,7 @@ app.post('/api/auth/dev-login', async (c) => {
     const position = (body.position || '').trim().slice(0, 100)
     const rawPhone = (body.phone || '').trim().slice(0, 25)
     const { cleanDigits: cleanPhone, formattedPhone } = normalizePhoneNumber(rawPhone)
-    const phoneDummyEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
+    const phoneAuthEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
 
     let existingUser = await c.env.DB.prepare(
       'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE email = ?'
@@ -1067,7 +1045,7 @@ app.post('/api/auth/dev-login', async (c) => {
       existingUser = await c.env.DB.prepare(
         'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE phone = ? OR phone = ? OR email = ?'
       )
-        .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+        .bind(formattedPhone, cleanPhone, phoneAuthEmail)
         .first() as UserRecord | null
     }
 
@@ -1132,7 +1110,7 @@ app.post('/api/auth/dev-login', async (c) => {
         const phoneConflict = await c.env.DB.prepare(
           'SELECT id, role FROM users WHERE phone = ? OR phone = ? OR email = ?'
         )
-          .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+          .bind(formattedPhone, cleanPhone, phoneAuthEmail)
           .first() as { id: string; role: string } | null
 
         if (phoneConflict) {
@@ -1208,7 +1186,7 @@ app.post('/api/auth/register', async (c) => {
     const position = (body.position || '').trim().slice(0, 100)
     const rawPhone = (body.phone || '').trim().slice(0, 25)
     const { cleanDigits: cleanPhone, formattedPhone } = normalizePhoneNumber(rawPhone)
-    const phoneDummyEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
+    const phoneAuthEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
 
     let existingUser = await c.env.DB.prepare('SELECT id, role, email, phone FROM users WHERE email = ?')
       .bind(rawEmail)
@@ -1218,7 +1196,7 @@ app.post('/api/auth/register', async (c) => {
       existingUser = await c.env.DB.prepare(
         'SELECT id, role, email, phone FROM users WHERE phone = ? OR phone = ? OR email = ?'
       )
-        .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+        .bind(formattedPhone, cleanPhone, phoneAuthEmail)
         .first() as { id: string; role: string; email: string; phone: string } | null
     }
 
@@ -1835,7 +1813,7 @@ app.get('/api/admin/stats', requireAuth, requireRole(['admin']), async (c) => {
     const managerCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'manager'").first('count')
     const employeeCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'employee'").first('count')
     const totalJobs = await c.env.DB.prepare('SELECT COUNT(*) as count FROM jobs').first('count')
-    const pendingHrCount = (await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending')").first('count')) || 0
+    const pendingHrCount = (await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending' OR status = 'PENDING' OR UPPER(status) = 'PENDING_VERIFICATION')").first('count')) || 0
 
     const payload = {
       stats: {
@@ -1847,7 +1825,7 @@ app.get('/api/admin/stats', requireAuth, requireRole(['admin']), async (c) => {
         pending_hr_verifications: pendingHrCount || 0,
       },
     }
-    setEdgeCache('admin:stats', payload, 60)
+    setEdgeCache('admin:stats', payload, 10)
     return c.json(payload)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -1871,27 +1849,27 @@ app.get('/api/admin/hr-verifications', requireAuth, requireRole(['admin']), asyn
     `
 
     if (statusParam === 'pending') {
-      query += ` AND (u.status = 'PENDING_VERIFICATION' OR u.status = 'pending')`
+      query += ` AND (u.status = 'PENDING_VERIFICATION' OR u.status = 'pending' OR u.status = 'PENDING' OR UPPER(u.status) = 'PENDING_VERIFICATION')`
     } else if (statusParam === 'active' || statusParam === 'approved') {
-      query += ` AND (u.status = 'ACTIVE' OR u.status = 'active')`
+      query += ` AND (u.status = 'ACTIVE' OR u.status = 'active' OR UPPER(u.status) = 'ACTIVE')`
     } else if (statusParam === 'rejected') {
-      query += ` AND (u.status = 'REJECTED' OR u.status = 'rejected')`
+      query += ` AND (u.status = 'REJECTED' OR u.status = 'rejected' OR UPPER(u.status) = 'REJECTED')`
     }
 
-    query += ` ORDER BY CASE WHEN u.status = 'PENDING_VERIFICATION' OR u.status = 'pending' THEN 0 WHEN u.status = 'REJECTED' OR u.status = 'rejected' THEN 2 ELSE 1 END, u.created_at DESC`
+    query += ` ORDER BY CASE WHEN u.status = 'PENDING_VERIFICATION' OR u.status = 'pending' OR u.status = 'PENDING' OR UPPER(u.status) = 'PENDING_VERIFICATION' THEN 0 WHEN u.status = 'REJECTED' OR u.status = 'rejected' OR UPPER(u.status) = 'REJECTED' THEN 2 ELSE 1 END, u.created_at DESC`
 
     const { results } = await c.env.DB.prepare(query).all()
 
     const pendingCount = (await c.env.DB.prepare(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending')"
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending' OR status = 'PENDING' OR UPPER(status) = 'PENDING_VERIFICATION')"
     ).first('count')) || 0
 
     const activeCount = (await c.env.DB.prepare(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'ACTIVE' OR status = 'active')"
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'ACTIVE' OR status = 'active' OR UPPER(status) = 'ACTIVE')"
     ).first('count')) || 0
 
     const rejectedCount = (await c.env.DB.prepare(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'REJECTED' OR status = 'rejected')"
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'REJECTED' OR status = 'rejected' OR UPPER(status) = 'REJECTED')"
     ).first('count')) || 0
 
     const totalCount = (await c.env.DB.prepare(
@@ -1968,7 +1946,7 @@ app.post('/api/hr/profile/submit', requireAuth, requireRole(['manager']), async 
              location = ?, bio = ?, headline = ?,
              avatar_url = CASE WHEN ? != '' THEN ? ELSE avatar_url END,
              pending_profile = NULL,
-             status = 'PENDING',
+             status = 'PENDING_VERIFICATION',
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`
       ).bind(
@@ -1979,6 +1957,7 @@ app.post('/api/hr/profile/submit', requireAuth, requireRole(['manager']), async 
       ).run()
     }
 
+    invalidateEdgeCache('admin:')
     invalidateEdgeCache('admin:users')
     invalidateEdgeCache(`user:status:${authUser.id}`)
 
@@ -2997,7 +2976,7 @@ app.post('/api/candidates/:id/interest', requireAuth, requireRole(['admin', 'man
       console.warn('Failed to send HR interest push notification:', pushErr)
     }
 
-    // 3. Dispatch Production-Ready Email to Candidate via Brevo SMTP
+    // 3. Dispatch Production-Ready Email to Candidate via Resend
     if (candidate.email && !candidate.email.includes('@phone.nammaoorujobs.com')) {
       try {
         const emailPromise = sendHrInterestEmail({
@@ -3008,7 +2987,7 @@ app.post('/api/candidates/:id/interest', requireAuth, requireRole(['admin', 'man
           hrPosition: hrUser.position || 'HR Recruiter',
           hrId: hrUser.id,
           customMessage: customMessage || undefined,
-        })
+        }, c.env)
         try {
           if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
             c.executionCtx.waitUntil(emailPromise)
@@ -3154,7 +3133,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
       console.warn('FCM broadcast failed:', pushErr)
     }
 
-    // 3. Dispatch Email Broadcast Notification to all registered users via Brevo SMTP
+    // 3. Dispatch Dynamic Email Broadcast Notification to all registered users via Resend
     try {
       const emailPromise = broadcastNewJobEmail(c.env.DB, {
         id: jobId,
@@ -3165,7 +3144,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
         employment_type: safeEmployment,
         description: descClean,
         salary_range: salaryClean,
-      })
+      }, c.env)
 
       try {
         if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
@@ -4490,7 +4469,7 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
         } catch {}
       }
 
-      // 3. Dispatch Production-Ready Email via Brevo SMTP to followed user
+      // 3. Dispatch Production-Ready Email via Resend to followed user
       if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
         try {
           const emailPromise = sendNewFollowerEmail({
@@ -4501,7 +4480,7 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
             followerCompany: currentUser.company || '',
             followerAvatar: currentUser.avatar_url || '',
             followerId: currentUser.id,
-          })
+          }, c.env)
           try {
             if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
               c.executionCtx.waitUntil(emailPromise)

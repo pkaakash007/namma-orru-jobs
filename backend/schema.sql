@@ -34,19 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
   FOREIGN KEY (assigned_by) REFERENCES users(id)
 );
 
--- 2. Connections Table (Professional Network)
-CREATE TABLE IF NOT EXISTS connections (
-  id TEXT PRIMARY KEY,
-  requester_id TEXT NOT NULL,
-  receiver_id TEXT NOT NULL,
-  status TEXT CHECK(status IN ('pending', 'accepted', 'rejected')) DEFAULT 'pending',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE(requester_id, receiver_id)
-);
-
--- 3. Posts Table (Feed)
+-- 2. Posts Table (Feed)
 CREATE TABLE IF NOT EXISTS posts (
   id TEXT PRIMARY KEY,
   author_id TEXT NOT NULL,
@@ -99,19 +87,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   FOREIGN KEY (poster_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 7. Direct Messages Table
-CREATE TABLE IF NOT EXISTS messages (
-  id TEXT PRIMARY KEY,
-  sender_id TEXT NOT NULL,
-  receiver_id TEXT NOT NULL,
-  content TEXT NOT NULL,
-  is_read INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
--- 8. Job Applications Table
+-- 7. Job Applications Table
 CREATE TABLE IF NOT EXISTS job_applications (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL,
@@ -185,8 +161,6 @@ CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id);
 CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
-CREATE INDEX IF NOT EXISTS idx_connections_users ON connections(requester_id, receiver_id);
-CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages(sender_id, receiver_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_job_apps_job ON job_applications(job_id);
 CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(applicant_user_id);
 CREATE INDEX IF NOT EXISTS idx_job_apps_email ON job_applications(candidate_email);

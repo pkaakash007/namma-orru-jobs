@@ -1,16 +1,7 @@
 import React, { useState } from 'react'
 import {
   Search,
-  Building2,
   ChevronDown,
-  ChevronRight,
-  Home,
-  Monitor,
-  Users2,
-  TrendingUp,
-  BarChart3,
-  Settings,
-  GraduationCap,
   X,
   Languages,
   Check,
@@ -39,6 +30,8 @@ interface PublicHomePageProps {
   onPostJob: () => void
   totalJobsCount?: number
   featuredJobs?: Job[]
+  onOpenTerms?: () => void
+  onOpenPrivacy?: () => void
 }
 
 export const PublicHomePage: React.FC<PublicHomePageProps> = ({
@@ -47,6 +40,8 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   onPostJob,
   totalJobsCount = 50,
   featuredJobs = [],
+  onOpenTerms,
+  onOpenPrivacy,
 }) => {
   const { user, selectedRole, setSelectedRole } = useAuth()
   const { language, setLanguage, languages, t } = useLanguage()
@@ -83,26 +78,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
     onExploreJobs(skillsQuery.trim(), locationQuery.trim())
   }
 
-  // Curated sectors — counts computed dynamically from live DB jobs
-  const curatedSectors = [
-    { title: 'Software & IT',    query: 'Software',      keywords: ['software', 'it', 'developer', 'engineer', 'react', 'node', 'java', 'python', 'fullstack'], icon: <Monitor className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-blue-50/80' },
-    { title: 'Remote Work',      query: 'Remote',        keywords: ['remote', 'work from home', 'wfh', 'hybrid'],                                              icon: <Home className="h-5 w-5 text-[#0B2545]" />,    bg: 'bg-emerald-50/80' },
-    { title: 'MNC & Corporate',  query: 'MNC',           keywords: ['mnc', 'corporate', 'global', 'multinational'],                                            icon: <Building2 className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-indigo-50/80' },
-    { title: 'Sales & Growth',   query: 'Sales',         keywords: ['sales', 'business development', 'bde', 'growth', 'marketing'],                           icon: <TrendingUp className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-orange-50/80' },
-    { title: 'HR & Recruiting',  query: 'HR',            keywords: ['hr', 'human resource', 'recruiter', 'talent'],                                            icon: <Users2 className="h-5 w-5 text-[#0B2545]" />,    bg: 'bg-purple-50/80' },
-    { title: 'Data & Analytics', query: 'Data Analytics',keywords: ['data', 'analytics', 'bi', 'tableau', 'sql', 'analyst'],                                   icon: <BarChart3 className="h-5 w-5 text-[#0B2545]" />,  bg: 'bg-cyan-50/80' },
-    { title: 'Engineering',      query: 'Engineering',   keywords: ['mechanical', 'civil', 'electrical', 'engineer', 'manufacturing', 'production'],           icon: <Settings className="h-5 w-5 text-[#0B2545]" />,   bg: 'bg-amber-50/80' },
-    { title: 'Fresher Roles',    query: 'Fresher',       keywords: ['fresher', 'trainee', 'intern', 'entry level', 'graduate'],                                icon: <GraduationCap className="h-5 w-5 text-[#0B2545]" />, bg: 'bg-teal-50/80' },
-  ]
 
-  // Compute dynamic sector counts from real DB jobs
-  const getSectorCount = (keywords: string[]): number => {
-    if (featuredJobs.length === 0) return 0
-    return featuredJobs.filter((j) => {
-      const hay = `${j.title} ${j.description || ''} ${j.workplace_type || ''}`.toLowerCase()
-      return keywords.some((kw) => hay.includes(kw))
-    }).length
-  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans selection:bg-[#0B2545] selection:text-white">
@@ -138,18 +114,6 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 className="hover:text-[#0B2545] transition cursor-pointer"
               >
                 Jobs
-              </button>
-              <button
-                onClick={() => onExploreJobs('', 'Chennai')}
-                className="hover:text-[#0B2545] transition cursor-pointer"
-              >
-                Companies
-              </button>
-              <button
-                onClick={() => onExploreJobs('Remote')}
-                className="hover:text-[#0B2545] transition cursor-pointer"
-              >
-                Services
               </button>
             </nav>
           </div>
@@ -511,46 +475,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
           </div>
         </section>
 
-        {/* 4. Curated Sectors Grid */}
-        <section className="space-y-3.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
-              Popular Sectors
-            </h2>
-            <button
-              onClick={() => onExploreJobs()}
-              className="text-xs font-semibold text-[#0B2545] hover:text-[#F97316] transition cursor-pointer flex items-center gap-1"
-            >
-              <span>Explore all</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5">
-            {curatedSectors.map((sector) => {
-              const count = getSectorCount(sector.keywords)
-              return (
-                <div
-                  key={sector.title}
-                  onClick={() => onExploreJobs(sector.query)}
-                  className="group p-3 sm:p-4 rounded-xl border border-slate-200/90 bg-white shadow-2xs hover:border-[#0B2545] hover:shadow-xs transition cursor-pointer active:scale-[0.98] flex items-center gap-3"
-                >
-                  <div className={`h-10 w-10 rounded-xl ${sector.bg} flex items-center justify-center shrink-0 transition group-hover:scale-105`}>
-                    {sector.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-xs sm:text-sm text-slate-900 truncate group-hover:text-[#0B2545] transition">
-                      {sector.title}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                      {count > 0 ? `${count} open role${count !== 1 ? 's' : ''}` : 'Explore jobs'}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
 
 
         {/* 5. Featured Live Roles (Real Value on Home) */}
@@ -761,12 +686,30 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
               <span>All rights reserved © 2026</span>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-medium text-slate-600">
               <a href="#" className="hover:text-[#0B2545] transition">About Us</a>
               <a href="#" className="hover:text-[#0B2545] transition">Careers</a>
               <a href="#" className="hover:text-[#0B2545] transition">Employer Hub</a>
-              <a href="#" className="hover:text-[#0B2545] transition">Privacy Policy</a>
-              <a href="#" className="hover:text-[#0B2545] transition">Terms</a>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenPrivacy) onOpenPrivacy()
+                  else window.location.hash = '#privacy'
+                }}
+                className="hover:text-[#0B2545] transition cursor-pointer"
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenTerms) onOpenTerms()
+                  else window.location.hash = '#terms'
+                }}
+                className="hover:text-[#0B2545] transition cursor-pointer"
+              >
+                Terms of Service
+              </button>
             </div>
           </div>
         </div>

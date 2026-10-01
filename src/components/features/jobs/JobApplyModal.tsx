@@ -8,7 +8,7 @@ import { useToast } from '../../../context/ToastContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useLanguage } from '../../../context/LanguageContext'
 import { FileText, UploadCloud, X, Check, Building2, MapPin } from 'lucide-react'
-import { parseResumeWithAi, syncCandidateToCache } from '../../../services/resumeParser'
+import { parseResumeWithAi } from '../../../services/resumeParser'
 import { useAppDispatch } from '../../../store/hooks'
 import { jobApplied } from '../../../store/jobsSlice'
 import {
@@ -126,20 +126,7 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
             const finalBio = user.bio || parsed.bio
             const finalPhone = user.phone || parsed.phone || candidatePhone
 
-            const updated = await updateUserProfile({
-              skills: combinedSkills,
-              headline: finalHeadline,
-              position: finalPosition,
-              location: finalLocation,
-              bio: finalBio,
-              phone: finalPhone,
-              resume_url: data.url,
-            })
-
-            syncCandidateToCache({
-              ...user,
-              ...updated,
-              id: user.id,
+            await updateUserProfile({
               skills: combinedSkills,
               headline: finalHeadline,
               position: finalPosition,

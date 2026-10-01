@@ -8,12 +8,14 @@ import {
 } from 'lucide-react'
 import type { UserViolation, Language } from '../../../types'
 import { moderationService } from '../../../services/api'
+import { useToast } from '../../../context/ToastContext'
 
 interface AdminModerationTableProps {
   lang: Language
 }
 
 export const AdminModerationTable: React.FC<AdminModerationTableProps> = ({ lang }) => {
+  const { showToast } = useToast()
   const [violations, setViolations] = useState<UserViolation[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
@@ -64,7 +66,7 @@ export const AdminModerationTable: React.FC<AdminModerationTableProps> = ({ lang
         )
       )
     } catch (err: any) {
-      alert(err.message || 'Failed to reactivate user')
+      showToast(err.message || 'Failed to reactivate user', 'error')
     } finally {
       setActionLoading((prev) => ({ ...prev, [userId]: false }))
     }
@@ -87,7 +89,7 @@ export const AdminModerationTable: React.FC<AdminModerationTableProps> = ({ lang
         )
       )
     } catch (err: any) {
-      alert(err.message || 'Failed to suspend user')
+      showToast(err.message || 'Failed to suspend user', 'error')
     } finally {
       setActionLoading((prev) => ({ ...prev, [userId]: false }))
     }

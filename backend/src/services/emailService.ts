@@ -1,14 +1,15 @@
 /**
- * Brevo SMTP Production Email Service for Namma Ooru Jobs
+ * Resend Production Email Service for Namma Ooru Jobs
  *
- * Provides transactional and broadcast email delivery over direct TLS (port 465).
- * Compatible with both Cloudflare Workers runtime (cloudflare:sockets / workerd)
- * and Node.js runtime (node:tls).
+ * Clean, human, authentic email templates (no loud AI-marketing banners or badges).
+ * Provides transactional and broadcast email delivery over Resend's REST API.
+ * 100% compatible with both Cloudflare Workers runtime (fetch) and Node.js.
+ * All environment variables, URLs, and database records are dynamically driven.
  *
  * Supported Scenarios:
- * 1. New Job Post Broadcast (sent to all registered candidates across Tamil Nadu)
- * 2. New Follower Notification (sent when a user follows another user)
- * 3. HR Recruiter Interest Notification (sent when HR recruiter expresses interest in an employee)
+ * 1. New Job Post Broadcast (sent dynamically to all active registered candidates)
+ * 2. New Follower Notification (sent dynamically when a user follows another user)
+ * 3. HR Recruiter Direct Interest (sent dynamically when HR recruiter expresses interest in an employee)
  */
 
 export interface EmailOptions {
@@ -52,23 +53,25 @@ export interface HrInterestNotificationPayload {
   customMessage?: string
 }
 
-// Brevo SMTP Production Configuration
-const SMTP_CONFIG = {
-  host: 'smtp-relay.brevo.com',
-  port: 465, // Direct SSL/TLS
-  user: '4cd4a2002@smtp-brevo.com',
-  pass: 'xsmtpsib-76c0a98f9ebf64698fc35d2f4a6430a7cc95b52da26ff914fb8e4ce10390d83f-H11ezP7PRspe4OG6',
-  defaultFrom: '4cd4a2002@smtp-brevo.com',
-  defaultFromName: 'Namma Ooru Jobs',
-}
-
-const APP_URL = 'https://namma-ooru-jobs.pages.dev'
-
-function utf8ToBase64(str: string): string {
-  try {
-    return btoa(unescape(encodeURIComponent(str)))
-  } catch {
-    return btoa(str)
+export function getResendConfig(env?: any) {
+  const gProcess = (globalThis as any).process
+  const apiKey =
+    env?.RESEND_API_KEY ||
+    gProcess?.env?.RESEND_API_KEY ||
+    're_DivJhjK7_8i2yiWegDQjFpDWSH2icaUxw'
+  const defaultFrom =
+    env?.EMAIL_FROM ||
+    gProcess?.env?.EMAIL_FROM ||
+    'Namma Ooru Jobs <onboarding@resend.dev>'
+  const appUrl =
+    env?.APP_URL ||
+    gProcess?.env?.APP_URL ||
+    'https://namma-ooru-jobs.pages.dev'
+  return {
+    apiKey,
+    defaultFrom,
+    appUrl,
+    apiUrl: 'https://api.resend.com/emails',
   }
 }
 
@@ -82,429 +85,141 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * Sends an email using Cloudflare Workers TCP sockets (cloudflare:sockets)
+ * Universal Send Email function - Powered by Resend REST API
  */
-async function sendViaCloudflareSockets(
-  envelopeFrom: string,
-  fromName: string,
-  recipients: string[],
-  subject: string,
-  html: string,
-  _text?: string
-): Promise<void> {
-  const { connect } = await import('cloudflare:sockets')
-  const socket = connect(
-    { hostname: SMTP_CONFIG.host, port: SMTP_CONFIG.port },
-    { secureTransport: 'on', allowHalfOpen: false }
-  )
+export async function sendEmail(options: EmailOptions, env?: any): Promise<{ id: string }> {
+  const config = getResendConfig(env)
+  const from = options.from
+    ? (options.fromName ? `${options.fromName} <${options.from}>` : options.from)
+    : config.defaultFrom
 
-  const reader = socket.readable.getReader()
-  const writer = socket.writable.getWriter()
-  const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  async function readLine(): Promise<string> {
-    while (true) {
-      const idx = buffer.indexOf('\r\n')
-      if (idx !== -1) {
-        const line = buffer.slice(0, idx)
-        buffer = buffer.slice(idx + 2)
-        return line
-      }
-      const { value, done } = await reader.read()
-      if (done) {
-        if (buffer.length > 0) {
-          const line = buffer
-          buffer = ''
-          return line
-        }
-        throw new Error('SMTP connection closed prematurely')
-      }
-      buffer += decoder.decode(value, { stream: true })
-    }
-  }
-
-  async function readResponse(): Promise<{ code: number; text: string }> {
-    let fullText = ''
-    while (true) {
-      const line = await readLine()
-      fullText += line + '\n'
-      if (/^\d{3} /.test(line)) {
-        const code = parseInt(line.slice(0, 3), 10)
-        return { code, text: fullText.trim() }
-      }
-      if (!/^\d{3}-/.test(line)) {
-        const code = parseInt(line.slice(0, 3), 10) || 0
-        return { code, text: fullText.trim() }
-      }
-    }
-  }
-
-  async function writeLine(line: string) {
-    await writer.write(encoder.encode(line + '\r\n'))
-  }
-
-  try {
-    // 1. Initial Greeting
-    const greeting = await readResponse()
-    if (greeting.code !== 220) {
-      throw new Error(`SMTP Greeting failed: ${greeting.text}`)
-    }
-
-    // 2. EHLO
-    await writeLine('EHLO nammaoorujobs.com')
-    const ehlo = await readResponse()
-    if (ehlo.code !== 250) {
-      throw new Error(`SMTP EHLO failed: ${ehlo.text}`)
-    }
-
-    // 3. AUTH LOGIN
-    await writeLine('AUTH LOGIN')
-    const auth1 = await readResponse()
-    if (auth1.code !== 334) {
-      throw new Error(`SMTP AUTH LOGIN initiation failed: ${auth1.text}`)
-    }
-
-    // Username (base64)
-    await writeLine(utf8ToBase64(SMTP_CONFIG.user))
-    const auth2 = await readResponse()
-    if (auth2.code !== 334) {
-      throw new Error(`SMTP username submission failed: ${auth2.text}`)
-    }
-
-    // Password (base64)
-    await writeLine(utf8ToBase64(SMTP_CONFIG.pass))
-    const authOk = await readResponse()
-    if (authOk.code !== 235) {
-      throw new Error(`SMTP authentication failed: ${authOk.text}`)
-    }
-
-    // 4. MAIL FROM
-    await writeLine(`MAIL FROM:<${envelopeFrom}>`)
-    const mailRes = await readResponse()
-    if (mailRes.code !== 250) {
-      throw new Error(`SMTP MAIL FROM rejected: ${mailRes.text}`)
-    }
-
-    // 5. RCPT TO for each recipient
-    for (const rcpt of recipients) {
-      await writeLine(`RCPT TO:<${rcpt}>`)
-      const rcptRes = await readResponse()
-      if (rcptRes.code !== 250 && rcptRes.code !== 251) {
-        console.warn(`SMTP recipient rejected: ${rcpt} -> ${rcptRes.text}`)
-      }
-    }
-
-    // 6. DATA
-    await writeLine('DATA')
-    const dataRes = await readResponse()
-    if (dataRes.code !== 354) {
-      throw new Error(`SMTP DATA rejected: ${dataRes.text}`)
-    }
-
-    // 7. Message Body
-    const rfcDate = new Date().toUTCString()
-    const rawHeaders = [
-      `From: ${fromName} <${envelopeFrom}>`,
-      `To: ${recipients.length === 1 ? recipients[0] : 'Namma Ooru Jobs Members <' + envelopeFrom + '>'}`,
-      `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
-      `Date: ${rfcDate}`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/html; charset=UTF-8',
-      'Content-Transfer-Encoding: 8bit',
-    ].join('\r\n')
-
-    const fullMessage = `${rawHeaders}\r\n\r\n${html}\r\n.`
-    await writeLine(fullMessage)
-    const sendRes = await readResponse()
-    if (sendRes.code !== 250) {
-      throw new Error(`SMTP Message delivery failed: ${sendRes.text}`)
-    }
-
-    // 8. QUIT
-    await writeLine('QUIT')
-    await readResponse().catch(() => {})
-  } finally {
-    try {
-      await writer.close().catch(() => {})
-      reader.releaseLock()
-      await socket.close().catch(() => {})
-    } catch {}
-  }
-}
-
-/**
- * Sends an email using Node.js TLS (node:tls) - used in Node test environments
- */
-async function sendViaNodeTls(
-  envelopeFrom: string,
-  fromName: string,
-  recipients: string[],
-  subject: string,
-  html: string
-): Promise<void> {
-  // @ts-ignore
-  const tls = await import('node:tls').catch(() => null)
-  if (!tls) {
-    throw new Error('Neither cloudflare:sockets nor node:tls is available in this environment')
-  }
-
-  return new Promise((resolve, reject) => {
-    const socket = tls.connect(
-      {
-        host: SMTP_CONFIG.host,
-        port: SMTP_CONFIG.port,
-      },
-      () => {}
-    )
-
-    let buffer = ''
-    let step = 0
-    let recipientIndex = 0
-
-    const sendLine = (line: string) => {
-      socket.write(line + '\r\n')
-    }
-
-    socket.on('data', (chunk: any) => {
-      buffer += chunk.toString()
-      while (buffer.includes('\r\n')) {
-        const lineEnd = buffer.indexOf('\r\n')
-        const line = buffer.slice(0, lineEnd)
-        buffer = buffer.slice(lineEnd + 2)
-
-        // Ignore multiline intermediate replies (250-...)
-        if (/^\d{3}-/.test(line)) {
-          continue
-        }
-
-        const codeMatch = line.match(/^(\d{3})/)
-        const code = codeMatch ? parseInt(codeMatch[1], 10) : 0
-
-        if (step === 0 && code === 220) {
-          step = 1
-          sendLine('EHLO nammaoorujobs.com')
-        } else if (step === 1 && code === 250) {
-          step = 2
-          sendLine('AUTH LOGIN')
-        } else if (step === 2 && code === 334) {
-          step = 3
-          sendLine(utf8ToBase64(SMTP_CONFIG.user))
-        } else if (step === 3 && code === 334) {
-          step = 4
-          sendLine(utf8ToBase64(SMTP_CONFIG.pass))
-        } else if (step === 4 && code === 235) {
-          step = 5
-          sendLine(`MAIL FROM:<${envelopeFrom}>`)
-        } else if (step === 5 && code === 250) {
-          step = 6
-          recipientIndex = 0
-          sendLine(`RCPT TO:<${recipients[recipientIndex]}>`)
-        } else if (step === 6 && (code === 250 || code === 251)) {
-          recipientIndex++
-          if (recipientIndex < recipients.length) {
-            sendLine(`RCPT TO:<${recipients[recipientIndex]}>`)
-          } else {
-            step = 7
-            sendLine('DATA')
-          }
-        } else if (step === 7 && code === 354) {
-          step = 8
-          const rfcDate = new Date().toUTCString()
-          const toHeader =
-            recipients.length === 1
-              ? recipients[0]
-              : `Namma Ooru Jobs Members <${envelopeFrom}>`
-          const utf8Subject = `=?UTF-8?B?${utf8ToBase64(subject)}?=`
-
-          const rawMessage = [
-            `From: ${fromName} <${envelopeFrom}>`,
-            `To: ${toHeader}`,
-            `Subject: ${utf8Subject}`,
-            `Date: ${rfcDate}`,
-            'MIME-Version: 1.0',
-            'Content-Type: text/html; charset=UTF-8',
-            'Content-Transfer-Encoding: 8bit',
-            '',
-            html,
-            '',
-            '.',
-          ].join('\r\n')
-          sendLine(rawMessage)
-        } else if (step === 8 && code === 250) {
-          step = 9
-          sendLine('QUIT')
-        } else if (step === 9 && code === 221) {
-          socket.end()
-          resolve()
-        } else if (code >= 400) {
-          socket.end()
-          reject(new Error(`SMTP Error ${code}: ${line}`))
-        }
-      }
-    })
-
-    socket.on('error', (err: any) => {
-      reject(err)
-    })
-  })
-}
-
-/**
- * Universal Send Email function - Automatically detects Workers vs Node runtime
- */
-export async function sendEmail(options: EmailOptions): Promise<void> {
-  const envelopeFrom = options.from || SMTP_CONFIG.defaultFrom
-  const fromName = options.fromName || SMTP_CONFIG.defaultFromName
   const rawRecipients = Array.isArray(options.to) ? options.to : [options.to]
-  const bccRecipients = options.bcc
-    ? Array.isArray(options.bcc)
-      ? options.bcc
-      : [options.bcc]
-    : []
+  const rawBcc = options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : []
 
-  // Clean and filter valid email addresses
+  // Clean and filter valid recipient email addresses
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  const validRecipients = [...new Set([...rawRecipients, ...bccRecipients])].filter(
-    (e) => emailRegex.test(e) && !e.includes('@phone.nammaoorujobs.com')
-  )
+  const validTo = rawRecipients
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => emailRegex.test(e) && !e.includes('@phone.nammaoorujobs.com'))
+  const validBcc = rawBcc
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => emailRegex.test(e) && !e.includes('@phone.nammaoorujobs.com'))
 
-  if (validRecipients.length === 0) {
+  if (validTo.length === 0 && validBcc.length === 0) {
     console.warn('[EmailService] No valid recipient email addresses provided.')
-    return
+    return { id: 'skipped_no_recipients' }
   }
 
-  // Try Cloudflare Sockets first (Workers runtime)
-  let cloudflareSocketsAvailable = false
-  try {
-    const cf = await import('cloudflare:sockets')
-    if (typeof cf?.connect === 'function') {
-      cloudflareSocketsAvailable = true
-    }
-  } catch {}
+  // Extract clean email address from sender for BCC fallback recipient
+  const fromEmailMatch = from.match(/<([^>]+)>/)
+  const fallbackFromEmail = fromEmailMatch ? fromEmailMatch[1] : from
 
-  if (cloudflareSocketsAvailable) {
-    await sendViaCloudflareSockets(
-      envelopeFrom,
-      fromName,
-      validRecipients,
-      options.subject,
-      options.html,
-      options.text
-    )
-  } else {
-    // Node.js fallback (node:tls)
-    await sendViaNodeTls(
-      envelopeFrom,
-      fromName,
-      validRecipients,
-      options.subject,
-      options.html
-    )
+  const payload: Record<string, any> = {
+    from,
+    to: validTo.length > 0 ? validTo : [fallbackFromEmail],
+    subject: options.subject,
+    html: options.html,
   }
+
+  if (options.text) payload.text = options.text
+  if (validBcc.length > 0) payload.bcc = validBcc
+
+  const res = await fetch(config.apiUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => '')
+    throw new Error(`Resend API Error (${res.status}): ${errorBody}`)
+  }
+
+  const data = (await res.json().catch(() => ({ id: 'ok' }))) as { id: string }
+  return data
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. SCENARIO: NEW JOB POSTING EMAIL TEMPLATE & BROADCAST
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function buildNewJobEmailTemplate(job: JobNotificationPayload): string {
-  const jobUrl = `${APP_URL}/jobs`
+export function buildNewJobEmailTemplate(job: JobNotificationPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  const jobUrl = `${appUrl}/jobs`
   const cleanDesc = (job.description || '')
     .replace(/<[^>]*>?/gm, '')
-    .slice(0, 350)
-  const salaryBadge = job.salary_range
-    ? `<span style="display:inline-block;padding:4px 10px;background-color:#FEF3C7;color:#92400E;font-size:12px;font-weight:700;border-radius:6px;margin-right:6px;">💰 ${escapeHtml(job.salary_range)}</span>`
+    .slice(0, 320)
+
+  const salarySnippet = job.salary_range
+    ? `<div style="font-size:13px;color:#0F172A;font-weight:600;margin-top:6px;">Compensation: ${escapeHtml(job.salary_range)}</div>`
     : ''
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Job Opening: ${escapeHtml(job.title)}</title>
+  <title>New Job: ${escapeHtml(job.title)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;line-height:1.6;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:32px 16px;">
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width:600px;background-color:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;box-shadow:0 8px 30px rgba(15,23,42,0.06);overflow:hidden;">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
           
+          <!-- Simple Header -->
           <tr>
-            <td style="background:linear-gradient(135deg, #0B2545 0%, #134074 100%);padding:28px 32px;text-align:left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#FFFFFF;margin-bottom:4px;">
-                      NAMMA OORU JOBS
-                    </div>
-                    <div style="font-size:12px;font-weight:600;color:#93C5FD;letter-spacing:0.5px;text-transform:uppercase;">
-                      Tamil Nadu Professional Network &bull; Verified Alert
-                    </div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">
+                Namma Ooru Jobs
+              </div>
             </td>
           </tr>
 
+          <!-- Content Body -->
           <tr>
-            <td style="padding:32px;">
-              <div style="display:inline-block;padding:4px 10px;background-color:#EFF6FF;color:#1D4ED8;font-size:11px;font-weight:800;border-radius:20px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:12px;">
-                🚀 Actively Recruiting
-              </div>
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">
+                Hi,
+              </p>
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                A new opening was just posted that matches opportunities in your area:
+              </p>
 
-              <h1 style="font-size:22px;font-weight:800;color:#0F172A;margin:0 0 8px 0;line-height:1.3;">
-                ${escapeHtml(job.title)}
-              </h1>
-
-              <div style="font-size:16px;font-weight:700;color:#0B2545;margin-bottom:16px;">
-                🏢 ${escapeHtml(job.company_name)}
-              </div>
-
-              <div style="margin-bottom:24px;">
-                <span style="display:inline-block;padding:4px 10px;background-color:#F1F5F9;color:#334155;font-size:12px;font-weight:600;border-radius:6px;margin-right:6px;">
-                  📍 ${escapeHtml(job.location)}
-                </span>
-                <span style="display:inline-block;padding:4px 10px;background-color:#F1F5F9;color:#334155;font-size:12px;font-weight:600;border-radius:6px;margin-right:6px;">
-                  💼 ${escapeHtml(job.workplace_type || 'Remote')}
-                </span>
-                <span style="display:inline-block;padding:4px 10px;background-color:#F1F5F9;color:#334155;font-size:12px;font-weight:600;border-radius:6px;margin-right:6px;">
-                  ⏱️ ${escapeHtml(job.employment_type || 'Full-time')}
-                </span>
-                ${salaryBadge}
-              </div>
-
-              <div style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:18px;margin-bottom:28px;">
-                <div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
-                  Role Overview
+              <!-- Job Snippet Box -->
+              <div style="border:1px solid #E2E8F0;border-radius:8px;padding:16px 18px;margin:20px 0;background-color:#FAFAFA;">
+                <div style="font-size:16px;font-weight:700;color:#0F172A;margin-bottom:4px;">
+                  ${escapeHtml(job.title)}
                 </div>
-                <p style="font-size:14px;color:#334155;margin:0;line-height:1.6;">
+                <div style="font-size:13px;color:#475569;line-height:1.5;">
+                  <strong>${escapeHtml(job.company_name)}</strong> &bull; ${escapeHtml(job.location)} (${escapeHtml(job.workplace_type || 'On-site')})
+                </div>
+                ${salarySnippet}
+                <p style="font-size:13px;color:#475569;margin:12px 0 0 0;line-height:1.6;">
                   ${escapeHtml(cleanDesc)}...
                 </p>
               </div>
 
-              <div style="text-align:center;margin-bottom:28px;">
-                <a href="${jobUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(11,37,69,0.25);">
-                  View Job &amp; Apply Directly &rarr;
+              <!-- Button CTA -->
+              <div style="margin:24px 0 20px 0;">
+                <a href="${jobUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:6px;">
+                  View details &amp; apply
                 </a>
               </div>
 
-              <div style="border-top:1px solid #E2E8F0;padding-top:18px;font-size:12px;color:#64748B;line-height:1.5;">
-                <strong style="color:#0F172A;">100% Direct Application:</strong> Your profile and resume are sent directly to the verified recruiter at <strong>${escapeHtml(job.company_name)}</strong>. Namma Ooru Jobs charges zero commission from job seekers.
+              <div style="font-size:13px;color:#64748B;line-height:1.5;">
+                Best regards,<br>
+                The Namma Ooru Jobs Team
               </div>
             </td>
           </tr>
 
+          <!-- Subtle Footer -->
           <tr>
-            <td style="background-color:#F8FAFC;border-top:1px solid #E2E8F0;padding:24px 32px;text-align:center;font-size:11px;color:#94A3B8;">
-              <p style="margin:0 0 6px 0;">
-                You received this job alert because you are a registered member of <strong>Namma Ooru Jobs</strong>.
-              </p>
-              <p style="margin:0;">
-                Connecting Talent &amp; Opportunities across Chennai, Coimbatore, Madurai, Trichy, Salem and beyond.
-              </p>
+            <td style="padding-top:24px;border-top:1px solid #E2E8F0;margin-top:24px;font-size:12px;color:#94A3B8;line-height:1.5;">
+              You received this job alert because you have an active account on Namma Ooru Jobs.
             </td>
           </tr>
 
@@ -513,15 +228,16 @@ export function buildNewJobEmailTemplate(job: JobNotificationPayload): string {
     </tr>
   </table>
 </body>
-</html>
-`
+</html>`
 }
 
 export async function broadcastNewJobEmail(
   db: any,
-  job: JobNotificationPayload
+  job: JobNotificationPayload,
+  env?: any
 ): Promise<{ totalSent: number; errors: number }> {
   try {
+    const config = getResendConfig(env)
     const { results } = await db
       .prepare(
         `SELECT DISTINCT email, full_name, role 
@@ -544,10 +260,13 @@ export async function broadcastNewJobEmail(
       return { totalSent: 0, errors: 0 }
     }
 
-    console.log(`[EmailService] Preparing new job alert broadcast for ${validEmails.length} users...`)
+    console.log(`[EmailService] Preparing new job alert broadcast for ${validEmails.length} dynamic users from database...`)
 
-    const subject = `🚀 New Job Opening: ${job.title} at ${job.company_name} | Namma Ooru Jobs`
-    const htmlContent = buildNewJobEmailTemplate(job)
+    const subject = `New Job Opening: ${job.title} at ${job.company_name}`
+    const htmlContent = buildNewJobEmailTemplate(job, config.appUrl)
+
+    const fromEmailMatch = config.defaultFrom.match(/<([^>]+)>/)
+    const toFallback = fromEmailMatch ? fromEmailMatch[1] : config.defaultFrom
 
     const BATCH_SIZE = 40
     let totalSent = 0
@@ -557,11 +276,11 @@ export async function broadcastNewJobEmail(
       const batch = validEmails.slice(i, i + BATCH_SIZE)
       try {
         await sendEmail({
-          to: SMTP_CONFIG.defaultFrom,
+          to: toFallback,
           bcc: batch,
           subject,
           html: htmlContent,
-        })
+        }, env)
         totalSent += batch.length
         console.log(`[EmailService] Successfully sent batch (${i + 1}-${i + batch.length}) of ${validEmails.length}`)
       } catch (batchErr) {
@@ -581,89 +300,62 @@ export async function broadcastNewJobEmail(
 // 2. SCENARIO: NEW FOLLOWER EMAIL NOTIFICATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function buildFollowNotificationEmail(payload: FollowNotificationPayload): string {
-  const profileUrl = `${APP_URL}/network`
+export function buildFollowNotificationEmail(payload: FollowNotificationPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  const profileUrl = `${appUrl}/network`
+  const headlinePart = payload.followerHeadline
+    ? ` (${escapeHtml(payload.followerHeadline)}${payload.followerCompany ? ` at ${escapeHtml(payload.followerCompany)}` : ''})`
+    : ''
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(payload.followerName)} started following you</title>
 </head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;line-height:1.6;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:32px 16px;">
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width:600px;background-color:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;box-shadow:0 8px 30px rgba(15,23,42,0.06);overflow:hidden;">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
           
+          <!-- Simple Header -->
           <tr>
-            <td style="background:linear-gradient(135deg, #0B2545 0%, #134074 100%);padding:28px 32px;text-align:left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#FFFFFF;margin-bottom:4px;">
-                      NAMMA OORU JOBS
-                    </div>
-                    <div style="font-size:12px;font-weight:600;color:#93C5FD;letter-spacing:0.5px;text-transform:uppercase;">
-                      Professional Network Alert
-                    </div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">
+                Namma Ooru Jobs
+              </div>
             </td>
           </tr>
 
+          <!-- Body -->
           <tr>
-            <td style="padding:32px;">
-              <div style="display:inline-block;padding:4px 10px;background-color:#F0FDF4;color:#15803D;font-size:11px;font-weight:800;border-radius:20px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:12px;">
-                👥 New Follower
-              </div>
-
-              <h1 style="font-size:20px;font-weight:800;color:#0F172A;margin:0 0 16px 0;line-height:1.3;">
-                ${escapeHtml(payload.followerName)} started following you!
-              </h1>
-
-              <p style="font-size:14px;color:#475569;margin:0 0 24px 0;">
-                Hello <strong>${escapeHtml(payload.recipientName || 'Member')}</strong>, your professional circle in Tamil Nadu is expanding.
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">
+                Hi ${escapeHtml(payload.recipientName || 'there')},
+              </p>
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                <strong>${escapeHtml(payload.followerName)}</strong>${headlinePart} started following you on Namma Ooru Jobs.
               </p>
 
-              <!-- Follower Profile Card -->
-              <div style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;padding:20px;margin-bottom:28px;">
-                <div style="font-size:16px;font-weight:700;color:#0B2545;margin-bottom:4px;">
-                  ${escapeHtml(payload.followerName)}
-                </div>
-                ${
-                  payload.followerHeadline
-                    ? `<div style="font-size:13px;color:#64748B;margin-bottom:4px;">${escapeHtml(payload.followerHeadline)}</div>`
-                    : ''
-                }
-                ${
-                  payload.followerCompany
-                    ? `<div style="font-size:12px;font-weight:600;color:#334155;">🏢 ${escapeHtml(payload.followerCompany)}</div>`
-                    : ''
-                }
-              </div>
-
-              <!-- CTA Button -->
-              <div style="text-align:center;margin-bottom:28px;">
-                <a href="${profileUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(11,37,69,0.25);">
-                  View Profile &amp; Connect Back &rarr;
+              <!-- Button CTA -->
+              <div style="margin:24px 0 20px 0;">
+                <a href="${profileUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:6px;">
+                  View profile
                 </a>
               </div>
 
-              <div style="border-top:1px solid #E2E8F0;padding-top:18px;font-size:12px;color:#64748B;line-height:1.5;">
-                Connecting with professionals and recruiters increases your visibility for new job openings across Tamil Nadu.
+              <div style="font-size:13px;color:#64748B;line-height:1.5;">
+                Best regards,<br>
+                The Namma Ooru Jobs Team
               </div>
             </td>
           </tr>
 
+          <!-- Subtle Footer -->
           <tr>
-            <td style="background-color:#F8FAFC;border-top:1px solid #E2E8F0;padding:24px 32px;text-align:center;font-size:11px;color:#94A3B8;">
-              <p style="margin:0 0 6px 0;">
-                You received this alert because you are a registered member of <strong>Namma Ooru Jobs</strong>.
-              </p>
+            <td style="padding-top:24px;border-top:1px solid #E2E8F0;margin-top:24px;font-size:12px;color:#94A3B8;line-height:1.5;">
+              Namma Ooru Jobs &bull; Professional network for Tamil Nadu
             </td>
           </tr>
 
@@ -672,119 +364,92 @@ export function buildFollowNotificationEmail(payload: FollowNotificationPayload)
     </tr>
   </table>
 </body>
-</html>
-`
+</html>`
 }
 
-export async function sendNewFollowerEmail(payload: FollowNotificationPayload): Promise<void> {
-  const subject = `👋 ${payload.followerName} started following you on Namma Ooru Jobs`
-  const html = buildFollowNotificationEmail(payload)
+export async function sendNewFollowerEmail(payload: FollowNotificationPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const subject = `${payload.followerName} started following you on Namma Ooru Jobs`
+  const html = buildFollowNotificationEmail(payload, config.appUrl)
 
   await sendEmail({
     to: payload.recipientEmail,
     subject,
     html,
-  })
+  }, env)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. SCENARIO: HR RECRUITER SHOWS INTEREST IN EMPLOYEE
+// 3. SCENARIO: HR RECRUITER EXPRESSES DIRECT INTEREST IN AN EMPLOYEE
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function buildHrInterestEmailTemplate(payload: HrInterestNotificationPayload): string {
-  const messagesUrl = `${APP_URL}/messages`
+export function buildHrInterestEmailTemplate(payload: HrInterestNotificationPayload, appUrl = 'https://namma-ooru-jobs.pages.dev'): string {
+  const messagesUrl = `${appUrl}/messages`
 
-  const customQuoteBox = payload.customMessage
+  const messageBox = payload.customMessage
     ? `
-      <div style="background-color:#FFFBEB;border-left:4px solid #F59E0B;padding:14px 16px;border-radius:6px;margin:20px 0;font-size:13px;color:#78350F;font-style:italic;">
-        &ldquo;${escapeHtml(payload.customMessage)}&rdquo;
+      <div style="border-left:3px solid #0B2545;background-color:#F8FAFC;padding:14px 18px;margin:20px 0;border-radius:0 8px 8px 0;">
+        <p style="margin:0;font-size:14px;color:#1E293B;line-height:1.6;">
+          &ldquo;${escapeHtml(payload.customMessage)}&rdquo;
+        </p>
       </div>
     `
     : ''
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recruiter Interest Alert: ${escapeHtml(payload.hrCompany)}</title>
+  <title>Note from ${escapeHtml(payload.hrName)} at ${escapeHtml(payload.hrCompany)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0F172A;line-height:1.6;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:32px 16px;">
+<body style="margin:0;padding:24px 16px;background-color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1E293B;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width:600px;background-color:#FFFFFF;border-radius:18px;border:1px solid #E2E8F0;box-shadow:0 8px 30px rgba(15,23,42,0.06);overflow:hidden;">
+        <table role="presentation" width="100%" style="max-width:540px;background-color:#FFFFFF;border-radius:12px;border:1px solid #E2E8F0;padding:28px 24px;text-align:left;">
           
+          <!-- Simple Minimal Header -->
           <tr>
-            <td style="background:linear-gradient(135deg, #0B2545 0%, #134074 100%);padding:28px 32px;text-align:left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#FFFFFF;margin-bottom:4px;">
-                      NAMMA OORU JOBS
-                    </div>
-                    <div style="font-size:12px;font-weight:600;color:#FDE68A;letter-spacing:0.5px;text-transform:uppercase;">
-                      ⭐ Verified Recruiter Outreach
-                    </div>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding-bottom:18px;border-bottom:1px solid #E2E8F0;">
+              <div style="font-size:14px;font-weight:700;color:#0B2545;letter-spacing:-0.2px;">
+                Namma Ooru Jobs
+              </div>
             </td>
           </tr>
 
+          <!-- Message Body -->
           <tr>
-            <td style="padding:32px;">
-              <div style="display:inline-block;padding:4px 10px;background-color:#FEF3C7;color:#92400E;font-size:11px;font-weight:800;border-radius:20px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:12px;">
-                🎯 Direct Career Opportunity
-              </div>
-
-              <h1 style="font-size:22px;font-weight:800;color:#0F172A;margin:0 0 16px 0;line-height:1.3;">
-                ${escapeHtml(payload.hrCompany)} is interested in your profile!
-              </h1>
-
-              <p style="font-size:14px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
-                Hello <strong>${escapeHtml(payload.candidateName)}</strong>,
+            <td style="padding-top:20px;">
+              <p style="font-size:15px;color:#1E293B;margin:0 0 16px 0;">
+                Hi ${escapeHtml(payload.candidateName || 'there')},
+              </p>
+              
+              <p style="font-size:15px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
+                <strong>${escapeHtml(payload.hrName)}</strong> from <strong>${escapeHtml(payload.hrCompany)}</strong> reviewed your profile on Namma Ooru Jobs and would like to speak with you regarding open opportunities.
               </p>
 
-              <p style="font-size:14px;color:#334155;margin:0 0 20px 0;line-height:1.6;">
-                <strong>${escapeHtml(payload.hrName)}</strong> (${escapeHtml(payload.hrPosition || 'Recruiter')} at <strong>${escapeHtml(payload.hrCompany)}</strong>) reviewed your skills and experience on Namma Ooru Jobs and has expressed direct interest in speaking with you regarding active openings.
-              </p>
+              ${messageBox}
 
-              ${customQuoteBox}
-
-              <!-- Recruiter Info Card -->
-              <div style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:20px;margin-bottom:28px;">
-                <div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">
-                  Hiring Organization
-                </div>
-                <div style="font-size:16px;font-weight:800;color:#0B2545;margin-bottom:4px;">
-                  🏢 ${escapeHtml(payload.hrCompany)}
-                </div>
-                <div style="font-size:13px;color:#475569;">
-                  Recruiter Contact: <strong>${escapeHtml(payload.hrName)}</strong> &bull; ${escapeHtml(payload.hrPosition || 'HR & Talent Acquisition')}
-                </div>
-              </div>
-
-              <!-- Direct CTA Button -->
-              <div style="text-align:center;margin-bottom:28px;">
-                <a href="${messagesUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(11,37,69,0.25);">
-                  View Recruiter &amp; Message Back &rarr;
+              <!-- Direct Reply Action -->
+              <div style="margin:24px 0 24px 0;">
+                <a href="${messagesUrl}" target="_blank" style="display:inline-block;background-color:#0B2545;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:10px 22px;border-radius:6px;">
+                  Reply to ${escapeHtml(payload.hrName)}
                 </a>
               </div>
 
-              <!-- Security Notice -->
-              <div style="border-top:1px solid #E2E8F0;padding-top:18px;font-size:12px;color:#64748B;line-height:1.5;">
-                <strong style="color:#0F172A;">Verified Recruiter Guarantee:</strong> All recruiter accounts on Namma Ooru Jobs are verified by our administrative team. Never pay any fee for interview scheduling or job placements.
+              <!-- Recruiter Signoff -->
+              <div style="font-size:13px;color:#64748B;line-height:1.5;margin-bottom:24px;">
+                <strong style="color:#0F172A;">${escapeHtml(payload.hrName)}</strong><br>
+                ${escapeHtml(payload.hrPosition || 'HR Recruiter')}, ${escapeHtml(payload.hrCompany)}
               </div>
             </td>
           </tr>
 
+          <!-- Clean Footer -->
           <tr>
-            <td style="background-color:#F8FAFC;border-top:1px solid #E2E8F0;padding:24px 32px;text-align:center;font-size:11px;color:#94A3B8;">
-              <p style="margin:0 0 6px 0;">
-                You received this priority recruitment alert because you are a registered job seeker on <strong>Namma Ooru Jobs</strong>.
-              </p>
+            <td style="padding-top:20px;border-top:1px solid #E2E8F0;font-size:12px;color:#94A3B8;line-height:1.5;">
+              This invitation was sent directly to you by a verified employer through Namma Ooru Jobs.
             </td>
           </tr>
 
@@ -793,17 +458,17 @@ export function buildHrInterestEmailTemplate(payload: HrInterestNotificationPayl
     </tr>
   </table>
 </body>
-</html>
-`
+</html>`
 }
 
-export async function sendHrInterestEmail(payload: HrInterestNotificationPayload): Promise<void> {
-  const subject = `🌟 ${payload.hrCompany || payload.hrName} is interested in your profile for career opportunities`
-  const html = buildHrInterestEmailTemplate(payload)
+export async function sendHrInterestEmail(payload: HrInterestNotificationPayload, env?: any): Promise<void> {
+  const config = getResendConfig(env)
+  const subject = `${payload.hrName} from ${payload.hrCompany} is interested in your profile`
+  const html = buildHrInterestEmailTemplate(payload, config.appUrl)
 
   await sendEmail({
     to: payload.candidateEmail,
     subject,
     html,
-  })
+  }, env)
 }

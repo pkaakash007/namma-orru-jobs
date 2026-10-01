@@ -13,6 +13,8 @@ import {
 import type { User, Language } from '../../../types'
 import { socialService } from '../../../services/api'
 import { Button } from '../../ui/Button'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
+import { translateLocationSync } from '../../../services/googleAiTranslate'
 
 interface ConnectionsViewProps {
   currentUser: User | null
@@ -359,19 +361,23 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
                         </h3>
                       </div>
                       {(targetUser.headline || targetUser.position) && (
-                        <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-0.5 min-h-[32px] leading-snug">
-                          {targetUser.headline ||
+                        <DynamicTranslatedText
+                          text={
+                            targetUser.headline ||
                             (targetUser.position
                               ? `${targetUser.position}${targetUser.company ? ` at ${targetUser.company}` : ''}`
-                              : '')}
-                        </p>
+                              : '')
+                          }
+                          as="p"
+                          className="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-0.5 min-h-[32px] leading-snug"
+                        />
                       )}
                       {(targetUser.location || targetUser.company) ? (
                         <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 truncate min-h-[20px]">
                           {targetUser.location ? (
                             <>
                               <MapPin className="h-3 w-3 text-[#F97316] shrink-0" />
-                              <span className="truncate">{targetUser.location}</span>
+                              <span className="truncate">{translateLocationSync(targetUser.location, lang)}</span>
                             </>
                           ) : (
                             <>

@@ -6,7 +6,7 @@ import {
   SUPPORTED_LANGUAGES,
   type LanguageOption,
 } from '../utils/i18n'
-import { translateWithGoogleAi } from '../services/googleAiTranslate'
+import { translateWithGoogleAi, isLanguageMatch } from '../services/googleAiTranslate'
 
 interface LanguageContextType {
   language: SupportedLanguage
@@ -64,7 +64,10 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const translateDynamic = useCallback(
     async (text: string, forceLang?: SupportedLanguage): Promise<string> => {
       const target = forceLang || language
-      if (!text || !text.trim() || target === 'en') {
+      if (!text || !text.trim()) {
+        return text || ''
+      }
+      if (isLanguageMatch(text, target)) {
         return text
       }
       setIsAiTranslating(true)

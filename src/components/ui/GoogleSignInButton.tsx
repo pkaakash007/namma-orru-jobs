@@ -16,9 +16,16 @@ declare global {
 interface GoogleSignInButtonProps {
   onSuccess?: () => void
   roleOverride?: SelectableRole
+  onBeforeSignIn?: () => boolean
+  disabled?: boolean
 }
 
-export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, roleOverride }) => {
+export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
+  onSuccess,
+  roleOverride,
+  onBeforeSignIn,
+  disabled,
+}) => {
   const { loginWithGoogle, user, selectedRole } = useAuth()
   const { showToast } = useToast()
   const [isAuthenticating, setIsAuthenticating] = useState(false)
@@ -116,7 +123,10 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSucces
   }, [isNative])
 
   const handleButtonClick = async () => {
-    if (isAuthenticating) return
+    if (disabled || isAuthenticating) return
+    if (onBeforeSignIn && !onBeforeSignIn()) {
+      return
+    }
 
     // ── 1. Native Android / iOS Flow ─────────────────────────
     if (isNative) {

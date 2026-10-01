@@ -1,8 +1,43 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import type { User, UserRole, SelectableRole } from '../types'
+import type { User, UserRole, SelectableRole, LastLoginAccount } from '../types'
 import { authService, userService, apiClient } from '../services/api'
 import { syncDeviceTokenWithUser } from '../services/notifications'
 import { useToast } from './ToastContext'
+
+const LAST_LOGIN_STORAGE_KEY = 'namma_last_login'
+
+const isLegacyMockAccount = (account: any): boolean => {
+  if (!account) return false
+  const email = (account.email || '').toLowerCase()
+  const name = (account.full_name || '').toLowerCase()
+  return (
+    email === 'karthik.jobseeker@nammaooru.com' ||
+    email === 'hr.recruiter@freshworks.com' ||
+    name === 'karthik raja' ||
+    name === 'priya sharma (hr)'
+  )
+}
+
+const persistLastLogin = (u: User): LastLoginAccount | null => {
+  try {
+    if (!u || !u.id || isLegacyMockAccount(u)) return null
+    const account: LastLoginAccount = {
+      id: u.id,
+      full_name: u.full_name || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      role: u.role || 'employee',
+      avatar_url: u.avatar_url || '',
+      company: u.company || '',
+      position: u.position || '',
+      last_login_at: new Date().toISOString(),
+    }
+    localStorage.setItem(LAST_LOGIN_STORAGE_KEY, JSON.stringify(account))
+    return account
+  } catch {
+    return null
+  }
+}
 
 interface AuthContextType {
   user: User | null
@@ -12,6 +47,8 @@ interface AuthContextType {
   setSelectedRole: (r: SelectableRole) => void
   isLoading: boolean
   hasRole: (allowed: UserRole[]) => boolean
+  lastLoginAccount: LastLoginAccount | null
+  clearLastLogin: () => void
   loginWithEmail: (
     email: string,
     fullName?: string,
@@ -42,6 +79,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [lastLoginAccount, setLastLoginAccount] = useState<LastLoginAccount | null>(() => {
+    try {
+      const saved = localStorage.getItem(LAST_LOGIN_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (isLegacyMockAccount(parsed)) {
+          localStorage.removeItem(LAST_LOGIN_STORAGE_KEY)
+          return null
+        }
+        return parsed
+      }
+    } catch {}
+    return null
+  })
+
+  const clearLastLogin = useCallback(() => {
+    try {
+      localStorage.removeItem(LAST_LOGIN_STORAGE_KEY)
+    } catch {}
+    setLastLoginAccount(null)
+  }, [])
+
   const [selectedRole, setSelectedRoleState] = useState<SelectableRole>(() => {
     try {
       const saved = localStorage.getItem('namma_selected_role')
@@ -91,6 +150,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(data.user))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        const savedAcc = persistLastLogin(data.user)
+        if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(data.user.id, data.token)
         
         if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
@@ -140,6 +201,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(data.user))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        const savedAcc = persistLastLogin(data.user)
+        if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(data.user.id, data.token)
 
         if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
@@ -182,6 +245,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(userObj))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        const savedAcc = persistLastLogin(userObj)
+        if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(userObj.id, data.token)
         showToast(`Welcome back, ${userObj.full_name}! (${userObj.role === 'manager' ? 'HR Recruiter' : userObj.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
 
@@ -234,6 +299,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_user', JSON.stringify(data.user))
           localStorage.setItem('namma_token', data.token)
         } catch {}
+        const savedAcc = persistLastLogin(data.user)
+        if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(data.user.id, data.token)
         showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : data.user.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
 
@@ -264,6 +331,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             localStorage.setItem('namma_user', JSON.stringify(res.user))
           } catch {}
+          const savedAcc = persistLastLogin(res.user)
+          if (savedAcc) setLastLoginAccount(savedAcc)
           return res.user
         }
         throw new Error(res?.message || 'Failed to update profile')
@@ -296,6 +365,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null)
     setUser(null)
     showToast('Signed out successfully', 'info')
+    if (typeof window !== 'undefined') {
+      try {
+        window.history.pushState({}, '', '/')
+        window.dispatchEvent(new CustomEvent('namma:navigate', { detail: { path: '/' } }))
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      } catch {}
+    }
   }, [showToast])
 
   // Restore authenticated session from localStorage if present
@@ -335,6 +411,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               try {
                 localStorage.setItem('namma_user', JSON.stringify(res.user))
               } catch {}
+              const savedAcc = persistLastLogin(res.user)
+              if (savedAcc) setLastLoginAccount(savedAcc)
             }
           })
           .catch(() => {})
@@ -356,6 +434,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSelectedRole,
         isLoading,
         hasRole,
+        lastLoginAccount,
+        clearLastLogin,
         loginWithEmail,
         registerWithEmail,
         loginWithGoogle,

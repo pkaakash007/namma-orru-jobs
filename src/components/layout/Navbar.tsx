@@ -117,10 +117,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 try {
                   window.history.pushState({}, '', '/')
                 } catch {}
-                onSelectTab(user ? 'jobs' : 'home')
+                onSelectTab(user ? (user.role === 'admin' ? 'admin-panel' : 'jobs') : 'home')
               }}
               className="flex cursor-pointer items-center gap-2 transition hover:opacity-90 shrink-0"
-              title={user ? 'Jobs Portal' : 'Home'}
+              title={user ? (user.role === 'admin' ? 'Admin Dashboard' : 'Jobs Portal') : 'Home'}
             >
               <img
                 src="/logo.png"
@@ -169,7 +169,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onSelectTab('jobs')}
               className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors relative whitespace-nowrap cursor-pointer ${
-                activeTab === 'jobs' || (activeTab === 'home' && !!user)
+                activeTab === 'jobs' || (activeTab === 'home' && !!user && user.role !== 'admin')
                   ? 'border-b-2 border-[#0B2545] text-[#0B2545] font-bold'
                   : 'text-[#5E5E5E] hover:text-[#0F172A]'
               }`}
@@ -252,7 +252,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => onSelectTab('admin-panel')}
                 className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                  activeTab === 'admin-panel'
+                  activeTab === 'admin-panel' || (activeTab === 'home' && user?.role === 'admin')
                     ? 'border-b-2 border-[#0B2545] text-[#0B2545] font-bold'
                     : 'text-[#5E5E5E] hover:text-[#0F172A]'
                 }`}
@@ -422,7 +422,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
 
                       <button
-                        onClick={logout}
+                        onClick={() => {
+                          setShowProfileMenu(false)
+                          logout()
+                          onSelectTab('home')
+                        }}
                         className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-red-50 text-red-600 text-left font-semibold cursor-pointer transition"
                       >
                         <LogOut className="h-4 w-4 text-red-500" />
@@ -545,7 +549,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => onSelectTab('admin-panel')}
             className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
-              activeTab === 'admin-panel' ? 'text-[#0B2545] font-bold' : 'text-slate-500'
+              activeTab === 'admin-panel' || (activeTab === 'home' && user?.role === 'admin') ? 'text-[#0B2545] font-bold' : 'text-slate-500'
             }`}
           >
             <ShieldCheck className="h-5 w-5" />

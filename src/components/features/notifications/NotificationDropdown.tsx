@@ -12,6 +12,7 @@ import {
   translateCompanySync,
 } from '../../../services/googleAiTranslate'
 import { formatRelativeTime } from '../../../utils/date'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
 
 interface NotificationDropdownProps {
   onSelectJob?: (jobId: string, jobTitle?: string) => void
@@ -303,22 +304,38 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                       {notif.type === 'user_follow' ? (
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
-                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                          <DynamicTranslatedText
+                            text={notif.message}
+                            as="p"
+                            className="text-xs text-slate-600 mt-0.5"
+                          />
                         </div>
                       ) : notif.type === 'chat_message' ? (
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
-                          <p className="text-xs text-slate-600 truncate mt-0.5">{notif.message}</p>
+                          <DynamicTranslatedText
+                            text={notif.message}
+                            as="p"
+                            className="text-xs text-slate-600 truncate mt-0.5"
+                          />
                         </div>
                       ) : notif.type === 'post_like' ? (
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
-                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                          <DynamicTranslatedText
+                            text={notif.message}
+                            as="p"
+                            className="text-xs text-slate-600 mt-0.5"
+                          />
                         </div>
                       ) : notif.type === 'application_received' ? (
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{notif.title}</p>
-                          <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                          <DynamicTranslatedText
+                            text={notif.message}
+                            as="p"
+                            className="text-xs text-slate-600 mt-0.5"
+                          />
                         </div>
                       ) : (
                         <>

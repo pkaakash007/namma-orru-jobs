@@ -1,0 +1,10 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='135' height='40' viewBox='0 0 135 40' fill='none'>
+  <rect width='135' height='40' rx='6' fill='#FFFFFF' stroke='#D1D5DB' stroke-width='1'/>
+  <!-- Google Play Icon -->
+  <path d='M14 10.5l9.2 9.5-9.2 9.5V10.5z' fill='#4285F4'/>
+  <path d='M23.2 20L14 10.5l11.4 6.5-2.2 3z' fill='#EA4335'/>
+  <path d='M23.2 20l2.2 3-11.4 6.5 9.2-9.5z' fill='#34A853'/>
+  <path d='M23.2 20l4.5-2.5c.8-.5.8-1.5 0-2l-4.5-2.5v7z' fill='#FBBC05'/>
+  <text x='40' y='14' font-family='-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif' font-size='8' fill='#111827' font-weight='600' letter-spacing='0.5'>GET IT ON</text>
+  <text x='40' y='28' font-family='-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif' font-size='13' fill='#111827' font-weight='700' letter-spacing='-0.2'>Google Play</text>
+</svg>

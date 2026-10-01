@@ -18,6 +18,8 @@ import { useAuth } from '../../../context/AuthContext'
 import { parseDateUTC } from '../../../utils/date'
 import { parseSkillsArray } from '../../../utils/skills'
 import { HrVerificationPendingView } from '../hr/HrVerificationPendingView'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
+import { translateLocationSync } from '../../../services/googleAiTranslate'
 
 interface PublicUserProfileViewProps {
   userId: string
@@ -337,9 +339,11 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
 
           {/* Headline */}
           {profile.headline && (
-            <p className="text-sm text-slate-600 font-medium mb-3 max-w-2xl leading-relaxed">
-              {profile.headline}
-            </p>
+            <DynamicTranslatedText
+              text={profile.headline}
+              as="p"
+              className="text-sm text-slate-600 font-medium mb-3 max-w-2xl leading-relaxed"
+            />
           )}
 
           {/* Details Row (Location, Company, Joined) */}
@@ -347,7 +351,7 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             {profile.location && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-[#F97316]" />
-                <span>{profile.location}</span>
+                <span>{translateLocationSync(profile.location, lang)}</span>
               </div>
             )}
             {profile.company && (
@@ -399,7 +403,7 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             </div>
             {profile.bio && profile.bio.trim() ? (
               <div className="rounded-2xl border border-slate-200/90 bg-slate-50/60 p-4 text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line shadow-2xs">
-                {profile.bio.trim()}
+                <DynamicTranslatedText text={profile.bio.trim()} as="p" showOriginalToggle />
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-xs text-slate-400 italic">

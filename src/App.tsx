@@ -10,10 +10,7 @@ import { JobApplyModal } from './components/features/jobs/JobApplyModal'
 import { GuestJobsLanding } from './components/features/jobs/GuestJobsLanding'
 import { PostJobForm } from './components/features/hr/PostJobForm'
 import { HrVerificationPendingView } from './components/features/hr/HrVerificationPendingView'
-import { AdminStatsGrid } from './components/features/admin/AdminStatsGrid'
-import { HrVerificationTable } from './components/features/admin/HrVerificationTable'
-import { UserDirectoryTable } from './components/features/admin/UserDirectoryTable'
-import { RoleGuideCard } from './components/features/admin/RoleGuideCard'
+import { AdminDashboardView, type AdminSectionTab } from './components/features/admin/AdminDashboardView'
 import { FeedView } from './components/features/feed/FeedView'
 import { Badge } from './components/ui/Badge'
 import { Avatar } from './components/ui/Avatar'
@@ -23,12 +20,13 @@ import { NotificationSection } from './components/features/notifications/Notific
 import { ConnectionsView } from './components/features/connections/ConnectionsView'
 import { PublicUserProfileView } from './components/features/profile/PublicUserProfileView'
 import { MessagesView } from './components/features/messages/MessagesView'
-import { AdminModerationTable } from './components/features/admin/AdminModerationTable'
 import { adminService, feedService, chatService, notificationService, savedJobService } from './services/api'
 import { initPushNotifications } from './services/notifications'
 import { ApkReleasePage } from './components/features/releases/ApkReleasePage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { PublicHomePage } from './components/features/home/PublicHomePage'
+import { TermsPage } from './components/features/legal/TermsPage'
+import { PrivacyPolicyPage } from './components/features/legal/PrivacyPolicyPage'
 import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
 import { HrProfileSetupModal } from './components/features/hr/HrProfileSetupModal'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
@@ -84,6 +82,38 @@ const isReleasePath = () => {
   )
 }
 
+const isTermsPath = () => {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname.toLowerCase()
+  const hash = window.location.hash.toLowerCase()
+  const search = window.location.search.toLowerCase()
+  return (
+    path === '/terms' ||
+    path.startsWith('/terms/') ||
+    path === '/terms-of-service' ||
+    hash === '#terms' ||
+    hash.startsWith('#/terms') ||
+    search.includes('tab=terms') ||
+    search.includes('view=terms')
+  )
+}
+
+const isPrivacyPath = () => {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname.toLowerCase()
+  const hash = window.location.hash.toLowerCase()
+  const search = window.location.search.toLowerCase()
+  return (
+    path === '/privacy' ||
+    path.startsWith('/privacy/') ||
+    path === '/privacy-policy' ||
+    hash === '#privacy' ||
+    hash.startsWith('#/privacy') ||
+    search.includes('tab=privacy') ||
+    search.includes('view=privacy')
+  )
+}
+
 function MainContent() {
   const { user, role, hasRole, setSelectedRole } = useAuth()
   const isRecruiter = hasRole(['admin', 'manager'])
@@ -101,17 +131,24 @@ function MainContent() {
 
   const [isLoginRoute, setIsLoginRoute] = useState(() => isLoginPath())
   const [isReleaseRoute, setIsReleaseRoute] = useState(() => isReleasePath())
+  const [isTermsRoute, setIsTermsRoute] = useState(() => isTermsPath())
+  const [isPrivacyRoute, setIsPrivacyRoute] = useState(() => isPrivacyPath())
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       if (typeof window !== 'undefined') {
         const hash = window.location.hash.toLowerCase()
         const path = window.location.pathname.toLowerCase()
         const search = window.location.search.toLowerCase()
+        if (hash === '#admin' || hash === '#admin-panel' || path === '/admin' || search.includes('tab=admin')) return 'admin-panel'
         if (hash === '#profile' || path === '/profile') return 'profile'
         if (hash === '#saved-jobs' || hash === '#saved' || path === '/saved-jobs' || search.includes('tab=saved-jobs')) return 'saved-jobs'
       }
       const savedUser = localStorage.getItem('namma_user')
-      if (savedUser) return 'jobs'
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser)
+        if (parsed?.role === 'admin') return 'admin-panel'
+        return 'jobs'
+      }
     } catch {}
     return 'home'
   })
@@ -165,7 +202,7 @@ function MainContent() {
     pending_hr_verifications: 0,
   }
 
-  const [adminSection, setAdminSection] = useState<'hr-verifications' | 'users' | 'moderation'>('hr-verifications')
+  const [adminSection, setAdminSection] = useState<AdminSectionTab>('hr-verifications')
 
   const [selectedDistrict, setSelectedDistrict] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -271,7 +308,24 @@ function MainContent() {
       localStorage.getItem('namma_user') ||
       localStorage.getItem('namma_token')
     )
-    setActiveTab(hasAuthedUser ? 'jobs' : 'home')
+    let defaultTab: TabType = 'home'
+    if (hasAuthedUser) {
+      if (user?.role === 'admin') {
+        defaultTab = 'admin-panel'
+      } else {
+        try {
+          const raw = localStorage.getItem('namma_user')
+          if (raw && JSON.parse(raw)?.role === 'admin') {
+            defaultTab = 'admin-panel'
+          } else {
+            defaultTab = 'jobs'
+          }
+        } catch {
+          defaultTab = 'jobs'
+        }
+      }
+    }
+    setActiveTab(defaultTab)
     try {
       window.dispatchEvent(new PopStateEvent('popstate'))
     } catch {}
@@ -393,15 +447,17 @@ function MainContent() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'admin-panel') {
+    if (activeTab === 'admin-panel' || (user?.role === 'admin' && activeTab === 'home')) {
       loadAdminData()
     }
-  }, [activeTab, loadAdminData])
+  }, [activeTab, user?.role, loadAdminData])
 
   useEffect(() => {
     const handleRouteChange = () => {
       setIsLoginRoute(isLoginPath())
       setIsReleaseRoute(isReleasePath())
+      setIsTermsRoute(isTermsPath())
+      setIsPrivacyRoute(isPrivacyPath())
     }
     // namma:navigate fires from GoogleSignInButton after successful login
     // This ensures we navigate home even if popstate timing is off in Capacitor WebView
@@ -433,27 +489,78 @@ function MainContent() {
   useEffect(() => {
     if (user) {
       if (activeTab === 'home') {
-        setActiveTab('jobs')
+        setActiveTab(user.role === 'admin' ? 'admin-panel' : 'jobs')
       }
       // Instantly load fresh authenticated jobs and posts without requiring a browser refresh
       loadJobs(true)
       loadPosts(true)
+      if (user.role === 'admin') {
+        loadAdminData(true)
+      }
+    } else {
+      // When unauthenticated, ensure protected tabs safely fall back to home landing page
+      if (activeTab === 'admin-panel' || activeTab === 'notifications' || activeTab === 'profile' || activeTab === 'messages' || activeTab === 'connections') {
+        setActiveTab('home')
+        setIsLoginRoute(false)
+      }
     }
-  }, [user?.id, loadJobs, loadPosts])
+  }, [user?.id, user?.role, loadJobs, loadPosts, loadAdminData, activeTab])
 
-  // Guard notifications: only available for authenticated members
+  // Guard notifications: only available for authenticated members, safely redirect to home if unauthenticated
   useEffect(() => {
     if (!user && activeTab === 'notifications') {
-      setActiveTab('jobs')
-      navigateToLogin()
+      setActiveTab('home')
+      setIsLoginRoute(false)
     }
-  }, [user, activeTab, navigateToLogin])
+  }, [user, activeTab])
+
+  if (isTermsRoute) {
+    return (
+      <TermsPage
+        onBackToApp={() => {
+          window.history.pushState({}, '', '/')
+          setIsTermsRoute(false)
+        }}
+        onNavigateToPrivacy={() => {
+          window.history.pushState({}, '', '/privacy')
+          setIsTermsRoute(false)
+          setIsPrivacyRoute(true)
+        }}
+      />
+    )
+  }
+
+  if (isPrivacyRoute) {
+    return (
+      <PrivacyPolicyPage
+        onBackToApp={() => {
+          window.history.pushState({}, '', '/')
+          setIsPrivacyRoute(false)
+        }}
+        onNavigateToTerms={() => {
+          window.history.pushState({}, '', '/terms')
+          setIsPrivacyRoute(false)
+          setIsTermsRoute(true)
+        }}
+      />
+    )
+  }
 
   if (isLoginRoute) {
     return (
       <LoginPage
         onSuccess={navigateToHome}
         onBackToApp={navigateToHome}
+        onOpenTerms={() => {
+          window.history.pushState({}, '', '/terms')
+          setIsTermsRoute(true)
+          setIsLoginRoute(false)
+        }}
+        onOpenPrivacy={() => {
+          window.history.pushState({}, '', '/privacy')
+          setIsPrivacyRoute(true)
+          setIsLoginRoute(false)
+        }}
       />
     )
   }
@@ -551,6 +658,14 @@ function MainContent() {
           setActiveTab('jobs')
           if (q) setSearchQuery(q)
           if (city) setSelectedDistrict(city)
+        }}
+        onOpenTerms={() => {
+          window.history.pushState({}, '', '/terms')
+          setIsTermsRoute(true)
+        }}
+        onOpenPrivacy={() => {
+          window.history.pushState({}, '', '/privacy')
+          setIsPrivacyRoute(true)
         }}
         onPostJob={() => {
           if (user) {
@@ -682,6 +797,42 @@ function MainContent() {
               onBack={() => setActiveTab('jobs')}
               onBrowseJobs={() => setActiveTab('jobs')}
             />
+          </div>
+        ) : activeTab === 'admin-panel' || (user?.role === 'admin' && activeTab === 'home') ? (
+          <div className="max-w-7xl mx-auto w-full animate-in fade-in duration-150">
+            {hasRole(['admin']) ? (
+              <AdminDashboardView
+                currentUser={user}
+                stats={adminStats}
+                usersList={usersList}
+                onPromoteUser={handlePromote}
+                onDemoteUser={handleDemote}
+                onRefreshAll={() => loadAdminData(true)}
+                lang={language}
+                initialSection={adminSection}
+                onSectionChange={setAdminSection}
+              />
+            ) : (
+              <div className="rounded-2xl border border-red-200 bg-white p-8 sm:p-12 text-center shadow-xs max-w-xl mx-auto">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <ShieldCheck className="h-7 w-7" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Admin Portal Restricted
+                </h3>
+                <p className="mt-2 text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  This control panel is restricted to system administrators. Admin accounts cannot be self-selected during signup and must be manually assigned directly in the database.
+                </p>
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={() => setActiveTab('jobs')}
+                    className="rounded-xl bg-[#0B2545] px-5 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#0B2545]/90 cursor-pointer active:scale-98 transition"
+                  >
+                    Return to Jobs Portal
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -1185,104 +1336,6 @@ function MainContent() {
               )
             )}
 
-            {/* TAB 3: Admin Management */}
-            {activeTab === 'admin-panel' && (
-              hasRole(['admin']) ? (
-                <div className="space-y-5">
-                  <AdminStatsGrid
-                    stats={adminStats}
-                    onSelectHrTab={() => setAdminSection('hr-verifications')}
-                  />
-
-                  {/* Admin Section Tabs */}
-                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-                    <button
-                      type="button"
-                      onClick={() => setAdminSection('hr-verifications')}
-                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-                        adminSection === 'hr-verifications'
-                          ? 'bg-[#0B2545] text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Briefcase className="h-4 w-4" />
-                      <span>HR Recruiter Verifications</span>
-                      {(adminStats?.pending_hr_verifications || 0) > 0 && (
-                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white">
-                          {adminStats.pending_hr_verifications}
-                        </span>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAdminSection('users')}
-                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-                        adminSection === 'users'
-                          ? 'bg-[#0B2545] text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Users className="h-4 w-4" />
-                      <span>User Directory & Roles</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAdminSection('moderation')}
-                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-                        adminSection === 'moderation'
-                          ? 'bg-[#0B2545] text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      <span>Content Moderation</span>
-                    </button>
-                  </div>
-
-                  {adminSection === 'hr-verifications' && (
-                    <HrVerificationTable onRefreshStats={() => loadAdminData(true)} />
-                  )}
-
-                  {adminSection === 'users' && (
-                    <div className="space-y-5">
-                      <RoleGuideCard />
-                      <UserDirectoryTable
-                        users={usersList}
-                        onPromote={handlePromote}
-                        onDemote={handleDemote}
-                        onRefresh={() => loadAdminData(true)}
-                      />
-                    </div>
-                  )}
-
-                  {adminSection === 'moderation' && (
-                    <AdminModerationTable lang={language} />
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-red-200 bg-white p-6 sm:p-8 text-center shadow-xs">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
-                    <ShieldCheck className="h-6 w-6" />
-                  </div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Admin Portal Restricted
-                  </h3>
-                  <p className="mt-1.5 text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
-                    This control panel is restricted to system administrators. Admin accounts cannot be self-selected during signup and must be manually assigned directly in the database.
-                  </p>
-                  <div className="mt-5 flex justify-center">
-                    <button
-                      onClick={() => setActiveTab('jobs')}
-                      className="rounded-lg bg-[#0B2545] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#0B2545]/90 cursor-pointer"
-                    >
-                      Return to Dashboard
-                    </button>
-                  </div>
-                </div>
-              )
-            )}
 
             {/* TAB 4: Network Feed */}
             {activeTab === 'feed' && (

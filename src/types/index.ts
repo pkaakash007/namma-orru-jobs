@@ -45,6 +45,18 @@ export interface User {
   pending_profile?: string | null
 }
 
+export interface LastLoginAccount {
+  id: string
+  full_name: string
+  email?: string
+  phone?: string
+  role: UserRole
+  avatar_url?: string
+  company?: string
+  position?: string
+  last_login_at: string
+}
+
 export interface Job {
   id: string
   poster_id: string

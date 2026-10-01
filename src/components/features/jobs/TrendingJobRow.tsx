@@ -19,19 +19,13 @@ interface TrendingJobRowProps {
 
 export const TrendingJobRow: React.FC<TrendingJobRowProps> = ({ job, language, onClick }) => {
   const [translatedTitle, setTranslatedTitle] = useState<string>(() =>
-    language !== 'en' ? translateJobTitleSync(job.title, language) : job.title
+    translateJobTitleSync(job.title, language) || job.title
   )
   const [translatedLocation, setTranslatedLocation] = useState<string>(() =>
     translateLocationSync(job.location, language)
   )
 
   useEffect(() => {
-    if (language === 'en') {
-      setTranslatedTitle(job.title)
-      setTranslatedLocation(job.location)
-      return
-    }
-
     // 1. Immediate synchronous dictionary lookup for 0ms render
     setTranslatedTitle(translateJobTitleSync(job.title, language))
     setTranslatedLocation(translateLocationSync(job.location, language))

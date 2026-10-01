@@ -15,6 +15,7 @@ import {
   translateCompanySync,
   translatePosterName,
   formatSalary,
+  getCachedTranslation,
 } from '../../../services/googleAiTranslate'
 import { parseDateUTC } from '../../../utils/date'
 
@@ -50,9 +51,11 @@ export const JobCard: React.FC<JobCardProps> = ({
   }, [job.id])
 
   const [translatedTitle, setTranslatedTitle] = useState<string | null>(() =>
-    language !== 'en' ? translateJobTitleSync(job.title, language) : null
+    translateJobTitleSync(job.title, language)
   )
-  const [translatedDesc, setTranslatedDesc] = useState<string | null>(null)
+  const [translatedDesc, setTranslatedDesc] = useState<string | null>(() =>
+    getCachedTranslation(job.description, language)
+  )
   const [translatedLocation, setTranslatedLocation] = useState<string | null>(() =>
     translateLocationSync(job.location, language)
   )
@@ -60,17 +63,15 @@ export const JobCard: React.FC<JobCardProps> = ({
 
   // Automatically translate job title, description & location with Google AI when language switches
   useEffect(() => {
-    if (language === 'en') {
-      setTranslatedTitle(null)
-      setTranslatedDesc(null)
-      setTranslatedLocation(null)
-      setShowOriginal(false)
-      return
-    }
+    setShowOriginal(false)
 
     // Immediate synchronous dictionary lookup for 0ms instantaneous display
     setTranslatedTitle(translateJobTitleSync(job.title, language))
     setTranslatedLocation(translateLocationSync(job.location, language))
+    const cachedDesc = getCachedTranslation(job.description, language)
+    if (cachedDesc && cachedDesc !== job.description) {
+      setTranslatedDesc(cachedDesc)
+    }
 
     let isMounted = true
     translateWithGoogleAi(job.title, language).then((res) => {

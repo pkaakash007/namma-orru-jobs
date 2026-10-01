@@ -30,6 +30,8 @@ import { parseResumeWithAi, extractTextFromPdf, isResumeDocument } from '../../.
 import type { SupportedLanguage } from '../../../utils/i18n'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { parseSkillsArray, cleanSkillString } from '../../../utils/skills'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
+import { translateLocationSync } from '../../../services/googleAiTranslate'
 
 const SUGGESTED_SKILLS = [
   'React',
@@ -82,7 +84,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   showHeaderBack = true,
 }) => {
   const { user, role, updateUserProfile } = useAuth()
-  const { showToast } = useToast()
+  const { showToast, showConfirm } = useToast()
   const { language, setLanguage, t, languages } = useLanguage()
 
   // Form State initialized from user record
@@ -386,39 +388,54 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     setReviewSkillInput('')
   }
 
-  const handleRemoveResume = async () => {
+  const handleRemoveResume = () => {
+    const confirmTitle =
+      language === 'ta'
+        ? 'தன்விவரக் குறிப்பை அகற்றவா?'
+        : language === 'hi'
+        ? 'बायोडाटा हटाएं?'
+        : 'Remove Resume?'
     const confirmMessage =
       language === 'ta'
         ? 'உங்கள் தன்விவரக் குறிப்பை அகற்ற விரும்புகிறீர்களா?'
         : language === 'hi'
         ? 'क्या आप अपना बायोडाटा हटाना चाहते हैं?'
         : 'Are you sure you want to remove this resume from your profile?'
-    if (!window.confirm(confirmMessage)) return
 
-    const prevResume = resumeUrl
-    setResumeUrl('')
-    setExtractedSkillsFeedback([])
-    setResumeMeta(null)
-    if (user?.id) {
-      try {
-        localStorage.removeItem(`namma_resume_meta_${user.id}`)
-      } catch {}
-    }
+    showConfirm({
+      title: confirmTitle,
+      message: confirmMessage,
+      confirmText: language === 'ta' ? 'அகற்று' : language === 'hi' ? 'हटाएं' : 'Remove',
+      cancelText: language === 'ta' ? 'ரத்து' : language === 'hi' ? 'रद्द करें' : 'Cancel',
+      isDestructive: true,
+      onConfirm: async () => {
+        const prevResume = resumeUrl
+        setResumeUrl('')
+        setExtractedSkillsFeedback([])
+        setResumeMeta(null)
+        if (user?.id) {
+          try {
+            localStorage.removeItem(`namma_resume_meta_${user.id}`)
+          } catch {}
+        }
 
-    try {
-      await updateUserProfile({ resume_url: '' })
-      showToast(
-        language === 'ta'
-          ? 'தன்விவரக் குறிப்பு அகற்றப்பட்டது'
-          : language === 'hi'
-          ? 'बायोडाटा हटा दिया गया'
-          : 'Resume removed successfully',
-        'info'
-      )
-    } catch (err: any) {
-      setResumeUrl(prevResume)
-      showToast(err.message || 'Failed to remove resume', 'error')
-    }
+        try {
+          await updateUserProfile({ resume_url: '' })
+          showToast(
+            language === 'ta'
+              ? 'தன்விவரக் குறிப்பு அகற்றப்பட்டது'
+              : language === 'hi'
+              ? 'बायोडाटा हटा दिया गया'
+              : 'Resume removed successfully',
+            'info',
+            language === 'ta' ? 'அகற்றப்பட்டது' : language === 'hi' ? 'हटा दिया गया' : 'Resume Removed'
+          )
+        } catch (err: any) {
+          setResumeUrl(prevResume)
+          showToast(err.message || 'Failed to remove resume', 'error')
+        }
+      },
+    })
   }
 
   // Handle Cover Photo Upload with Instant Optimistic Preview
@@ -478,23 +495,43 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     }
   }
 
-  const handleRemoveCover = async () => {
-    const prevBanner = bannerUrl
-    setBannerUrl('')
-    try {
-      await updateUserProfile({ banner_url: '' })
-      showToast(
+  const handleRemoveCover = () => {
+    showConfirm({
+      title:
         language === 'ta'
-          ? 'அட்டைப்படம் அகற்றப்பட்டது'
+          ? 'அட்டைப்படத்தை அகற்றவா?'
           : language === 'hi'
-          ? 'कवर फोटो हटा दिया गया'
-          : 'Cover photo removed',
-        'info'
-      )
-    } catch (err: any) {
-      setBannerUrl(prevBanner)
-      showToast(err.message || 'Failed to remove cover photo', 'error')
-    }
+          ? 'कवर फोटो हटाएं?'
+          : 'Remove Cover Photo?',
+      message:
+        language === 'ta'
+          ? 'உங்கள் அட்டைப்படத்தை அகற்ற விரும்புகிறீர்களா?'
+          : language === 'hi'
+          ? 'क्या आप कवर फोटो हटाना चाहते हैं?'
+          : 'Are you sure you want to remove your cover photo?',
+      confirmText: language === 'ta' ? 'அகற்று' : language === 'hi' ? 'हटाएं' : 'Remove',
+      cancelText: language === 'ta' ? 'ரத்து' : language === 'hi' ? 'रद्द करें' : 'Cancel',
+      isDestructive: true,
+      onConfirm: async () => {
+        const prevBanner = bannerUrl
+        setBannerUrl('')
+        try {
+          await updateUserProfile({ banner_url: '' })
+          showToast(
+            language === 'ta'
+              ? 'அட்டைப்படம் அகற்றப்பட்டது'
+              : language === 'hi'
+              ? 'कवर फोटो हटा दिया गया'
+              : 'Cover photo removed',
+            'info',
+            language === 'ta' ? 'அகற்றப்பட்டது' : language === 'hi' ? 'हटा दिया गया' : 'Cover Photo Removed'
+          )
+        } catch (err: any) {
+          setBannerUrl(prevBanner)
+          showToast(err.message || 'Failed to remove cover photo', 'error')
+        }
+      },
+    })
   }
 
   // Handle Avatar Photo Upload with Instant Optimistic Preview
@@ -697,7 +734,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           </div>
 
           <div className="px-5 pb-5">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-10 sm:-mt-12">
+            <div className="flex items-end justify-between -mt-10 sm:-mt-12 mb-3">
               {/* Avatar */}
               <div className="relative shrink-0">
                 <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 border-white bg-slate-100 overflow-hidden shadow-sm">
@@ -709,23 +746,27 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                     </div>
                   )}
                 </div>
-                <label className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#0B2545] border-2 border-white cursor-pointer shadow-sm">
+                <label className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#0B2545] border-2 border-white cursor-pointer shadow-sm hover:bg-[#071A31] transition active:scale-95" title="Upload avatar">
                   {isUploadingAvatar ? <Loader2 className="h-3 w-3 text-white animate-spin" /> : <Camera className="h-3 w-3 text-white" />}
                   <input type="file" accept="image/*" className="hidden" onChange={handleAvatarFileSelect} disabled={isUploadingAvatar} />
                 </label>
               </div>
+            </div>
 
-              <div className="pb-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-bold text-slate-900">{user.full_name}</h2>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase tracking-wide">HR Recruiter</span>
-                </div>
-                <p className="text-xs text-slate-600 font-medium mt-0.5">{user.headline || (user.position ? `${user.position}${user.company ? ` at ${user.company}` : ''}` : 'HR Recruiter')}</p>
-                <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-500">
-                  {user.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3 text-slate-400" />{user.email}</span>}
-                  {user.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3 text-slate-400" />{user.phone}</span>}
-                  {user.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3 text-[#F97316]" />{user.location}</span>}
-                </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{user.full_name}</h1>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200/60 uppercase tracking-wide">HR Recruiter</span>
+              </div>
+              <DynamicTranslatedText
+                text={user.headline || (user.position ? `${user.position}${user.company ? ` at ${user.company}` : ''}` : 'HR Recruiter')}
+                as="p"
+                className="text-xs sm:text-sm text-slate-600 font-medium"
+              />
+              <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-500">
+                {user.email && <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-slate-400" />{user.email}</span>}
+                {user.phone && <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-slate-400" />{user.phone}</span>}
+                {user.location && <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-[#F97316]" />{translateLocationSync(user.location, language)}</span>}
               </div>
             </div>
           </div>
@@ -764,7 +805,12 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           {user.bio && (
             <div className="pt-2 border-t border-slate-100">
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">About</p>
-              <p className="text-xs text-slate-700 leading-relaxed">{user.bio}</p>
+              <DynamicTranslatedText
+                text={user.bio}
+                as="p"
+                className="text-xs text-slate-700 leading-relaxed"
+                showOriginalToggle
+              />
             </div>
           )}
         </div>
@@ -925,75 +971,40 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
         {/* Profile Info Row with Overlapping Avatar */}
         <div className="px-5 sm:px-8 pb-6 relative">
-          <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between -mt-16 sm:-mt-20 mb-4 gap-4">
-            <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 text-center sm:text-left">
-              {/* Avatar with Camera Overlay */}
-              <div className="relative group shrink-0">
-                {avatarUrl ? (
-                  <img
-                    key={avatarUrl}
-                    src={avatarUrl}
-                    alt={fullName || 'User'}
-                    className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover border-4 border-white shadow-md bg-white transition-all duration-300"
-                  />
+          <div className="flex items-end justify-between -mt-16 sm:-mt-20 mb-4">
+            {/* Avatar with Camera Overlay */}
+            <div className="relative group shrink-0">
+              {avatarUrl ? (
+                <img
+                  key={avatarUrl}
+                  src={avatarUrl}
+                  alt={fullName || 'User'}
+                  className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover border-4 border-white shadow-md bg-white transition-all duration-300"
+                />
+              ) : (
+                <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-[#0B2545] text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center border-4 border-white shadow-md">
+                  {(fullName || user?.full_name || 'U').charAt(0).toUpperCase()}
+                </div>
+              )}
+
+              {/* Edit Avatar Camera Button */}
+              <label
+                className="absolute bottom-1 right-1 h-8 w-8 rounded-full bg-white border border-gray-200 text-[#0B2545] flex items-center justify-center shadow-sm hover:bg-slate-50 cursor-pointer transition active:scale-95"
+                title="Upload profile photo"
+              >
+                {isUploadingAvatar ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-[#0B2545] text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center border-4 border-white shadow-md">
-                    {(fullName || user?.full_name || 'U').charAt(0).toUpperCase()}
-                  </div>
+                  <Camera className="h-4 w-4" />
                 )}
-
-                {/* Edit Avatar Camera Button */}
-                <label
-                  className="absolute bottom-1 right-1 h-8 w-8 rounded-full bg-white border border-gray-200 text-[#0B2545] flex items-center justify-center shadow-sm hover:bg-slate-50 cursor-pointer transition"
-                  title="Upload profile photo"
-                >
-                  {isUploadingAvatar ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Camera className="h-4 w-4" />
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.svg"
-                    onChange={handleAvatarFileSelect}
-                    disabled={isUploadingAvatar}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              {/* Identity Info */}
-              <div className="pt-2 sm:pt-0">
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-                    {fullName || user?.full_name}
-                  </h2>
-                  {role && role !== 'employee' && <Badge variant="role" role={role} />}
-                </div>
-                <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5">
-                  {headline || 'Professional Job Seeker'}
-                </p>
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mt-1.5 text-xs text-slate-500">
-                  {user?.email && (
-                    <span className="flex items-center gap-1">
-                      <Mail className="h-3 w-3 text-slate-400" />
-                      <span>{user.email}</span>
-                    </span>
-                  )}
-                  {phone && (
-                    <span className="flex items-center gap-1">
-                      <Phone className="h-3 w-3 text-slate-400" />
-                      <span>{phone}</span>
-                    </span>
-                  )}
-                  {location && (
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 text-[#F97316]" />
-                      <span>{location}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
+                <input
+                  type="file"
+                  accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.svg"
+                  onChange={handleAvatarFileSelect}
+                  disabled={isUploadingAvatar}
+                  className="hidden"
+                />
+              </label>
             </div>
 
             {resumeUrl && (
@@ -1001,13 +1012,46 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 href={resumeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-700 transition shadow-2xs shrink-0 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-700 transition shadow-2xs shrink-0 cursor-pointer mb-1"
               >
                 <FileText className="h-3.5 w-3.5 text-[#0B2545]" />
                 <span>{t('profile_view_resume')}</span>
                 <ExternalLink className="h-3 w-3 text-slate-400" />
               </a>
             )}
+          </div>
+
+          {/* Identity Info */}
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                {fullName || user?.full_name}
+              </h1>
+              {role && role !== 'employee' && <Badge variant="role" role={role} />}
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 font-medium">
+              {headline || 'Professional Job Seeker'}
+            </p>
+            <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-500">
+              {user?.email && (
+                <span className="flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5 text-slate-400" />
+                  <span>{user.email}</span>
+                </span>
+              )}
+              {phone && (
+                <span className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 text-slate-400" />
+                  <span>{phone}</span>
+                </span>
+              )}
+              {location && (
+                <span className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-[#F97316]" />
+                  <span>{location}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -13,6 +13,7 @@ import {
   translateCompanySync,
 } from '../../../services/googleAiTranslate'
 import { formatRelativeTime } from '../../../utils/date'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
 
 interface NotificationSectionProps {
   onSelectJob?: (jobId: string, jobTitle?: string) => void
@@ -325,9 +326,11 @@ export const NotificationSection: React.FC<NotificationSectionProps> = ({
                             {formatRelativeTime(notif.created_at)}
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug">
-                          {notif.message}
-                        </p>
+                        <DynamicTranslatedText
+                          text={notif.message}
+                          as="p"
+                          className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug"
+                        />
                       </div>
                     ) : notif.type === 'chat_message' ? (
                       <div>
@@ -337,9 +340,11 @@ export const NotificationSection: React.FC<NotificationSectionProps> = ({
                             {formatRelativeTime(notif.created_at)}
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 truncate mt-0.5 leading-snug">
-                          {notif.message}
-                        </p>
+                        <DynamicTranslatedText
+                          text={notif.message}
+                          as="p"
+                          className="text-xs sm:text-sm text-slate-600 truncate mt-0.5 leading-snug"
+                        />
                       </div>
                     ) : notif.type === 'post_like' ? (
                       <div>
@@ -349,9 +354,11 @@ export const NotificationSection: React.FC<NotificationSectionProps> = ({
                             {formatRelativeTime(notif.created_at)}
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug">
-                          {notif.message}
-                        </p>
+                        <DynamicTranslatedText
+                          text={notif.message}
+                          as="p"
+                          className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug"
+                        />
                       </div>
                     ) : notif.type === 'application_received' ? (
                       <div>
@@ -361,9 +368,11 @@ export const NotificationSection: React.FC<NotificationSectionProps> = ({
                             {formatRelativeTime(notif.created_at)}
                           </span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug">
-                          {notif.message}
-                        </p>
+                        <DynamicTranslatedText
+                          text={notif.message}
+                          as="p"
+                          className="text-xs sm:text-sm text-slate-600 mt-0.5 leading-snug"
+                        />
                       </div>
                     ) : (
                       <div>

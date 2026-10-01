@@ -434,7 +434,12 @@ export const COMPANY_DICTIONARY: Record<string, { ta: string; hi: string }> = {
  */
 export function translateCompanySync(company: string | undefined | null, lang: SupportedLanguage): string {
   if (!company) return ''
-  if (lang === 'en') return company
+  if (lang === 'en') {
+    if (!containsTamil(company) && !containsHindi(company)) return company
+    const cached = getCachedTranslation(company, 'en')
+    if (cached && cached !== company) return cached
+    return company
+  }
   const lower = company.toLowerCase().trim()
   if (COMPANY_DICTIONARY[lower]?.[lang]) {
     return COMPANY_DICTIONARY[lower][lang]
@@ -447,7 +452,12 @@ export function translateCompanySync(company: string | undefined | null, lang: S
  */
 export function translateJobTitleSync(title: string | undefined | null, lang: SupportedLanguage): string {
   if (!title) return ''
-  if (lang === 'en') return title
+  if (lang === 'en') {
+    if (!containsTamil(title) && !containsHindi(title)) return title
+    const cached = getCachedTranslation(title, 'en')
+    if (cached && cached !== title) return cached
+    return title
+  }
   const lower = title.toLowerCase().trim()
 
   // 1. Direct match
@@ -670,7 +680,86 @@ export function formatWorkplaceType(type: string | undefined | null, lang: Suppo
 }
 
 /**
+ * Script and Language Detection Helpers
+ */
+export const containsTamil = (text: string): boolean => /[\u0B80-\u0BFF]/.test(text)
+export const containsHindi = (text: string): boolean => /[\u0900-\u097F]/.test(text)
+export const containsLatin = (text: string): boolean => /[a-zA-Z]/.test(text)
+
+/**
+ * Checks if a string is non-translatable (URL, email, purely numeric, or code token)
+ */
+export function isNonTranslatable(text: string): boolean {
+  const trimmed = (text || '').trim()
+  if (!trimmed) return true
+  // URLs
+  if (/^https?:\/\/\S+$/i.test(trimmed)) return true
+  // Emails
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return true
+  // Pure numbers, phone numbers, punctuation or symbols (no letters in Latin/Tamil/Devanagari)
+  if (!/[a-zA-Z\u0B80-\u0BFF\u0900-\u097F]/.test(trimmed)) return true
+  return false
+}
+
+/**
+ * Checks if a given text is already predominantly in the target language.
+ * If true, re-translation can be bypassed safely.
+ */
+export function isLanguageMatch(text: string, lang: SupportedLanguage): boolean {
+  if (!text || !text.trim()) return true
+  const trimmed = text.trim()
+  if (isNonTranslatable(trimmed)) return true
+
+  if (lang === 'en') {
+    // Already English if it contains NO Tamil and NO Hindi characters
+    return !containsTamil(trimmed) && !containsHindi(trimmed)
+  }
+  if (lang === 'ta') {
+    // Already Tamil if it contains Tamil and does NOT contain Latin or Hindi characters
+    return containsTamil(trimmed) && !containsLatin(trimmed) && !containsHindi(trimmed)
+  }
+  if (lang === 'hi') {
+    // Already Hindi if it contains Hindi and does NOT contain Latin or Tamil characters
+    return containsHindi(trimmed) && !containsLatin(trimmed) && !containsTamil(trimmed)
+  }
+  return false
+}
+
+export function getCacheKey(text: string, targetLang: SupportedLanguage): string {
+  const trimmed = text.trim()
+  return `${CACHE_KEY_PREFIX}${targetLang}_${trimmed.slice(0, 100)}_${trimmed.length}`
+}
+
+/**
+ * Synchronously retrieves a cached translation if available.
+ * Returns the original text if it already matches the target language.
+ */
+export function getCachedTranslation(
+  text: string | null | undefined,
+  targetLang: SupportedLanguage
+): string | null {
+  if (!text) return ''
+  const trimmed = text.trim()
+  if (!trimmed || isNonTranslatable(trimmed) || isLanguageMatch(trimmed, targetLang)) {
+    return text
+  }
+  const cacheKey = getCacheKey(trimmed, targetLang)
+  if (memoryCache.has(cacheKey)) {
+    return memoryCache.get(cacheKey)!
+  }
+  try {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      memoryCache.set(cacheKey, cached)
+      return cached
+    }
+  } catch {}
+  return null
+}
+
+/**
  * Translate any text using Google AI / Google Neural Translation into pure target language.
+ * Completely bidirectional across English, Tamil, and Hindi.
  */
 export async function translateWithGoogleAi(
   text: string,
@@ -680,28 +769,28 @@ export async function translateWithGoogleAi(
   const trimmed = (text || '').trim()
   if (!trimmed) return ''
 
-  // Identity check
-  if (targetLang === 'en' && sourceLang === 'en') {
+  // Fast check: is this non-translatable or already matching the target language?
+  if (isNonTranslatable(trimmed) || isLanguageMatch(trimmed, targetLang)) {
     return trimmed
   }
 
-  const cacheKey = `${CACHE_KEY_PREFIX}${targetLang}_${trimmed.slice(0, 100)}_${trimmed.length}`
-  
-  // 1. Check in-memory cache
-  if (memoryCache.has(cacheKey)) {
-    return memoryCache.get(cacheKey)!
+  // Detect source language if set to auto
+  let effectiveSource = sourceLang
+  if (effectiveSource === 'auto') {
+    if (containsTamil(trimmed)) effectiveSource = 'ta'
+    else if (containsHindi(trimmed)) effectiveSource = 'hi'
+    else if (containsLatin(trimmed)) effectiveSource = 'en'
   }
 
-  // 2. Check localStorage cache
-  try {
-    const cached = localStorage.getItem(cacheKey)
-    if (cached) {
-      memoryCache.set(cacheKey, cached)
-      return cached
-    }
-  } catch {}
+  // Check in-memory / localStorage cache
+  const cached = getCachedTranslation(trimmed, targetLang)
+  if (cached && cached !== trimmed) {
+    return cached
+  }
 
-  // 3. Try Gemini Generative AI if key is present
+  const cacheKey = getCacheKey(trimmed, targetLang)
+
+  // 1. Try Gemini Generative AI if key is present
   const geminiApiKey =
     (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GEMINI_API_KEY) ||
     (typeof window !== 'undefined' && (window as any)?.__ENV__?.GEMINI_API_KEY)
@@ -742,10 +831,10 @@ export async function translateWithGoogleAi(
     }
   }
 
-  // 4. Robust Google Neural Machine Translation API (client=gtx)
+  // 2. Robust Google Neural Machine Translation API (client=gtx)
   try {
     const encoded = encodeURIComponent(trimmed)
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encoded}`
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${effectiveSource}&tl=${targetLang}&dt=t&q=${encoded}`
     const response = await fetch(url)
     
     if (response.ok) {

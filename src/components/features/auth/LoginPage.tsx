@@ -22,13 +22,20 @@ import type { SupportedLanguage } from '../../../utils/i18n'
 interface LoginPageProps {
   onSuccess?: () => void
   onBackToApp?: () => void
+  onOpenTerms?: () => void
+  onOpenPrivacy?: () => void
 }
 
 type AuthMode = 'signin' | 'signup'
 type AuthMethod = 'phone' | 'email'
 type PhoneStep = 'phone' | 'otp'
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({
+  onSuccess,
+  onBackToApp,
+  onOpenTerms,
+  onOpenPrivacy,
+}) => {
   const {
     loginWithEmail,
     registerWithEmail,
@@ -37,6 +44,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
     user,
     selectedRole,
     setSelectedRole,
+    lastLoginAccount,
+    clearLastLogin,
   } = useAuth()
   const { showToast } = useToast()
   const { t, language, setLanguage, languages } = useLanguage()
@@ -45,11 +54,98 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const [authMethod, setAuthMethod] = useState<AuthMethod>('phone')
   const [phoneStep, setPhoneStep] = useState<PhoneStep>('phone')
+  const [isUsingDifferentAccount, setIsUsingDifferentAccount] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
   const [roleConflictNotice, setRoleConflictNotice] = useState<{
     message: string
     targetRole: 'employee' | 'manager'
   } | null>(null)
+
+  // Mandatory Terms of Service & Privacy Policy Acceptance (ONLY for new sign-up users)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [termsError, setTermsError] = useState(false)
+
+  const validateTermsAccepted = (): boolean => {
+    // Only required for new sign up users; old/existing sign in users never blocked
+    if (authMode !== 'signup') {
+      return true
+    }
+    if (!acceptedTerms) {
+      setTermsError(true)
+      showToast(t('auth_terms_required_error'), 'error')
+      return false
+    }
+    setTermsError(false)
+    return true
+  }
+
+  const renderTermsConsent = (idPrefix: string) => {
+    if (authMode !== 'signup') return null
+    return (
+    <div
+      className={`my-3 p-3 rounded-xl border transition-all ${
+        termsError
+          ? 'border-rose-400 bg-rose-50/70 ring-1 ring-rose-400'
+          : acceptedTerms
+          ? 'border-slate-300 bg-slate-50'
+          : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
+      }`}
+    >
+      <label htmlFor={`${idPrefix}-terms-check`} className="flex items-start gap-2.5 cursor-pointer select-none text-left">
+        <input
+          id={`${idPrefix}-terms-check`}
+          type="checkbox"
+          checked={acceptedTerms}
+          onChange={(e) => {
+            setAcceptedTerms(e.target.checked)
+            if (e.target.checked) setTermsError(false)
+          }}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#0B2545] focus:ring-1 focus:ring-[#0B2545] cursor-pointer"
+        />
+        <div className="flex-1 text-[11px] sm:text-xs text-slate-600 leading-snug">
+          <span>{t('auth_terms_agree_prefix')}{' '}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (onOpenTerms) {
+                onOpenTerms()
+              } else {
+                window.location.hash = '#terms'
+              }
+            }}
+            className="font-bold text-[#0B2545] hover:underline cursor-pointer inline-flex items-center"
+          >
+            {t('auth_terms_link')}
+          </button>
+          <span>{' '}{t('auth_terms_and')}{' '}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (onOpenPrivacy) {
+                onOpenPrivacy()
+              } else {
+                window.location.hash = '#privacy'
+              }
+            }}
+            className="font-bold text-[#0B2545] hover:underline cursor-pointer inline-flex items-center"
+          >
+            {t('auth_privacy_link')}
+          </button>
+          {termsError && (
+            <p className="mt-1.5 text-[11px] font-semibold text-rose-600 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              <span>{t('auth_terms_required_error')}</span>
+            </p>
+          )}
+        </div>
+      </label>
+    </div>
+    )
+  }
 
   // Form Fields
   const [fullName, setFullName] = useState('')
@@ -99,11 +195,99 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
     setPhoneStep('phone')
     setRoleConflictNotice(null)
     setDevOtpCode(null)
+    setTermsError(false)
+    if (mode === 'signup') {
+      setIsUsingDifferentAccount(true)
+    } else {
+      setIsUsingDifferentAccount(false)
+      setAcceptedTerms(false)
+    }
+  }
+
+  // Handle 1-click continue with recently signed in account
+  const handleContinueWithRecentAccount = async () => {
+    if (!lastLoginAccount) return
+    const roleToUse = lastLoginAccount.role === 'manager' ? 'manager' : 'employee'
+    setSelectedRole(roleToUse)
+    setRoleConflictNotice(null)
+
+    // Direct 1-click authentication for email / Google / existing accounts
+    if (lastLoginAccount.email) {
+      setIsLoading(true)
+      try {
+        await loginWithEmail(
+          lastLoginAccount.email,
+          lastLoginAccount.full_name || undefined,
+          roleToUse,
+          lastLoginAccount.role === 'manager' && lastLoginAccount.company
+            ? {
+                company: lastLoginAccount.company,
+                position: lastLoginAccount.position || 'HR Recruiter',
+                phone: lastLoginAccount.phone || undefined,
+              }
+            : undefined
+        )
+        handleNavigateHome()
+        return
+      } catch (err: any) {
+        const msg = err.message || 'Failed to continue with recent account'
+        showToast(msg, 'error')
+        setIsUsingDifferentAccount(true)
+        return
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (lastLoginAccount.phone) {
+      const cleanPhone = lastLoginAccount.phone.replace(/\D/g, '')
+      const phoneEmail = `${cleanPhone}@phone.nammaoorujobs.com`
+      setIsLoading(true)
+      try {
+        await loginWithEmail(
+          phoneEmail,
+          lastLoginAccount.full_name || undefined,
+          roleToUse,
+          lastLoginAccount.role === 'manager' && lastLoginAccount.company
+            ? {
+                company: lastLoginAccount.company,
+                position: lastLoginAccount.position || 'HR Recruiter',
+                phone: cleanPhone,
+              }
+            : { phone: cleanPhone }
+        )
+        handleNavigateHome()
+        return
+      } catch {
+        // Fall back to phone OTP if direct session creation fails
+        setPhoneNumber(cleanPhone)
+        setAuthMethod('phone')
+        if (lastLoginAccount.full_name) setFullName(lastLoginAccount.full_name)
+        if (lastLoginAccount.company) setCompany(lastLoginAccount.company)
+
+        try {
+          const res = await sendWhatsAppOtp(cleanPhone, lastLoginAccount.full_name, roleToUse)
+          if (res.dev_otp) {
+            setDevOtpCode(res.dev_otp)
+          }
+          setPhoneStep('otp')
+          setResendTimer(30)
+          showToast(res.message || t('auth_verify_subtitle'), 'success')
+          setTimeout(() => inputRefs.current[0]?.focus(), 150)
+        } catch (otpErr: any) {
+          showToast(otpErr.message || 'Failed to send verification code', 'error')
+          setIsUsingDifferentAccount(true)
+        }
+      } finally {
+        setIsLoading(false)
+      }
+    }
   }
 
   // Handle phone OTP send (works for both Sign In and Sign Up)
   const handleSendPhoneOtp = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (authMode === 'signup' && !validateTermsAccepted()) return
     const cleanPhone = phoneNumber.replace(/\D/g, '')
     if (cleanPhone.length !== 10) {
       showToast(t('auth_phone_placeholder'), 'error')
@@ -182,6 +366,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
   // Handle OTP Verification
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (authMode === 'signup' && !validateTermsAccepted()) return
     const enteredCode = otpDigits.join('')
     if (enteredCode.length !== 6) {
       showToast(t('auth_enter_code'), 'error')
@@ -211,6 +396,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
   // Handle Email Auth (Sign In vs Sign Up)
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (authMode === 'signup' && !validateTermsAccepted()) return
     if (!email.trim()) {
       showToast('Please enter your email address', 'error')
       return
@@ -287,6 +473,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
   }
 
   const currentLangOption = languages.find((l) => l.code === language) || languages[0]
+  const showRecentAccountCard =
+    authMode === 'signin' && phoneStep === 'phone' && !!lastLoginAccount && !isUsingDifferentAccount
 
   return (
     <div className="min-h-screen bg-slate-50/80 flex flex-col justify-between text-slate-900 antialiased">
@@ -373,6 +561,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
             <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">
               {phoneStep === 'otp' && authMethod === 'phone'
                 ? t('auth_enter_code')
+                : showRecentAccountCard
+                ? t('auth_last_login_title')
                 : authMode === 'signin'
                 ? t('auth_sign_in_title')
                 : t('auth_sign_up_title')}
@@ -380,14 +570,118 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
             <p className="mt-0.5 text-[11px] sm:text-xs text-slate-500 max-w-xs mx-auto leading-normal">
               {phoneStep === 'otp' && authMethod === 'phone'
                 ? `Code sent to +91 ${phoneNumber}`
+                : showRecentAccountCard
+                ? t('auth_last_login_device')
                 : authMode === 'signin'
                 ? t('auth_sign_in_subtitle')
                 : t('auth_sign_up_subtitle')}
             </p>
           </div>
 
-          {/* ── Sleek Compact Role Switcher: Job Seeker vs HR Recruiter ── */}
-          {phoneStep === 'phone' && (
+          {/* ── Recent Account Card (Human-crafted Apple iOS Style) ── */}
+          {showRecentAccountCard && lastLoginAccount ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 transition-all">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    {t('auth_last_login_device')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearLastLogin}
+                    className="text-[11px] font-medium text-slate-400 hover:text-rose-600 transition cursor-pointer px-1 py-0.5 rounded"
+                    title="Remove from this device"
+                  >
+                    {t('auth_remove_account')}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {lastLoginAccount.avatar_url ? (
+                    <img
+                      src={lastLoginAccount.avatar_url}
+                      alt={lastLoginAccount.full_name}
+                      className="h-11 w-11 rounded-full object-cover border border-slate-200 bg-white shrink-0"
+                    />
+                  ) : (
+                    <div className="h-11 w-11 rounded-full bg-[#0B2545] text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+                      {lastLoginAccount.full_name ? lastLoginAccount.full_name.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-bold text-slate-900 truncate">
+                        {lastLoginAccount.full_name}
+                      </span>
+                      <span
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          lastLoginAccount.role === 'manager'
+                            ? 'bg-amber-100 text-amber-900 border border-amber-200/60'
+                            : 'bg-blue-100 text-blue-900 border border-blue-200/60'
+                        }`}
+                      >
+                        {lastLoginAccount.role === 'manager' ? t('auth_role_hr_recruiter') : t('auth_role_job_seeker')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 truncate mt-0.5">
+                      {lastLoginAccount.phone
+                        ? `+91 ${lastLoginAccount.phone}`
+                        : lastLoginAccount.email || ''}
+                    </p>
+                    {lastLoginAccount.role === 'manager' && lastLoginAccount.company && (
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {lastLoginAccount.company}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleContinueWithRecentAccount}
+                    className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none text-white text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    {isLoading ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <>
+                        <span>{t('auth_continue_as')} {lastLoginAccount.full_name.split(' ')[0]}</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsUsingDifferentAccount(true)}
+                    className="w-full py-1 text-center text-[11px] font-medium text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                  >
+                    {t('auth_use_another_account')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Back to Recent Account button if user switched to another account */}
+              {authMode === 'signin' && phoneStep === 'phone' && lastLoginAccount && isUsingDifferentAccount && (
+                <div className="mb-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsUsingDifferentAccount(false)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B2545] hover:underline cursor-pointer"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>{t('auth_back_to_recent')} ({lastLoginAccount.full_name.split(' ')[0]})</span>
+                  </button>
+                </div>
+              )}
+
+              {/* ── Sleek Compact Role Switcher: Job Seeker vs HR Recruiter ── */}
+              {phoneStep === 'phone' && (
             <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100 mb-3.5 text-xs font-semibold">
               <button
                 type="button"
@@ -444,11 +738,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
             </div>
           )}
 
-          {/* ── 1-Click Google Sign-In ── */}
+          {/* ── Terms & Privacy Consent & 1-Click Google Sign-In ── */}
           {phoneStep === 'phone' && (
             <>
+              {authMode === 'signup' && renderTermsConsent('main')}
+
               <div className="flex justify-center mb-3">
-                <GoogleSignInButton onSuccess={handleNavigateHome} />
+                <GoogleSignInButton
+                  roleOverride={selectedRole}
+                  onBeforeSignIn={authMode === 'signup' ? validateTermsAccepted : undefined}
+                  onSuccess={handleNavigateHome}
+                />
               </div>
 
               {/* Compact Divider */}
@@ -480,7 +780,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
                           type="text"
                           value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
-                          placeholder={t('auth_full_name_placeholder')}
                           required
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-slate-900 outline-none transition font-medium"
                         />
@@ -500,7 +799,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
                           type="text"
                           value={company}
                           onChange={(e) => setCompany(e.target.value)}
-                          placeholder={t('auth_company_name_placeholder')}
                           required
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-slate-900 outline-none transition font-medium"
                         />
@@ -661,7 +959,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder={t('auth_full_name_placeholder')}
                       required
                       className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-slate-900 outline-none transition font-medium"
                     />
@@ -699,7 +996,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
                       type="text"
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
-                      placeholder={t('auth_company_name_placeholder')}
                       required={authMode === 'signup'}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-8 pr-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-slate-900 outline-none transition font-medium"
                     />
@@ -723,6 +1019,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
                   />
                 </div>
               </div>
+
+              {/* Terms Checkbox: ONLY on Sign Up */}
+              {authMode === 'signup' && renderTermsConsent('email')}
 
               {/* Submit Button */}
               <button
@@ -753,6 +1052,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
               </div>
             </form>
           )}
+        </>
+      )}
 
           {/* ── Footer Switch Link: Sign In vs Sign Up ── */}
           <div className="mt-4 pt-3.5 border-t border-slate-100 text-center text-xs">
@@ -784,9 +1085,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBackToApp }) 
           {/* Subtle Terms Footnote */}
           <p className="mt-3 text-center text-[10px] text-slate-400 leading-normal">
             {t('auth_terms_prefix')}{' '}
-            <a href="#" className="text-slate-500 hover:underline">{t('auth_terms_link')}</a>
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenTerms) {
+                  onOpenTerms()
+                } else {
+                  window.location.hash = '#terms'
+                }
+              }}
+              className="text-slate-600 font-medium hover:underline cursor-pointer hover:text-[#0B2545]"
+            >
+              {t('auth_terms_link')}
+            </button>
             {' '}&{' '}
-            <a href="#" className="text-slate-500 hover:underline">{t('auth_privacy_link')}</a>
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenPrivacy) {
+                  onOpenPrivacy()
+                } else {
+                  window.location.hash = '#privacy'
+                }
+              }}
+              className="text-slate-600 font-medium hover:underline cursor-pointer hover:text-[#0B2545]"
+            >
+              {t('auth_privacy_link')}
+            </button>
           </p>
         </div>
       </main>

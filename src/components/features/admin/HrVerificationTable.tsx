@@ -7,7 +7,6 @@ import { Card } from '../../ui/Card'
 import {
   ShieldAlert,
   Clock,
-  Search,
   Building2,
   Briefcase,
   Phone,
@@ -16,6 +15,7 @@ import {
   Eye,
   RefreshCw,
   UserCheck,
+  Search,
 } from 'lucide-react'
 
 interface HrVerificationTableProps {
@@ -29,7 +29,7 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
 
   const [verifications, setVerifications] = useState<HrVerificationAccount[]>([])
   const [counts, setCounts] = useState({ pending: 0, active: 0, rejected: 0, total: 0 })
-  const [activeFilter, setActiveFilter] = useState<FilterStatus>('pending')
+  const [activeFilter, setActiveFilter] = useState<FilterStatus>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -167,147 +167,143 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
 
   return (
     <div className="space-y-4">
-      {/* Top Header Card */}
-      <Card className="p-5 sm:p-6 shadow-xs border-slate-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-100 text-orange-700">
-                <Briefcase className="h-4 w-4" />
-              </span>
-              <h2 className="text-lg font-bold text-slate-900">
-                HR Recruiter Account Verification
-              </h2>
+      {/* Recruiter Accounts Table */}
+      <Card className="overflow-hidden border-slate-200/90 shadow-xs">
+        <div className="border-b border-gray-100 p-4 sm:p-5 bg-white space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-[#0B2545]">HR Recruiter Verifications</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Audit employer credentials before granting job publishing privileges.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Review and audit employer credentials before granting job publishing and candidate access across Tamil Nadu.
-            </p>
+            <button
+              type="button"
+              onClick={() => fetchVerifications(activeFilter)}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 disabled:opacity-50 transition cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Queue</span>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => fetchVerifications(activeFilter)}
-            disabled={isLoading}
-            className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh Queue
-          </button>
+          {/* Filter Pills & Search */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilter('pending')
+                  fetchVerifications('pending')
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeFilter === 'pending'
+                    ? 'bg-amber-500 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Pending Review</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {counts.pending}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilter('active')
+                  fetchVerifications('active')
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeFilter === 'active'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>Approved / Active</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeFilter === 'active' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {counts.active}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilter('rejected')
+                  fetchVerifications('rejected')
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeFilter === 'rejected'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Rejected</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {counts.rejected}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFilter('all')
+                  fetchVerifications('all')
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  activeFilter === 'all'
+                    ? 'bg-[#0B2545] text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span>All Recruiters</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {counts.total}
+                </span>
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full lg:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search recruiter, company, email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-8.5 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-[#0B2545] focus:outline-none transition-colors"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="mt-6 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
-          <button
-            type="button"
-            onClick={() => setActiveFilter('pending')}
-            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeFilter === 'pending'
-                ? 'bg-amber-500 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            <span>Pending Review</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
-                activeFilter === 'pending' ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {counts.pending}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveFilter('active')}
-            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeFilter === 'active'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Check className="h-3.5 w-3.5" />
-            <span>Approved / Active</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
-                activeFilter === 'active' ? 'bg-emerald-800 text-white' : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {counts.active}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveFilter('rejected')}
-            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeFilter === 'rejected'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <X className="h-3.5 w-3.5" />
-            <span>Rejected</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
-                activeFilter === 'rejected' ? 'bg-rose-800 text-white' : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {counts.rejected}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveFilter('all')}
-            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer ${
-              activeFilter === 'all'
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <span>All Recruiters</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] font-black ${
-                activeFilter === 'all' ? 'bg-slate-950 text-white' : 'bg-slate-200 text-slate-700'
-              }`}
-            >
-              {counts.total}
-            </span>
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="mt-4 relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-4 py-2 text-xs text-slate-800 focus:bg-white focus:border-orange-500 focus:outline-none transition-colors"
-          />
-        </div>
-      </Card>
-
-      {/* Recruiter Accounts Table / List */}
-      <Card className="overflow-hidden border-slate-200 shadow-xs">
         {isLoading ? (
           <div className="p-12 text-center">
             <RefreshCw className="mx-auto h-7 w-7 text-orange-500 animate-spin" />
             <p className="mt-2 text-xs font-semibold text-slate-500">Loading recruiter verifications...</p>
           </div>
-        ) : filteredList.length === 0 ? (
+        ) : verifications.length === 0 ? (
           <div className="p-12 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
               <UserCheck className="h-6 w-6" />
             </div>
             <h3 className="text-sm font-bold text-slate-800">
-              {searchQuery ? 'No recruiters match your search' : 'No recruiter accounts found'}
+              No recruiter accounts found
             </h3>
             <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-              {activeFilter === 'pending'
-                ? 'All HR recruiter accounts have been audited and verified. Genuine empty state.'
-                : 'No recruiter accounts in this category.'}
+              No recruiter accounts registered yet.
             </p>
           </div>
         ) : (

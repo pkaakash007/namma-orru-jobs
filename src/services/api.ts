@@ -167,71 +167,26 @@ export const authService = {
   },
 
   async sendWhatsAppOtp(phone: string, full_name?: string, selected_role?: 'employee' | 'manager') {
-    try {
-      return await apiClient.request<{
-        success: boolean
-        message: string
-        phone: string
-        expires_in: number
-        dev_otp?: string
-      }>('/api/auth/whatsapp/send-otp', {
-        method: 'POST',
-        body: JSON.stringify({ phone, full_name, selected_role }),
-      })
-    } catch (err: any) {
-      // Graceful development / fallback if remote worker is not yet redeployed
-      if (err.message?.includes('404')) {
-        const cleanPhone = phone.replace(/\D/g, '')
-        const dummyOtp = Math.floor(100000 + Math.random() * 900000).toString()
-        sessionStorage.setItem(
-          `wa_otp_${cleanPhone}`,
-          JSON.stringify({ otp: dummyOtp, exp: Date.now() + 600000, name: full_name, role: selected_role || 'employee' })
-        )
-        return {
-          success: true,
-          message: 'OTP sent to your WhatsApp number',
-          phone,
-          expires_in: 600,
-          dev_otp: dummyOtp,
-        }
-      }
-      throw err
-    }
+    return await apiClient.request<{
+      success: boolean
+      message: string
+      phone: string
+      expires_in: number
+      dev_otp?: string
+    }>('/api/auth/whatsapp/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, full_name, selected_role }),
+    })
   },
 
   async verifyWhatsAppOtp(phone: string, otp: string, full_name?: string, selected_role?: 'employee' | 'manager') {
-    try {
-      return await apiClient.request<{ token: string; user: User }>(
-        '/api/auth/whatsapp/verify-otp',
-        {
-          method: 'POST',
-          body: JSON.stringify({ phone, otp, full_name, selected_role }),
-        }
-      )
-    } catch (err: any) {
-      if (err.message?.includes('404')) {
-        const cleanPhone = phone.replace(/\D/g, '')
-        const saved = sessionStorage.getItem(`wa_otp_${cleanPhone}`)
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (Date.now() > parsed.exp) {
-            throw new Error('OTP has expired. Please request a new code.')
-          }
-          if (parsed.otp !== otp.trim()) {
-            throw new Error('Invalid OTP code. Please check and try again.')
-          }
-          sessionStorage.removeItem(`wa_otp_${cleanPhone}`)
-          const roleToUse = selected_role || parsed.role || 'employee'
-          // Authenticate with D1 using devLogin
-          return await authService.devLogin(
-            `${cleanPhone}@phone.nammaoorujobs.com`,
-            roleToUse,
-            full_name || parsed.name || `User ${cleanPhone.slice(-4)}`
-          )
-        }
+    return await apiClient.request<{ token: string; user: User }>(
+      '/api/auth/whatsapp/verify-otp',
+      {
+        method: 'POST',
+        body: JSON.stringify({ phone, otp, full_name, selected_role }),
       }
-      throw err
-    }
+    )
   },
 }
 

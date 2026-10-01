@@ -13,6 +13,8 @@ import {
 import type { Conversation, ChatMessage, User, Language } from '../../../types'
 import { chatService } from '../../../services/api'
 import { parseDateUTC } from '../../../utils/date'
+import { useToast } from '../../../context/ToastContext'
+import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
 
 interface MessagesViewProps {
   currentUser: User | null
@@ -31,6 +33,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   onClearInitialRecipient,
   onUnreadMessagesCountChange,
 }) => {
+  const { showToast } = useToast()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -51,7 +54,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     messaging: lang === 'ta' ? 'செய்திப்பரிமாற்றம்' : lang === 'hi' ? 'संदेश' : 'Messaging',
     searchConv: lang === 'ta' ? 'செய்திகளைத் தேடுக...' : lang === 'hi' ? 'बातचीत खोजें...' : 'Search messages...',
     noConversations: lang === 'ta' ? 'உரையாடல்கள் எதுவும் இல்லை' : lang === 'hi' ? 'कोई बातचीत नहीं' : 'No conversations yet',
-    startConversation: lang === 'ta' ? 'நபர்களைக் கண்டறிந்து செய்திகளைத் தொடங்குங்கள்' : lang === 'hi' ? 'लोगों को खोजें और संदेश भेजना शुरू करें' : 'Connect with professionals in your network to start messaging.',
     selectChat: lang === 'ta' ? 'உரையாடலைத் தேர்வு செய்யவும்' : lang === 'hi' ? 'बातचीत चुनें' : 'Select a conversation',
     selectChatDesc: lang === 'ta' ? 'உரையாடலைத் தொடங்க இடதுபுறத்தில் உள்ள ஒரு தொடர்பைத் தேர்ந்தெடுக்கவும்.' : lang === 'hi' ? 'बातचीत शुरू करने के लिए बाईं ओर से किसी संपर्क को चुनें।' : 'Choose a conversation from the left to view messages and reply.',
     typeMessage: lang === 'ta' ? 'செய்தியைத் தட்டச்சு செய்க...' : lang === 'hi' ? 'संदेश लिखें...' : 'Write a message...',
@@ -185,7 +187,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           deactivatedUntil: err.deactivated_until,
         })
       } else {
-        alert(err.message || 'Failed to deliver message.')
+        showToast(err.message || 'Failed to deliver message.', 'error')
       }
     } finally {
       setSending(false)
@@ -284,10 +286,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
                   <MessageSquare className="w-5 h-5" />
                 </div>
-                <p className="font-bold text-slate-700 mb-1">
+                <p className="font-bold text-slate-700">
                   {t.noConversations}
                 </p>
-                <p className="text-slate-500 max-w-xs mx-auto">{t.startConversation}</p>
               </div>
             ) : (
               filteredConversations.map((conv) => {
@@ -343,9 +344,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                       </div>
 
                       <p className={`text-xs truncate leading-snug ${isUnread ? 'font-bold text-[#0F172A]' : 'text-slate-500'}`}>
-                        {conv.last_message
-                          ? conv.last_message.content
-                          : 'Tap to start conversation'}
+                        {conv.last_message ? (
+                          <DynamicTranslatedText text={conv.last_message.content} as="span" />
+                        ) : (
+                          'Tap to start conversation'
+                        )}
                       </p>
                     </div>
 
@@ -446,7 +449,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                             : 'bg-white text-[#0F172A] border border-[#E2E8F0] rounded-2xl rounded-tl-xs'
                         }`}
                       >
-                        {msg.content}
+                        <DynamicTranslatedText
+                          text={msg.content}
+                          as="span"
+                          showOriginalToggle={!isMe}
+                        />
                       </div>
 
                       <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400 px-1">

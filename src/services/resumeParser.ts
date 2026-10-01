@@ -518,26 +518,6 @@ export function determinePrimaryCategory(skills: string[]): SkillCategory {
 }
 
 /**
- * Sync candidate to local cache so HR search can immediately find it
- */
-export function syncCandidateToCache(candidate: any) {
-  try {
-    if (!candidate || !candidate.id) return
-    const raw = localStorage.getItem('namma_candidates_cache')
-    let list: any[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex((c) => c.id === candidate.id)
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], ...candidate }
-    } else {
-      list.unshift(candidate)
-    }
-    localStorage.setItem('namma_candidates_cache', JSON.stringify(list))
-  } catch (e) {
-    console.warn('Failed to sync candidate to cache', e)
-  }
-}
-
-/**
  * AI-powered resume data extractor:
  * Extracts Name, Skills, Headline, Position, Company, Location, Phone, Email, Bio, Category
  */
@@ -562,23 +542,19 @@ export async function parseResumeWithAi(
     }
   }
 
-  // Fallback defaults if scanned image or text unreadable
+  // If no skills matched inside the document text, inspect file name for specific role keywords
   if (rawSkills.length === 0) {
     const lowerName = file.name.toLowerCase()
     if (lowerName.includes('react') || lowerName.includes('frontend')) {
-      rawSkills.push('React', 'TypeScript', 'JavaScript', 'Tailwind CSS', 'Git')
+      rawSkills.push('React', 'TypeScript', 'JavaScript')
     } else if (lowerName.includes('python') || lowerName.includes('backend')) {
-      rawSkills.push('Python', 'SQL', 'FastAPI', 'PostgreSQL', 'Docker')
-    } else if (lowerName.includes('fullstack') || lowerName.includes('developer')) {
-      rawSkills.push('React', 'Node.js', 'TypeScript', 'SQL', 'Git')
+      rawSkills.push('Python', 'SQL')
     } else if (lowerName.includes('flutter') || lowerName.includes('android')) {
-      rawSkills.push('Flutter', 'React Native', 'Android', 'Mobile Development')
+      rawSkills.push('Flutter', 'Android')
     } else if (lowerName.includes('sales') || lowerName.includes('marketing')) {
-      rawSkills.push('Sales', 'Marketing', 'Digital Marketing', 'Customer Support')
+      rawSkills.push('Sales', 'Marketing')
     } else if (lowerName.includes('account') || lowerName.includes('tally')) {
-      rawSkills.push('Accounting', 'Tally Prime', 'GST', 'Microsoft Excel')
-    } else {
-      rawSkills.push('React', 'JavaScript', 'Node.js', 'SQL', 'Git')
+      rawSkills.push('Accounting', 'Tally Prime')
     }
   }
 
@@ -592,9 +568,6 @@ export async function parseResumeWithAi(
       detectedLocation = loc
       break
     }
-  }
-  if (!detectedLocation) {
-    detectedLocation = 'Chennai, Tamil Nadu'
   }
 
   // 4. Detect Phone & Email
