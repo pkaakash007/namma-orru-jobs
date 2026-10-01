@@ -18,7 +18,6 @@
     }
   ],
   "vars": {
-    "RESEND_API_KEY": "re_DivJhjK7_8i2yiWegDQjFpDWSH2icaUxw",
     "EMAIL_FROM": "Namma Ooru Jobs <onboarding@resend.dev>",
     "APP_URL": "https://namma-ooru-jobs.pages.dev"
   }

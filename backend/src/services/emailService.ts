@@ -58,7 +58,7 @@ export function getResendConfig(env?: any) {
   const apiKey =
     env?.RESEND_API_KEY ||
     gProcess?.env?.RESEND_API_KEY ||
-    're_DivJhjK7_8i2yiWegDQjFpDWSH2icaUxw'
+    ''
   const defaultFrom =
     env?.EMAIL_FROM ||
     gProcess?.env?.EMAIL_FROM ||
