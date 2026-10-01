@@ -459,12 +459,36 @@ function MainContent() {
       setIsTermsRoute(isTermsPath())
       setIsPrivacyRoute(isPrivacyPath())
     }
-    // namma:navigate fires from GoogleSignInButton after successful login
-    // This ensures we navigate home even if popstate timing is off in Capacitor WebView
+    // namma:navigate fires from push notification taps and Google sign-in
     const handleNammaNavigate = (e: Event) => {
-      const path = (e as CustomEvent<{ path: string }>).detail?.path
-      if (path === '/') {
+      const detail = (e as CustomEvent<{ tab?: string; path?: string; conversationUserId?: string | null; jobId?: string | null }>).detail
+
+      // Legacy path-based nav (Google sign-in callback)
+      if (detail?.path === '/') {
         navigateToHome()
+        return
+      }
+
+      const tab = detail?.tab
+      if (!tab) return
+
+      // Ensure user is authenticated before navigating to protected tabs
+      const storedUser = localStorage.getItem('namma_user')
+      if (!storedUser) return
+
+      if (tab === 'messages') {
+        if (detail.conversationUserId) {
+          setChatRecipientId(detail.conversationUserId)
+        }
+        setActiveTab('messages')
+      } else if (tab === 'notifications') {
+        setActiveTab('notifications')
+      } else if (tab === 'profile') {
+        setActiveTab('profile')
+      } else if (tab === 'jobs') {
+        setActiveTab('jobs')
+      } else if (tab === 'admin-panel') {
+        setActiveTab('admin-panel')
       }
     }
     window.addEventListener('popstate', handleRouteChange)

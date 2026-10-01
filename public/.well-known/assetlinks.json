@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nammaoorujobs.app",
+      "sha256_cert_fingerprints": [
+        "00:92:1C:B6:67:CF:E5:B6:1A:12:CE:84:26:D3:2C:8F:5F:85:B5:DC:A4:CF:09:90:57:15:28:AD:92:89:33:64"
+      ]
+    }
+  }
+]

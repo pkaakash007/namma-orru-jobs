@@ -29,13 +29,55 @@ export const syncDeviceTokenWithUser = async (userId: string, userToken?: string
   }
 }
 
-export const initPushNotifications = async (
-  onNotification?: (title: string, body: string) => void
-) => {
-  if (!Capacitor.isNativePlatform()) {
-    // Web fallback / development mode
-    return
+/**
+ * Maps notification data to a namma:navigate custom event.
+ * This is the single source of truth for all notification-to-screen mappings.
+ */
+function dispatchNavigationFromData(data: Record<string, string> | undefined | null) {
+  if (!data?.type) return
+
+  const type = data.type
+
+  if (type === 'chat_message') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'messages', conversationUserId: data.sender_id || null },
+    }))
+  } else if (type === 'user_follow') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'notifications' },
+    }))
+  } else if (type === 'hr_interest') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'messages' },
+    }))
+  } else if (type === 'hr_account_approved' || type === 'hr_account_rejected') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'notifications' },
+    }))
+  } else if (type === 'profile_update_approved') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'profile' },
+    }))
+  } else if (type === 'profile_update_rejected') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'notifications' },
+    }))
+  } else if (type === 'job_posted') {
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'jobs', jobId: data.job_id || null },
+    }))
+  } else {
+    // Default: open notifications tab
+    window.dispatchEvent(new CustomEvent('namma:navigate', {
+      detail: { tab: 'notifications' },
+    }))
   }
+}
+
+export const initPushNotifications = async (
+  onForegroundNotification?: () => void
+) => {
+  if (!Capacitor.isNativePlatform()) return
 
   try {
     // 1. Create High-Priority Notification Channel (Required for Android 8.0+)
@@ -43,8 +85,8 @@ export const initPushNotifications = async (
       id: 'namma_ooru_jobs_alerts',
       name: 'Namma Ooru Job Alerts & Messages',
       description: 'Instant alerts for job postings, messages, and followers',
-      importance: 5, // High importance (heads-up notification + sound)
-      visibility: 1, // Visible on lockscreen
+      importance: 5,
+      visibility: 1,
       sound: 'default',
       vibration: true,
       lights: true,
@@ -70,7 +112,6 @@ export const initPushNotifications = async (
       console.log('[Push] FCM Token registered:', token.value)
       localStorage.setItem('fcm_device_token', token.value)
 
-      // Send token to Cloudflare Workers edge API with auth if present
       try {
         const storedUser = localStorage.getItem('namma_user')
         const parsedUser = storedUser ? JSON.parse(storedUser) : null
@@ -99,26 +140,25 @@ export const initPushNotifications = async (
       console.error('[Push] Registration error:', err.error)
     })
 
-    // 5. Foreground notification received
+    // 5. Foreground notification received — silent, no popup
     await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      console.log('[Push] Foreground notification:', notification)
-      if (onNotification && notification.title) {
-        onNotification(notification.title, notification.body || '')
+      console.log('[Push] Foreground notification received:', notification.data)
+      if (onForegroundNotification) {
+        onForegroundNotification()
       }
     })
 
-    // 6. Notification tapped by user -> deep link to relevant screen
+    // 6. User TAPPED a notification (works from background AND killed state)
     await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-      console.log('[Push] Notification tapped:', action)
-      const data = action.notification?.data
-      if (data?.type === 'chat_message') {
-        window.dispatchEvent(new CustomEvent('namma:navigate', { detail: { path: '/messages' } }))
-      } else if (data?.type === 'user_follow' && data.follower_id) {
-        window.dispatchEvent(new CustomEvent('namma:navigate', { detail: { path: `/profile/${data.follower_id}` } }))
-      } else if (data?.type === 'job_posted' && data.job_id) {
-        window.dispatchEvent(new CustomEvent('namma:navigate', { detail: { path: `/jobs/${data.job_id}` } }))
-      }
+      console.log('[Push] Notification tapped:', action.notification?.data)
+      const data = action.notification?.data as Record<string, string> | undefined
+
+      // Small delay ensures React has mounted and user auth state is ready
+      setTimeout(() => {
+        dispatchNavigationFromData(data)
+      }, 600)
     })
+
   } catch (err) {
     console.error('[Push] Initialization failed:', err)
   }
