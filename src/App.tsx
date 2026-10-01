@@ -31,6 +31,7 @@ import { PrivacyPolicyPage } from './components/features/legal/PrivacyPolicyPage
 import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
 import { HrProfileSetupModal } from './components/features/hr/HrProfileSetupModal'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
+import { PullToRefresh } from './components/ui/PullToRefresh'
 import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus, Bell, MessageSquare } from 'lucide-react'
 import type { Job } from './types'
 import { useAppDispatch, useAppSelector } from './store/hooks'
@@ -137,6 +138,8 @@ function MainContent() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       if (typeof window !== 'undefined') {
+        const storedTab = sessionStorage.getItem('namma_active_tab') as TabType
+        if (storedTab) return storedTab
         const hash = window.location.hash.toLowerCase()
         const path = window.location.pathname.toLowerCase()
         const search = window.location.search.toLowerCase()
@@ -153,6 +156,12 @@ function MainContent() {
     } catch {}
     return 'home'
   })
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('namma_active_tab', activeTab)
+    } catch {}
+  }, [activeTab])
 
   const [savedJobsCount, setSavedJobsCount] = useState<number>(0)
 
@@ -231,53 +240,53 @@ function MainContent() {
   // Dynamic Unread Messages State
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0)
 
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      if (!user) {
-        setUnreadMessagesCount(0)
-        return
-      }
-      try {
-        const count = await chatService.getUnreadMessagesCount()
-        setUnreadMessagesCount(count)
-      } catch {}
+  const loadUnreadMessages = useCallback(async () => {
+    if (!user) {
+      setUnreadMessagesCount(0)
+      return
     }
+    try {
+      const count = await chatService.getUnreadMessagesCount()
+      setUnreadMessagesCount(count)
+    } catch {}
+  }, [user])
 
-    loadUnreadCount()
+  useEffect(() => {
+    loadUnreadMessages()
     const handleMessagesUpdate = () => {
-      loadUnreadCount()
+      loadUnreadMessages()
     }
     window.addEventListener('namma_messages_updated', handleMessagesUpdate)
 
     // Only poll when actively on the 'messages' tab, at a 1-minute interval
     let interval: any = null
     if (activeTab === 'messages') {
-      interval = setInterval(loadUnreadCount, 60000)
+      interval = setInterval(loadUnreadMessages, 60000)
     }
 
     return () => {
       window.removeEventListener('namma_messages_updated', handleMessagesUpdate)
       if (interval) clearInterval(interval)
     }
-  }, [user, activeTab])
+  }, [loadUnreadMessages, activeTab])
 
   // Dynamic Unread Notifications State
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0)
 
-  useEffect(() => {
-    const loadUnreadNotifs = async () => {
-      if (!user) {
-        setUnreadNotificationsCount(0)
-        return
-      }
-      try {
-        const data = await notificationService.getNotifications(false)
-        if (typeof data?.unread_count === 'number') {
-          setUnreadNotificationsCount(data.unread_count)
-        }
-      } catch {}
+  const loadUnreadNotifs = useCallback(async () => {
+    if (!user) {
+      setUnreadNotificationsCount(0)
+      return
     }
+    try {
+      const data = await notificationService.getNotifications(false)
+      if (typeof data?.unread_count === 'number') {
+        setUnreadNotificationsCount(data.unread_count)
+      }
+    } catch {}
+  }, [user])
 
+  useEffect(() => {
     loadUnreadNotifs()
     const handleNotifsUpdate = () => {
       loadUnreadNotifs()
@@ -294,7 +303,7 @@ function MainContent() {
       window.removeEventListener('namma_notifications_updated', handleNotifsUpdate)
       if (interval) clearInterval(interval)
     }
-  }, [user, activeTab])
+  }, [loadUnreadNotifs, activeTab])
 
   const { showToast } = useToast()
   const { t, language } = useLanguage()
@@ -367,6 +376,45 @@ function MainContent() {
     },
     [hasRole, dispatch]
   )
+
+  // Unified Page Refresh for Native App & Web across all pages
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [pageRefreshKey, setPageRefreshKey] = useState(0)
+
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      // 1. Dispatch custom event for child views
+      window.dispatchEvent(new CustomEvent('app_refresh'))
+
+      // 2. Fetch fresh dynamic data across all stores bypassing caches
+      await Promise.allSettled([
+        loadJobs(true),
+        loadPosts(true),
+        activeTab === 'admin-panel' || user?.role === 'admin' ? loadAdminData(true) : Promise.resolve(),
+        loadUnreadNotifs(),
+        loadUnreadMessages(),
+        user?.id
+          ? savedJobService.getSavedJobIds().then((ids) => {
+              setSavedJobsCount(ids.length)
+              try {
+                localStorage.setItem('namma_saved_job_ids', JSON.stringify(ids))
+              } catch {}
+            })
+          : Promise.resolve(),
+      ])
+
+      // 3. Increment key to trigger clean re-render / re-fetch of current active page
+      setPageRefreshKey((k) => k + 1)
+    } catch (err) {
+      console.error('Refresh error:', err)
+    } finally {
+      setTimeout(() => {
+        setIsRefreshing(false)
+      }, 450)
+    }
+  }, [isRefreshing, loadJobs, loadPosts, activeTab, user?.role, user?.id, loadAdminData, loadUnreadNotifs, loadUnreadMessages])
 
   // Handle role promotion / demotion by Admin (Optimistic Redux update)
   const handlePromote = async (userId: string) => {
@@ -731,6 +779,8 @@ function MainContent() {
         }}
         totalJobsCount={totalJobsCount || (jobs.length > 0 ? jobs.length : 50)}
         featuredJobs={jobs.slice(0, 3)}
+        onRefresh={handleRefresh}
+        isRefreshing={isRefreshing}
       />
     )
   }
@@ -765,9 +815,15 @@ function MainContent() {
           setViewingPublicProfileId(null)
           setActiveTab('feed')
         }}
+        onRefresh={handleRefresh}
+        isRefreshing={isRefreshing}
       />
 
-      <main className={`mx-auto ${activeTab === 'messages' ? 'max-w-6xl px-0 md:px-6 py-0 md:py-4 pb-14 md:pb-8' : 'max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8'}`}>
+      <PullToRefresh onRefresh={handleRefresh} isRefreshing={isRefreshing}>
+        <main
+          key={pageRefreshKey}
+          className={`mx-auto ${activeTab === 'messages' ? 'max-w-6xl px-0 md:px-6 py-0 md:py-4 pb-14 md:pb-8' : 'max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8'}`}
+        >
         {/* Unverified HR Recruiter Alert Notice on Platform */}
         {isHrUnverified && activeTab !== 'post-job' && activeTab !== 'candidates' && !viewingPublicProfileId && (
           <div className="mb-5 px-3 md:px-0">
@@ -1545,6 +1601,7 @@ function MainContent() {
         </div>
       )}
       </main>
+      </PullToRefresh>
 
       {/* Rich Profile Edit & Settings Modal */}
       <ProfileEditModal

@@ -14,6 +14,7 @@ import {
   Users,
   MessageSquare,
   Bookmark,
+  RotateCw,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -48,6 +49,8 @@ interface NavbarProps {
   onSelectNotificationUser?: (userId: string) => void
   onSelectNotificationConversation?: (recipientId?: string) => void
   onSelectNotificationFeed?: () => void
+  onRefresh?: () => void
+  isRefreshing?: boolean
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -62,6 +65,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectNotificationUser,
   onSelectNotificationConversation,
   onSelectNotificationFeed,
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const { user, role, hasRole, logout } = useAuth()
   const { language, setLanguage, t, languages } = useLanguage()
@@ -277,6 +282,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
+            {/* Page Refresh Button (Accessible for Native App & Web across all pages) */}
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50/80 text-[#0B2545] hover:bg-gray-100 hover:text-[#F97316] transition cursor-pointer active:scale-90 disabled:opacity-60 shrink-0"
+              title={language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}
+              aria-label="Refresh Page"
+            >
+              <RotateCw className={`h-3.5 w-3.5 transition-transform ${isRefreshing ? 'animate-spin text-[#F97316]' : 'text-[#0B2545]'}`} />
+            </button>
+
             {/* Quick Language Switcher Dropdown */}
             <div className="relative">
               <button
@@ -419,6 +435,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                             {savedCount}
                           </span>
                         )}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setShowProfileMenu(false)
+                          onRefresh?.()
+                        }}
+                        className="w-full flex items-center gap-2.5 p-2 rounded-lg text-left font-semibold cursor-pointer hover:bg-slate-100 text-slate-800 transition"
+                      >
+                        <RotateCw className={`h-4 w-4 text-[#0B2545] ${isRefreshing ? 'animate-spin text-[#F97316]' : ''}`} />
+                        <span>{language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}</span>
                       </button>
 
                       <button

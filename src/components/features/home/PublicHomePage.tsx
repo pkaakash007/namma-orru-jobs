@@ -10,7 +10,9 @@ import {
   Briefcase,
   UserCheck,
   Users,
+  RotateCw,
 } from 'lucide-react'
+import { PullToRefresh } from '../../ui/PullToRefresh'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
@@ -32,6 +34,8 @@ interface PublicHomePageProps {
   featuredJobs?: Job[]
   onOpenTerms?: () => void
   onOpenPrivacy?: () => void
+  onRefresh?: () => void
+  isRefreshing?: boolean
 }
 
 export const PublicHomePage: React.FC<PublicHomePageProps> = ({
@@ -42,6 +46,8 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   featuredJobs = [],
   onOpenTerms,
   onOpenPrivacy,
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const { user, selectedRole, setSelectedRole } = useAuth()
   const { language, setLanguage, languages, t } = useLanguage()
@@ -81,6 +87,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
 
   return (
+    <PullToRefresh onRefresh={onRefresh || (() => {})} isRefreshing={isRefreshing} disabled={!onRefresh}>
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans selection:bg-[#0B2545] selection:text-white">
       {/* 1. Refined Responsive Header */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 h-[58px] sm:h-[64px] px-3.5 sm:px-8 shadow-2xs">
@@ -120,6 +127,20 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
           {/* Right: Language Selector & Primary Action */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Page Refresh Button (Accessible across all pages) */}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50/80 text-[#0B2545] hover:bg-slate-100 hover:text-[#F97316] transition cursor-pointer active:scale-90 disabled:opacity-60 shrink-0"
+                title={language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}
+                aria-label="Refresh Page"
+              >
+                <RotateCw className={`h-3.5 w-3.5 transition-transform ${isRefreshing ? 'animate-spin text-[#F97316]' : 'text-[#0B2545]'}`} />
+              </button>
+            )}
+
             {/* Minimalist Language Switcher */}
             <div className="relative">
               <button
@@ -715,5 +736,6 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
         </div>
       </footer>
     </div>
+    </PullToRefresh>
   )
 }
