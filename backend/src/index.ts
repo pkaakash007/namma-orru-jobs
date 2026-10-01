@@ -2215,10 +2215,10 @@ app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['a
     const notes = (body.notes || '').trim().slice(0, 500)
 
     const targetUser = await c.env.DB.prepare(
-      'SELECT id, role, email, full_name, status FROM users WHERE id = ?'
+      'SELECT id, role, email, full_name, status, company FROM users WHERE id = ?'
     )
       .bind(targetUserId)
-      .first() as { id: string; role: string; email: string; full_name: string; status: string } | null
+      .first() as { id: string; role: string; email: string; full_name: string; status: string; company?: string } | null
 
     if (!targetUser) {
       return c.json({ error: 'HR account not found' }, 404)
@@ -2286,22 +2286,20 @@ app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['a
     }
 
     // Email notification to recruiter
+    let emailStatus = { sent: false, error: null as string | null }
     if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
       try {
-        const emailPromise = sendHrApprovedEmail({
+        await sendHrApprovedEmail({
           recipientEmail: targetUser.email,
           recipientName: targetUser.full_name,
-          company: (targetUser as any).company || undefined,
+          company: targetUser.company || undefined,
         }, c.env)
-        try {
-          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
-            c.executionCtx.waitUntil(emailPromise)
-          }
-        } catch {
-          emailPromise.catch((e) => console.warn('HR approval email warning:', e))
-        }
-      } catch (emailErr) {
-        console.warn('Failed to initiate HR approval email:', emailErr)
+        emailStatus.sent = true
+        console.log(`[HR Approval] Successfully dispatched approval email to ${targetUser.email}`)
+      } catch (emailErr: any) {
+        const errMsg = emailErr?.message || String(emailErr)
+        console.error(`[HR Approval] Failed to send approval email to ${targetUser.email}:`, errMsg)
+        emailStatus.error = errMsg
       }
     }
 
@@ -2315,6 +2313,8 @@ app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['a
       success: true,
       message: `HR Account for ${targetUser.full_name} (${targetUser.email}) approved successfully by Admin ${admin.full_name}`,
       user: updatedUser,
+      emailSent: emailStatus.sent,
+      emailError: emailStatus.error,
     })
   } catch (err: any) {
     return c.json({ error: 'Failed to approve HR account: ' + err.message }, 500)
@@ -2400,22 +2400,20 @@ app.post('/api/admin/hr-verifications/:id/reject', requireAuth, requireRole(['ad
     }
 
     // Email notification to recruiter
+    let emailStatus = { sent: false, error: null as string | null }
     if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
       try {
-        const emailPromise = sendHrRejectedEmail({
+        await sendHrRejectedEmail({
           recipientEmail: targetUser.email,
           recipientName: targetUser.full_name,
           reason,
         }, c.env)
-        try {
-          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
-            c.executionCtx.waitUntil(emailPromise)
-          }
-        } catch {
-          emailPromise.catch((e) => console.warn('HR rejection email warning:', e))
-        }
-      } catch (emailErr) {
-        console.warn('Failed to initiate HR rejection email:', emailErr)
+        emailStatus.sent = true
+        console.log(`[HR Rejection] Successfully dispatched rejection email to ${targetUser.email}`)
+      } catch (emailErr: any) {
+        const errMsg = emailErr?.message || String(emailErr)
+        console.error(`[HR Rejection] Failed to send rejection email to ${targetUser.email}:`, errMsg)
+        emailStatus.error = errMsg
       }
     }
 
@@ -2429,6 +2427,8 @@ app.post('/api/admin/hr-verifications/:id/reject', requireAuth, requireRole(['ad
       success: true,
       message: `HR Account for ${targetUser.full_name} (${targetUser.email}) was rejected. Reason: ${reason}`,
       user: updatedUser,
+      emailSent: emailStatus.sent,
+      emailError: emailStatus.error,
     })
   } catch (err: any) {
     return c.json({ error: 'Failed to reject HR account: ' + err.message }, 500)

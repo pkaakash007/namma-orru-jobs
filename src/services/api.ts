@@ -303,7 +303,7 @@ export const adminService = {
   },
 
   async approveHrVerification(userId: string, notes?: string) {
-    return apiClient.request<{ success: boolean; message: string; user: any }>(
+    return apiClient.request<{ success: boolean; message: string; user: any; emailSent?: boolean; emailError?: string | null }>(
       `/api/admin/hr-verifications/${userId}/approve`,
       {
         method: 'POST',
@@ -313,7 +313,7 @@ export const adminService = {
   },
 
   async rejectHrVerification(userId: string, reason: string) {
-    return apiClient.request<{ success: boolean; message: string; user: any }>(
+    return apiClient.request<{ success: boolean; message: string; user: any; emailSent?: boolean; emailError?: string | null }>(
       `/api/admin/hr-verifications/${userId}/reject`,
       {
         method: 'POST',

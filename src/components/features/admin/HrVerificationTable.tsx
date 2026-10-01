@@ -68,7 +68,13 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
     setIsProcessing(true)
     try {
       const res = await adminService.approveHrVerification(approvingUser.id)
-      showToast(res.message || `Approved ${approvingUser.full_name}`, 'success')
+      if (res.emailSent) {
+        showToast(`Approved ${approvingUser.full_name} and confirmation email sent!`, 'success')
+      } else if (res.emailError) {
+        showToast(`Approved ${approvingUser.full_name}. (Email: ${res.emailError})`, 'info')
+      } else {
+        showToast(res.message || `Approved ${approvingUser.full_name}`, 'success')
+      }
       setApprovingUser(null)
       await fetchVerifications(activeFilter)
       if (onRefreshStats) onRefreshStats()
@@ -89,7 +95,13 @@ export const HrVerificationTable: React.FC<HrVerificationTableProps> = ({ onRefr
     setIsProcessing(true)
     try {
       const res = await adminService.rejectHrVerification(rejectingUser.id, rejectionReason.trim())
-      showToast(res.message || `Verification rejected for ${rejectingUser.full_name}`, 'info')
+      if (res.emailSent) {
+        showToast(`Verification rejected and notice email sent to ${rejectingUser.full_name}`, 'info')
+      } else if (res.emailError) {
+        showToast(`Verification rejected for ${rejectingUser.full_name}. (Email: ${res.emailError})`, 'info')
+      } else {
+        showToast(res.message || `Verification rejected for ${rejectingUser.full_name}`, 'info')
+      }
       setRejectingUser(null)
       setRejectionReason('')
       await fetchVerifications(activeFilter)

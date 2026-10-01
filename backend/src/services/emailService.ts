@@ -124,6 +124,8 @@ export async function sendEmail(options: EmailOptions, env?: any): Promise<{ id:
   if (options.text) payload.text = options.text
   if (validBcc.length > 0) payload.bcc = validBcc
 
+  console.log(`[EmailService] Sending email "${options.subject}" to ${payload.to} (from: ${payload.from})`)
+
   const res = await fetch(config.apiUrl, {
     method: 'POST',
     headers: {
@@ -135,10 +137,12 @@ export async function sendEmail(options: EmailOptions, env?: any): Promise<{ id:
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => '')
+    console.error(`[EmailService] Resend API Error (${res.status}): ${errorBody}`)
     throw new Error(`Resend API Error (${res.status}): ${errorBody}`)
   }
 
   const data = (await res.json().catch(() => ({ id: 'ok' }))) as { id: string }
+  console.log(`[EmailService] Email successfully dispatched with ID: ${data.id}`)
   return data
 }
 
