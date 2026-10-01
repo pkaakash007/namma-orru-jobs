@@ -363,13 +363,12 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
           </>
         ) : isApplied ? (
-            <button
-              disabled
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed select-none"
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold bg-slate-100 text-slate-600 select-none cursor-default"
             >
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
               <span>{t('jobs_applied')}</span>
-            </button>
+            </span>
           ) : (
             <Button
               size="sm"

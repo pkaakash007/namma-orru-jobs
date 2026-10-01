@@ -305,16 +305,22 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
         </div>
 
         {hasApplied && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/90 p-3.5 text-emerald-800">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-emerald-900 text-sm">{t('jobs_applied')}</p>
-              <p className="text-xs text-emerald-700 mt-0.5">
+              <p className="font-semibold text-slate-900 text-xs">
                 {language === 'ta'
-                  ? 'இந்த வேலைக்கு உங்கள் விண்ணப்பம் ஏற்கெனவே சமர்ப்பிக்கப்பட்டது. நீங்கள் மீண்டும் விண்ணப்பிக்க முடியாது.'
+                  ? 'விண்ணப்பம் சமர்ப்பிக்கப்பட்டது'
                   : language === 'hi'
-                  ? 'इस नौकरी के लिए आपका आवेदन पहले ही जमा हो चुका है। आप पुनः आवेदन नहीं कर सकते।'
-                  : 'You have already applied for this job. You cannot submit again.'}
+                  ? 'आवेदन जमा हो गया'
+                  : 'Application Already Submitted'}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {language === 'ta'
+                  ? 'இந்த வேலைக்கு உங்கள் விண்ணப்பம் ஏற்கெனவே சமர்ப்பிக்கப்பட்டது.'
+                  : language === 'hi'
+                  ? 'इस नौकरी के लिए आपका आवेदन पहले ही जमा हो चुका है।'
+                  : 'You have already submitted an application for this job.'}
               </p>
             </div>
           </div>
@@ -448,14 +454,12 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
                 : 'Cancel'}
             </Button>
             {hasApplied ? (
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed select-none"
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold bg-slate-100 text-slate-600 select-none cursor-default"
               >
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                 <span>{t('jobs_applied')}</span>
-              </button>
+              </span>
             ) : (
               <Button
                 type="submit"
