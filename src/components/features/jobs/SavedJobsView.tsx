@@ -5,7 +5,7 @@ import { savedJobService } from '../../../services/api'
 import { useLanguage } from '../../../context/LanguageContext'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Bookmark, Search, ArrowLeft, Briefcase, CheckCircle2 } from 'lucide-react'
+import { Bookmark, Search, ArrowLeft, Briefcase } from 'lucide-react'
 
 interface SavedJobsViewProps {
   onApply: (job: Job) => void
@@ -219,16 +219,6 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
                 <span>{t('saved_jobs_browse_btn') || 'Browse All Jobs'}</span>
               </Button>
             )}
-          </div>
-          <div className="mt-8 pt-5 border-t border-slate-100 max-w-sm mx-auto flex items-center justify-center gap-2 text-[11px] text-slate-400">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            <span>
-              {language === 'ta'
-                ? 'உங்கள் புக்மார்க்குகள் கிளவுட் தரவுத்தளத்தில் பாதுகாக்கப்படுகின்றன'
-                : language === 'hi'
-                ? 'आपके बुकमार्क क्लाउड डेटाबेस में सुरक्षित रूप से सहेजे जाते हैं'
-                : 'Bookmarks automatically sync to your database profile'}
-            </span>
           </div>
         </Card>
       )}

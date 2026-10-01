@@ -15,9 +15,17 @@ import { formatRelativeTime } from '../../../utils/date'
 
 interface NotificationDropdownProps {
   onSelectJob?: (jobId: string, jobTitle?: string) => void
+  onSelectUser?: (userId: string) => void
+  onSelectConversation?: (recipientId?: string) => void
+  onSelectFeed?: () => void
 }
 
-export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSelectJob }) => {
+export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
+  onSelectJob,
+  onSelectUser,
+  onSelectConversation,
+  onSelectFeed,
+}) => {
   const { user } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
@@ -114,18 +122,22 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ onSe
       try {
         const parsed = notif.data ? JSON.parse(notif.data) : null
         if (parsed?.follower_id) {
-          window.history.pushState({}, '', `/profile/${parsed.follower_id}`)
-          window.dispatchEvent(new PopStateEvent('popstate'))
+          if (onSelectUser) {
+            onSelectUser(parsed.follower_id)
+          }
           setIsOpen(false)
         }
       } catch {}
     } else if (notif.type === 'chat_message') {
-      window.history.pushState({}, '', '/messages')
-      window.dispatchEvent(new PopStateEvent('popstate'))
+      try {
+        const parsed = notif.data ? JSON.parse(notif.data) : null
+        if (onSelectConversation) {
+          onSelectConversation(parsed?.sender_id)
+        }
+      } catch {}
       setIsOpen(false)
     } else if (notif.type === 'post_like') {
-      window.history.pushState({}, '', '/feed')
-      window.dispatchEvent(new PopStateEvent('popstate'))
+      if (onSelectFeed) onSelectFeed()
       setIsOpen(false)
     } else if (notif.type === 'application_received' && notif.data) {
       try {

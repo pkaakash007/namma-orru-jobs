@@ -17,6 +17,7 @@ import { socialService } from '../../../services/api'
 import { useAuth } from '../../../context/AuthContext'
 import { parseDateUTC } from '../../../utils/date'
 import { parseSkillsArray } from '../../../utils/skills'
+import { HrVerificationPendingView } from '../hr/HrVerificationPendingView'
 
 interface PublicUserProfileViewProps {
   userId: string
@@ -31,8 +32,12 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   onBack,
   onOpenChat,
 }) => {
-  const { hasRole } = useAuth()
+  const { user, hasRole } = useAuth()
   const isRecruiter = hasRole(['admin', 'manager'])
+  const isHrUnverified =
+    user?.role === 'manager' &&
+    (user.status || '').toUpperCase() !== 'ACTIVE' &&
+    user.status !== 'active'
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -126,6 +131,22 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     } finally {
       setActionLoading(false)
     }
+  }
+
+  if (isHrUnverified) {
+    return (
+      <div className="w-full space-y-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B2545] transition px-2.5 py-1.5 rounded-lg hover:bg-white cursor-pointer border border-transparent hover:border-gray-200"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>{lang === 'ta' ? 'பின்செல்க' : lang === 'hi' ? 'वापस' : 'Back'}</span>
+        </button>
+        <HrVerificationPendingView onBackToFeed={onBack} />
+      </div>
+    )
   }
 
   if (loading) {

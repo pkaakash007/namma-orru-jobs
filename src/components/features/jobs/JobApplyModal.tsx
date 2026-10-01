@@ -252,13 +252,6 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
             <Input
               label={`${t('apply_full_name')} *`}
               required
-              placeholder={
-                language === 'ta'
-                  ? 'ரெஸ்யூமில் உள்ள முழு பெயர்'
-                  : language === 'hi'
-                  ? 'रिज्यूमे के अनुसार पूरा नाम'
-                  : 'Full name as on resume'
-              }
               value={candidateName}
               onChange={(e) => {
                 setCandidateName(e.target.value)
@@ -276,7 +269,6 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
                 label={`${t('apply_email')} *`}
                 type="email"
                 required
-                placeholder="name@example.com"
                 value={candidateEmail}
                 onChange={(e) => {
                   setCandidateEmail(e.target.value)
@@ -290,7 +282,6 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
             <div>
               <Input
                 label={t('apply_phone')}
-                placeholder="e.g. +91 98765 43210"
                 value={candidatePhone}
                 onChange={(e) => {
                   setCandidatePhone(e.target.value)

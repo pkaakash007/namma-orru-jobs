@@ -15,6 +15,7 @@ import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useAppDispatch } from '../../../store/hooks'
 import { jobAdded } from '../../../store/jobsSlice'
+import { HrVerificationPendingView } from './HrVerificationPendingView'
 
 interface PostJobFormProps {
   onSuccess: () => void
@@ -27,6 +28,9 @@ const EMPLOYMENT_OPTIONS = ['Full-time', 'Part-time', 'Contract', 'Internship'] 
 export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel }) => {
   const dispatch = useAppDispatch()
   const { user } = useAuth()
+  const { showToast } = useToast()
+  const { t, language } = useLanguage()
+
   const [title, setTitle] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [location, setLocation] = useState('')
@@ -38,8 +42,14 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const { showToast } = useToast()
-  const { t, language } = useLanguage()
+  const isHrUnverified =
+    user?.role === 'manager' &&
+    (user.status || '').toUpperCase() !== 'ACTIVE' &&
+    user.status !== 'active'
+
+  if (isHrUnverified) {
+    return <HrVerificationPendingView onBackToFeed={onCancel || onSuccess} />
+  }
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -193,10 +203,9 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
               <input
                 type="text"
                 required
-                placeholder="e.g. Senior React Native Developer / Sales Executive"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
               />
             </div>
           </div>
@@ -212,10 +221,9 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Zoho Technologies / Tata Electronics"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
                 />
               </div>
             </div>
@@ -224,7 +232,6 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
               <GoogleLocationSearchInput
                 label={`${t('hr_location')} *`}
                 required
-                placeholder="e.g. Chennai, Coimbatore, Madurai"
                 value={location}
                 onChange={setLocation}
                 inputClassName="rounded-xl border-slate-200 py-2.5 text-xs shadow-2xs"
@@ -345,10 +352,9 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
               <Banknote className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="e.g. ₹8 - 14 LPA or ₹25,000 - 35,000 / month"
                 value={salaryRange}
                 onChange={(e) => setSalaryRange(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
+                className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs"
               />
             </div>
           </div>
@@ -361,10 +367,9 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
             <textarea
               rows={5}
               required
-              placeholder="Detail key responsibilities, required qualifications, technical skills, and candidate benefits..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs leading-relaxed"
+              className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-[#0F172A] focus:border-[#0B2545] focus:ring-1 focus:ring-[#0B2545] focus:outline-none transition shadow-2xs leading-relaxed"
             />
           </div>
 

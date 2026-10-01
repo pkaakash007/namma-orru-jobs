@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react'
 import type { User } from '../../../types'
 import { useToast } from '../../../context/ToastContext'
 import { useLanguage } from '../../../context/LanguageContext'
+import { useAuth } from '../../../context/AuthContext'
+import { HrVerificationPendingView } from './HrVerificationPendingView'
 import { Card } from '../../ui/Card'
 import { Avatar } from '../../ui/Avatar'
 import { SKILL_CATEGORIES, extractSkillsFromJobDescription, type SkillCategory } from '../../../services/resumeParser'
@@ -10,6 +12,7 @@ import { searchCandidatesCached } from '../../../store/candidatesSlice'
 import { translateLocationSync } from '../../../services/googleAiTranslate'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { parseSkillsArray } from '../../../utils/skills'
+import { candidateService } from '../../../services/api'
 import {
   Search,
   MapPin,
@@ -57,6 +60,7 @@ interface CandidateSearchViewProps {
   initialJd?: string
   onSelectCandidate?: (candidate: User) => void
   onOpenProfile?: (candidateId: string) => void
+  onOpenChat?: (candidateId: string) => void
 }
 
 type SearchMode = 'skills' | 'jd'
@@ -65,9 +69,17 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
   initialQuery = '',
   initialJd = '',
   onOpenProfile,
+  onOpenChat,
 }) => {
   const { showToast } = useToast()
   const { t, language } = useLanguage()
+  const { user } = useAuth()
+
+  const isHrUnverified =
+    user?.role === 'manager' &&
+    (user.status || '').toUpperCase() !== 'ACTIVE' &&
+    user.status !== 'active'
+
   const dispatch = useAppDispatch()
   const { currentResults: candidates, isLoading } = useAppSelector((state) => state.candidates)
   const employeeCandidates = candidates.filter((cand) => !cand.role || cand.role === 'employee')
@@ -82,6 +94,8 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
   const [withResumeOnly, setWithResumeOnly] = useState(false)
   const [detectedJdSkills, setDetectedJdSkills] = useState<string[]>([])
   const [selectedCandidate, setSelectedCandidate] = useState<User | null>(null)
+  const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(null)
+  const [invitedCandidateIds, setInvitedCandidateIds] = useState<Set<string>>(new Set())
 
   const activeCategoryObj: SkillCategory | undefined = SKILL_CATEGORIES.find(
     (c) => c.id === selectedCategory
@@ -99,6 +113,7 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
       },
       forceRefresh: boolean = false
     ) => {
+      if (isHrUnverified) return
       try {
         const q = overrideParams?.q !== undefined ? overrideParams.q : searchQuery
         const skill = overrideParams?.skill !== undefined ? overrideParams.skill : selectedTag
@@ -179,27 +194,37 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
     })
   }
 
-  const handleInviteCandidate = (cand: User) => {
-    const contactInfo = cand.email || cand.phone ? ` (${cand.email || cand.phone})` : ''
-    showToast(
-      language === 'ta'
-        ? `நேர்காணல் அழைப்பு ${cand.full_name}${contactInfo} க்கு அனுப்பப்பட்டது!`
-        : language === 'hi'
-        ? `${cand.full_name}${contactInfo} को साक्षात्कार आमंत्रण भेजा गया!`
-        : `Interview invitation sent to ${cand.full_name}${contactInfo}!`,
-      'success'
-    )
+  const handleInviteCandidate = async (cand: User) => {
+    if (!cand.id || invitingCandidateId) return
+    setInvitingCandidateId(cand.id)
+    try {
+      const res = await candidateService.expressInterest(
+        cand.id,
+        `We are impressed by your profile on Namma Ooru Jobs and would like to connect with you regarding current openings at ${user?.company || 'our company'}.`
+      )
+      setInvitedCandidateIds((prev) => new Set(prev).add(cand.id))
+      const contactInfo = cand.email || cand.phone ? ` (${cand.email || cand.phone})` : ''
+      showToast(
+        language === 'ta'
+          ? `நேர்காணல் அழைப்பு & மின்னஞ்சல் ${cand.full_name}${contactInfo} க்கு அனுப்பப்பட்டது!`
+          : language === 'hi'
+          ? `${cand.full_name}${contactInfo} को साक्षात्कार आमंत्रण एवं ईमेल भेजा गया!`
+          : res.message || `Interview invitation & email dispatched to ${cand.full_name}${contactInfo}!`,
+        'success'
+      )
+    } catch (err: any) {
+      showToast(
+        err?.message || (language === 'ta' ? 'அழைப்பு அனுப்புவதில் பிழை ஏற்பட்டது' : language === 'hi' ? 'आमंत्रण भेजने में त्रुटि हुई' : 'Failed to send interview invitation email'),
+        'error'
+      )
+    } finally {
+      setInvitingCandidateId(null)
+    }
   }
 
-  const getWhatsAppLink = (cand: User) => {
-    if (!cand.phone) return '#'
-    const cleanPhone = cand.phone.replace(/[^0-9]/g, '')
-    const target = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`
-    const candSkillsClean = parseSkillsArray(cand.skills).slice(0, 3).join(', ')
-    const text = encodeURIComponent(
-      `Hello ${cand.full_name},\n\nI reviewed your profile and skills (${candSkillsClean}) on NAMMA OORU JOBS. We have an exciting career opening matching your profile. Would you be open for a quick discussion?`
-    )
-    return `https://wa.me/${target}?text=${text}`
+
+  if (isHrUnverified) {
+    return <HrVerificationPendingView />
   }
 
   return (
@@ -275,16 +300,14 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={t('cs_search_skills_placeholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-xl border border-[#CDCBC7] bg-white pl-10 pr-4 py-2.5 text-xs sm:text-sm text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-xs"
+                  className="w-full rounded-xl border border-[#CDCBC7] bg-white pl-10 pr-4 py-2.5 text-xs sm:text-sm text-[#0F172A] focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-xs"
                 />
               </div>
 
               <div className="relative sm:w-64">
                 <GoogleLocationSearchInput
-                  placeholder={t('cs_location_placeholder')}
                   value={locationFilter}
                   onChange={setLocationFilter}
                   onSelect={(val) => {
@@ -315,14 +338,13 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
               </label>
               <textarea
                 rows={3}
-                placeholder={t('cs_jd_placeholder')}
                 value={jdText}
                 onChange={(e) => {
                   setJdText(e.target.value)
                   const extracted = extractSkillsFromJobDescription(e.target.value)
                   setDetectedJdSkills(extracted)
                 }}
-                className="w-full rounded-xl border border-[#CDCBC7] bg-white p-3 text-xs sm:text-sm text-[#0F172A] placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-xs"
+                className="w-full rounded-xl border border-[#CDCBC7] bg-white p-3 text-xs sm:text-sm text-[#0F172A] focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-xs"
               />
             </div>
 
@@ -559,6 +581,20 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Match Highlights / Reasons (Requirement 28) */}
+                      {cand.match_highlights && cand.match_highlights.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          {cand.match_highlights.map((highlight: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center text-[10px] font-medium text-slate-600 bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded-full"
+                            >
+                              {highlight}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -649,16 +685,16 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
 
                   {/* Right: Direct Contact */}
                   <div className="flex items-center gap-1.5 ml-auto">
-                    {cand.phone && (
-                      <a
-                        href={getWhatsAppLink(cand)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                    {onOpenChat && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenChat(cand.id)}
+                        className="px-2.5 py-1.5 rounded-lg border border-[#0B2545]/20 bg-[#0B2545]/5 hover:bg-[#0B2545] text-[#0B2545] hover:text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                        title={language === 'ta' ? 'செய்தி அனுப்பவும்' : language === 'hi' ? 'संदेश भेजें' : 'Send Message'}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
-                        <span>WhatsApp</span>
-                      </a>
+                        <span>{language === 'ta' ? 'செய்தி' : language === 'hi' ? 'संदेश' : 'Message'}</span>
+                      </button>
                     )}
 
                     {cand.email && (
@@ -673,10 +709,27 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
 
                     <button
                       type="button"
+                      disabled={invitingCandidateId === cand.id || invitedCandidateIds.has(cand.id)}
                       onClick={() => handleInviteCandidate(cand)}
-                      className="px-2.5 py-1.5 rounded-lg bg-[#0B2545] text-white hover:bg-[#071A31] font-bold text-xs transition cursor-pointer"
+                      className={`px-2.5 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                        invitedCandidateIds.has(cand.id)
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                          : 'bg-[#0B2545] text-white hover:bg-[#071A31] disabled:opacity-60'
+                      }`}
                     >
-                      {language === 'ta' ? 'அழைப்பு விடுக்க' : language === 'hi' ? 'आमंत्रित करें' : 'Invite'}
+                      {invitingCandidateId === cand.id ? (
+                        <>
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          <span>{language === 'ta' ? 'அனுப்புகிறது...' : language === 'hi' ? 'भेज रहे हैं...' : 'Sending...'}</span>
+                        </>
+                      ) : invitedCandidateIds.has(cand.id) ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                          <span>{language === 'ta' ? 'அழைக்கப்பட்டது' : language === 'hi' ? 'आमंत्रित किया' : 'Invited'}</span>
+                        </>
+                      ) : (
+                        language === 'ta' ? 'அழைப்பு விடுக்க' : language === 'hi' ? 'आमंत्रित करें' : 'Invite'
+                      )}
                     </button>
                   </div>
                 </div>
@@ -818,26 +871,46 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
                     {language === 'ta' ? 'முழு விவரம்' : language === 'hi' ? 'पूरी प्रोफ़ाइल' : 'Full Profile'}
                   </button>
                 )}
-                {selectedCandidate.phone && (
-                  <a
-                    href={getWhatsAppLink(selectedCandidate)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                {onOpenChat && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selectedCandidate.id
+                      setSelectedCandidate(null)
+                      onOpenChat(id)
+                    }}
+                    className="px-3 py-2 rounded-xl border border-[#0B2545]/20 bg-[#0B2545]/5 hover:bg-[#0B2545] text-[#0B2545] hover:text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    title={language === 'ta' ? 'செய்தி அனுப்பவும்' : language === 'hi' ? 'संदेश भेजें' : 'Send Message'}
                   >
                     <MessageSquare className="h-3.5 w-3.5" />
-                    <span>WhatsApp</span>
-                  </a>
+                    <span>{language === 'ta' ? 'செய்தி' : language === 'hi' ? 'संदेश' : 'Message'}</span>
+                  </button>
                 )}
                 <button
                   type="button"
+                  disabled={invitingCandidateId === selectedCandidate.id || invitedCandidateIds.has(selectedCandidate.id)}
                   onClick={() => {
                     handleInviteCandidate(selectedCandidate)
-                    setSelectedCandidate(null)
                   }}
-                  className="px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-[#071A31] text-white text-xs font-bold transition cursor-pointer"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 ${
+                    invitedCandidateIds.has(selectedCandidate.id)
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                      : 'bg-[#0B2545] hover:bg-[#071A31] text-white disabled:opacity-60'
+                  }`}
                 >
-                  {language === 'ta' ? 'நேர்காணலுக்கு அழைக்க' : language === 'hi' ? 'साक्षात्कार हेतु आमंत्रित करें' : 'Invite to Interview'}
+                  {invitingCandidateId === selectedCandidate.id ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>{language === 'ta' ? 'அனுப்புகிறது...' : language === 'hi' ? 'भेज रहे हैं...' : 'Sending...'}</span>
+                    </>
+                  ) : invitedCandidateIds.has(selectedCandidate.id) ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>{language === 'ta' ? 'அழைப்பு அனுப்பப்பட்டது' : language === 'hi' ? 'आमंत्रण भेजा गया' : 'Invited'}</span>
+                    </>
+                  ) : (
+                    language === 'ta' ? 'நேர்காணலுக்கு அழைக்க' : language === 'hi' ? 'साक्षात्कार हेतु आमंत्रित करें' : 'Invite to Interview'
+                  )}
                 </button>
               </div>
             </div>

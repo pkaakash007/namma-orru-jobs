@@ -131,7 +131,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
               autoFocus
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={t('feed_create_placeholder')}
               className="w-full rounded-lg border border-gray-300 p-3 text-sm text-[#0F172A] focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
             />
             {mediaUrl && (

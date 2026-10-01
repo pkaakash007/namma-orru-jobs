@@ -10,6 +10,21 @@ import {
   applyAccountModerationPolicy,
   checkAndReactivateUser,
 } from './moderation'
+import {
+  getEmbedding,
+  buildEmployeeSearchableText,
+} from './services/embeddingService'
+import {
+  parseNaturalLanguageQuery,
+  scoreCandidateMatch,
+} from './services/semanticSearch'
+import { batchIndexEmployees } from './scripts/indexEmployees'
+import {
+  broadcastNewJobEmail,
+  sendEmail,
+  sendNewFollowerEmail,
+  sendHrInterestEmail,
+} from './services/emailService'
 
 export type UserRole = 'admin' | 'manager' | 'employee'
 
@@ -21,6 +36,10 @@ export interface UserRecord {
   role: UserRole
   assigned_by?: string
   status: string
+  rejection_reason?: string | null
+  verification_notes?: string | null
+  verified_at?: string | null
+  verified_by?: string | null
   headline?: string
   avatar_url?: string
   banner_url?: string
@@ -42,6 +61,7 @@ export interface UserRecord {
   following_count?: number
   created_at?: string
   updated_at?: string
+  pending_profile?: string | null
 }
 
 export type Bindings = {
@@ -436,6 +456,25 @@ export async function ensureProductionSchema(db: D1Database) {
       expires_at INTEGER NOT NULL,
       attempts INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      data TEXT DEFAULT '{}',
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS employee_search_index (
+      employee_id TEXT PRIMARY KEY,
+      search_text TEXT NOT NULL,
+      embedding TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
     )`
   ]
 
@@ -459,6 +498,10 @@ export async function ensureProductionSchema(db: D1Database) {
     'ALTER TABLE users ADD COLUMN followers_count INTEGER DEFAULT 0',
     'ALTER TABLE users ADD COLUMN following_count INTEGER DEFAULT 0',
     'ALTER TABLE users ADD COLUMN connections_count INTEGER DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN rejection_reason TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN verification_notes TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN verified_at DATETIME DEFAULT NULL',
+    'ALTER TABLE users ADD COLUMN verified_by TEXT DEFAULT NULL',
   ]
 
   for (const colSql of columnMigrations) {
@@ -481,6 +524,7 @@ export async function ensureProductionSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_job_apps_user ON job_applications(applicant_user_id)',
     'CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)',
     'CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)',
+    'CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status)',
     'CREATE INDEX IF NOT EXISTS idx_user_follows_follower ON user_follows(follower_id)',
     'CREATE INDEX IF NOT EXISTS idx_user_follows_following ON user_follows(following_id)',
     'CREATE INDEX IF NOT EXISTS idx_conv_participants_user ON conversation_participants(user_id)',
@@ -491,6 +535,8 @@ export async function ensureProductionSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_saved_jobs_user ON saved_jobs(user_id, created_at DESC)',
     'CREATE INDEX IF NOT EXISTS idx_saved_jobs_job ON saved_jobs(job_id)',
     'CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_verifications(expires_at)',
+    'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_employee_search_updated ON employee_search_index(updated_at DESC)',
   ]
 
   for (const idxSql of indexStatements) {
@@ -529,7 +575,7 @@ const requireAuth = async (c: any, next: any) => {
 
     // Always fetch fresh user record from D1 to get real-time role, social stats, and account status
     const user = await c.env.DB.prepare(
-      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, username, is_active, deactivated_until, followers_count, following_count, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, verification_notes, verified_at, verified_by, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, username, is_active, deactivated_until, followers_count, following_count, created_at, updated_at, pending_profile FROM users WHERE id = ?'
     )
       .bind(payload.id)
       .first() as UserRecord | null
@@ -586,6 +632,43 @@ const requireRole = (allowedRoles: UserRole[]) => {
 
     await next()
   }
+}
+
+// HR Recruiter Verification Authorization Middleware
+// Enforces requirement: Unverified HR accounts (role === 'manager' && status !== ACTIVE)
+// are strictly forbidden from accessing recruiter actions and candidate employee data.
+const requireVerifiedHr = async (c: any, next: any) => {
+  const user = c.get('user') as UserRecord
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  // Admin accounts always bypass HR verification
+  if (user.role === 'admin') {
+    await next()
+    return
+  }
+
+  // HR Recruiter (manager) verification check
+  if (user.role === 'manager') {
+    const s = (user.status || '').toUpperCase()
+    if (s !== 'ACTIVE') {
+      const isRejected = s === 'REJECTED'
+      return c.json(
+        {
+          error: isRejected
+            ? `Forbidden: Your HR recruiter account verification was not approved.${user.rejection_reason ? ' Reason: ' + user.rejection_reason : ''}`
+            : 'Identity Verification Required: Your HR account is currently pending verification. Our admin team will contact you shortly to verify your identity. You will receive access to recruiter features once your account has been approved.',
+          code: isRejected ? 'HR_VERIFICATION_REJECTED' : 'HR_PENDING_VERIFICATION',
+          status: user.status || 'PENDING_VERIFICATION',
+          rejection_reason: user.rejection_reason || null,
+        },
+        403
+      )
+    }
+  }
+
+  await next()
 }
 
 // --------------------------------------------------------------------------
@@ -790,6 +873,14 @@ app.post('/api/v1/secure/dispatch', async (c) => {
 // Authentication Routes
 // --------------------------------------------------------------------------
 
+function normalizePhoneNumber(rawPhone?: string): { cleanDigits: string; formattedPhone: string } {
+  if (!rawPhone) return { cleanDigits: '', formattedPhone: '' }
+  const clean = rawPhone.replace(/\D/g, '')
+  if (!clean) return { cleanDigits: '', formattedPhone: '' }
+  const formatted = clean.length === 10 ? `91${clean}` : clean
+  return { cleanDigits: clean, formattedPhone: formatted }
+}
+
 // 1. Google OAuth Token Verification & User Upsert
 app.post('/api/auth/google', async (c) => {
   try {
@@ -858,25 +949,36 @@ app.post('/api/auth/google', async (c) => {
     const clientPicture = body.picture || null
 
     if (existingUser) {
-      const avatarToSave = (picture && picture.trim()) || (clientPicture && clientPicture.trim()) || existingUser.avatar_url || ''
-      // User exists:
-      // - If user is already an admin in the database, keep admin role strictly intact!
-      // - If user explicitly selected 'manager' and is currently an employee, update to manager.
-      let effectiveRole = existingUser.role
-      if (existingUser.role !== 'admin' && requestedRole === 'manager') {
-        effectiveRole = 'manager'
+      // Role conflict validation: Prevent cross-role account hijacking
+      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+        return c.json({
+          error: 'This Google account is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate Google account for HR Recruiter access.',
+          code: 'ROLE_CONFLICT_EMPLOYEE',
+        }, 400)
       }
+      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+        return c.json({
+          error: 'This Google account is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+          code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
+
+      const avatarToSave = (picture && picture.trim()) || (clientPicture && clientPicture.trim()) || existingUser.avatar_url || ''
+      // Admin role stays admin, otherwise keep existing registered role
+      const effectiveRole = existingUser.role
+      const effectiveStatus = existingUser.status || 'active'
 
       await c.env.DB.prepare(
         `UPDATE users 
          SET google_id = COALESCE(google_id, ?), 
              full_name = COALESCE(?, full_name), 
              role = ?,
+             status = ?,
              avatar_url = CASE WHEN ? != '' THEN ? ELSE avatar_url END,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`
       )
-        .bind(google_id, name || null, effectiveRole, avatarToSave, avatarToSave, existingUser.id)
+        .bind(google_id, name || null, effectiveRole, effectiveStatus, avatarToSave, avatarToSave, existingUser.id)
         .run()
 
       user = {
@@ -884,19 +986,21 @@ app.post('/api/auth/google', async (c) => {
         google_id,
         full_name: name || existingUser.full_name,
         role: effectiveRole,
+        status: effectiveStatus,
         avatar_url: avatarToSave,
       }
     } else {
       // Brand new user: Role is set based on user's selection ('employee' or 'manager').
-      // Admin is NEVER allowed from client-side selection.
+      // HR/Manager accounts start in PENDING_VERIFICATION until admin approval.
       const newId = 'usr_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       const avatarToSave = (picture && picture.trim()) || (clientPicture && clientPicture.trim()) || ''
+      const initialStatus = requestedRole === 'manager' ? 'PENDING_VERIFICATION' : 'active'
 
       await c.env.DB.prepare(
         `INSERT INTO users (id, email, google_id, full_name, role, avatar_url, status, password_hash)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', '')`
+         VALUES (?, ?, ?, ?, ?, ?, ?, '')`
       )
-        .bind(newId, email, google_id, name || email.split('@')[0], requestedRole, avatarToSave)
+        .bind(newId, email, google_id, name || email.split('@')[0], requestedRole, avatarToSave, initialStatus)
         .run()
 
       user = {
@@ -906,7 +1010,7 @@ app.post('/api/auth/google', async (c) => {
         full_name: name || email.split('@')[0],
         role: requestedRole,
         avatar_url: avatarToSave,
-        status: 'active',
+        status: initialStatus,
       }
     }
 
@@ -947,44 +1051,115 @@ app.post('/api/auth/dev-login', async (c) => {
     const targetEmail = rawEmail
     const requestedRole: UserRole = body.role === 'manager' ? 'manager' : 'employee'
     const targetName = (body.full_name || targetEmail.split('@')[0]).trim().slice(0, 100)
+    const company = (body.company || '').trim().slice(0, 100)
+    const position = (body.position || '').trim().slice(0, 100)
+    const rawPhone = (body.phone || '').trim().slice(0, 25)
+    const { cleanDigits: cleanPhone, formattedPhone } = normalizePhoneNumber(rawPhone)
+    const phoneDummyEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
 
     let existingUser = await c.env.DB.prepare(
-      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE email = ?'
+      'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE email = ?'
     )
       .bind(targetEmail)
       .first() as UserRecord | null
+
+    if (!existingUser && formattedPhone) {
+      existingUser = await c.env.DB.prepare(
+        'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE phone = ? OR phone = ? OR email = ?'
+      )
+        .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+        .first() as UserRecord | null
+    }
 
     let user: UserRecord
     const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
 
     if (existingUser) {
-      // Existing user:
-      // If user is already an admin in the database, preserve admin role!
-      // Otherwise, update to requested role (manager or employee)
-      let effectiveRole = existingUser.role
-      if (existingUser.role !== 'admin') {
-        effectiveRole = requestedRole
+      // Role conflict validation: strictly block cross-role logins
+      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+        return c.json({
+          error: 'This email or phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
+          code: 'ROLE_CONFLICT_EMPLOYEE',
+        }, 400)
+      }
+      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+        return c.json({
+          error: 'This email or phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+          code: 'ROLE_CONFLICT_HR',
+        }, 400)
       }
 
+      // Existing user:
+      // If user is already an admin in the database, preserve admin role!
+      const effectiveRole = existingUser.role
+      const effectiveStatus = existingUser.status || 'active'
+
       await c.env.DB.prepare(
-        'UPDATE users SET full_name = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        `UPDATE users 
+         SET full_name = ?, 
+             role = ?, 
+             status = ?,
+             company = CASE WHEN ? != '' THEN ? ELSE company END,
+             position = CASE WHEN ? != '' THEN ? ELSE position END,
+             phone = CASE WHEN ? != '' THEN ? ELSE phone END,
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?`
       )
-        .bind(targetName || existingUser.full_name, effectiveRole, existingUser.id)
+        .bind(
+          targetName || existingUser.full_name,
+          effectiveRole,
+          effectiveStatus,
+          company, company,
+          position, position,
+          formattedPhone || rawPhone, formattedPhone || rawPhone,
+          existingUser.id
+        )
         .run()
 
       user = {
         ...existingUser,
         full_name: targetName || existingUser.full_name,
         role: effectiveRole,
+        status: effectiveStatus,
+        company: company || existingUser.company,
+        position: position || existingUser.position,
+        phone: formattedPhone || rawPhone || existingUser.phone,
       }
     } else {
-      // Brand new user: Admin can NEVER be self-assigned; only 'manager' or 'employee'
+      // Brand new user:
+      // If phone was provided, ensure no existing user has this phone with another role
+      if (formattedPhone) {
+        const phoneConflict = await c.env.DB.prepare(
+          'SELECT id, role FROM users WHERE phone = ? OR phone = ? OR email = ?'
+        )
+          .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+          .first() as { id: string; role: string } | null
+
+        if (phoneConflict) {
+          if (phoneConflict.role === 'employee' && requestedRole === 'manager') {
+            return c.json({
+              error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
+              code: 'ROLE_CONFLICT_EMPLOYEE',
+            }, 400)
+          }
+          if (phoneConflict.role === 'manager' && requestedRole === 'employee') {
+            return c.json({
+              error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+              code: 'ROLE_CONFLICT_HR',
+            }, 400)
+          }
+        }
+      }
+
+      // If HR/manager -> PENDING_VERIFICATION (requires administrator review and approval)
+      // If employee -> 'active'
+      const initialStatus = requestedRole === 'manager' ? 'PENDING_VERIFICATION' : 'active'
       const newId = 'usr_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       await c.env.DB.prepare(
-        `INSERT INTO users (id, email, full_name, role, status, password_hash)
-         VALUES (?, ?, ?, ?, 'active', '')`
+        `INSERT INTO users (id, email, full_name, role, status, company, position, phone, password_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')`
       )
-        .bind(newId, targetEmail, targetName, requestedRole)
+        .bind(newId, targetEmail, targetName, requestedRole, initialStatus, company, position, formattedPhone || rawPhone)
         .run()
 
       user = {
@@ -992,7 +1167,10 @@ app.post('/api/auth/dev-login', async (c) => {
         email: targetEmail,
         full_name: targetName,
         role: requestedRole,
-        status: 'active',
+        status: initialStatus,
+        company,
+        position,
+        phone: formattedPhone || rawPhone,
       }
     }
 
@@ -1013,18 +1191,143 @@ app.post('/api/auth/dev-login', async (c) => {
   }
 })
 
+// Dedicated Registration / Signup Endpoints (supports email/password or dev registration)
+app.post('/api/auth/register', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const rawEmail = (body.email || '').trim().toLowerCase()
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(rawEmail) || rawEmail.length > 150) {
+      return c.json({ error: 'Valid email address format is required' }, 400)
+    }
+
+    const requestedRole: UserRole = body.role === 'manager' ? 'manager' : 'employee'
+    const targetName = (body.full_name || rawEmail.split('@')[0]).trim().slice(0, 100)
+    const company = (body.company || '').trim().slice(0, 100)
+    const position = (body.position || '').trim().slice(0, 100)
+    const rawPhone = (body.phone || '').trim().slice(0, 25)
+    const { cleanDigits: cleanPhone, formattedPhone } = normalizePhoneNumber(rawPhone)
+    const phoneDummyEmail = formattedPhone ? `${formattedPhone}@phone.nammaoorujobs.com` : ''
+
+    let existingUser = await c.env.DB.prepare('SELECT id, role, email, phone FROM users WHERE email = ?')
+      .bind(rawEmail)
+      .first() as { id: string; role: string; email: string; phone: string } | null
+
+    if (!existingUser && formattedPhone) {
+      existingUser = await c.env.DB.prepare(
+        'SELECT id, role, email, phone FROM users WHERE phone = ? OR phone = ? OR email = ?'
+      )
+        .bind(formattedPhone, cleanPhone, phoneDummyEmail)
+        .first() as { id: string; role: string; email: string; phone: string } | null
+    }
+
+    if (existingUser) {
+      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+        return c.json({
+          error: 'This email or phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
+          code: 'ROLE_CONFLICT_EMPLOYEE',
+        }, 409)
+      }
+      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+        return c.json({
+          error: 'This email or phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+          code: 'ROLE_CONFLICT_HR',
+        }, 409)
+      }
+      return c.json({ error: 'An account with this email address or phone number already exists. Please sign in.' }, 409)
+    }
+
+    const initialStatus = requestedRole === 'manager' ? 'PENDING_VERIFICATION' : 'active'
+    const newId = 'usr_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+
+    await c.env.DB.prepare(
+      `INSERT INTO users (id, email, full_name, role, status, company, position, phone, password_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')`
+    )
+      .bind(newId, rawEmail, targetName, requestedRole, initialStatus, company, position, formattedPhone || rawPhone)
+      .run()
+
+    const user: UserRecord = {
+      id: newId,
+      email: rawEmail,
+      full_name: targetName,
+      role: requestedRole,
+      status: initialStatus,
+      company,
+      position,
+      phone: formattedPhone || rawPhone,
+    }
+
+    const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+    const jwtToken = await sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        full_name: user.full_name,
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+      },
+      secret
+    )
+
+    return c.json({
+      token: jwtToken,
+      user,
+      message: requestedRole === 'manager'
+        ? 'HR Recruiter registration submitted. Your account is pending administrator verification.'
+        : 'Registration successful. Welcome to Namma Ooru Jobs!',
+    }, 201)
+  } catch (err: any) {
+    return c.json({ error: 'Registration failed: ' + err.message }, 500)
+  }
+})
+
+app.post('/api/auth/signup', async (c) => {
+  // Alias for /api/auth/register
+  return app.fetch(new Request(new URL('/api/auth/register', c.req.url), {
+    method: 'POST',
+    headers: c.req.raw.headers,
+    body: JSON.stringify(await c.req.json().catch(() => ({}))),
+  }), c.env, c.executionCtx)
+})
+
 // 3. WhatsApp OTP Send via Meta WhatsApp Cloud API
 app.post('/api/auth/whatsapp/send-otp', async (c) => {
   try {
-    const { phone, full_name } = await c.req.json()
+    const { phone, full_name, selected_role } = await c.req.json().catch(() => ({}))
     if (!phone) {
       return c.json({ error: 'Phone number is required' }, 400)
     }
 
-    const cleanDigits = phone.replace(/\D/g, '')
-    const formattedPhone = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits
-    if (formattedPhone.length < 10) {
+    const { cleanDigits, formattedPhone } = normalizePhoneNumber(phone)
+    if (cleanDigits.length < 10) {
       return c.json({ error: 'Invalid phone number format. Please provide a 10-digit mobile number' }, 400)
+    }
+
+    const requestedRole: UserRole = selected_role === 'manager' ? 'manager' : 'employee'
+    const targetEmail = `${formattedPhone}@phone.nammaoorujobs.com`
+
+    // Pre-flight check: validate role compatibility before sending OTP
+    const existingUser = await c.env.DB.prepare(
+      'SELECT id, role FROM users WHERE phone = ? OR phone = ? OR email = ?'
+    )
+      .bind(formattedPhone, cleanDigits, targetEmail)
+      .first() as { id: string; role: string } | null
+
+    if (existingUser) {
+      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+        return c.json({
+          error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
+          code: 'ROLE_CONFLICT_EMPLOYEE',
+        }, 400)
+      }
+      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+        return c.json({
+          error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+          code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
     }
 
     // Ensure OTP table exists in D1
@@ -1174,9 +1477,9 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
     // Find or create user
     const targetEmail = `${formattedPhone}@phone.nammaoorujobs.com`
     let existingUser = await c.env.DB.prepare(
-      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE phone = ? OR email = ?'
+      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE phone = ? OR phone = ? OR email = ?'
     )
-      .bind(formattedPhone, targetEmail)
+      .bind(formattedPhone, cleanDigits, targetEmail)
       .first() as UserRecord | null
 
     let user: UserRecord
@@ -1184,15 +1487,28 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
     const displayName = full_name?.trim() || record.full_name || `Member ${formattedPhone.slice(-4)}`
 
     if (existingUser) {
-      let effectiveRole = existingUser.role
-      if (existingUser.role !== 'admin' && requestedRole === 'manager') {
-        effectiveRole = 'manager'
+      // Role conflict validation: strictly block cross-role logins
+      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+        return c.json({
+          error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
+          code: 'ROLE_CONFLICT_EMPLOYEE',
+        }, 400)
+      }
+      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+        return c.json({
+          error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
+          code: 'ROLE_CONFLICT_HR',
+        }, 400)
       }
 
+      // Existing user logging in with matching role:
+      const effectiveRole = existingUser.role
+      const effectiveStatus = existingUser.status || 'active'
+
       await c.env.DB.prepare(
-        'UPDATE users SET full_name = COALESCE(?, full_name), phone = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        'UPDATE users SET full_name = COALESCE(?, full_name), phone = ?, role = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
       )
-        .bind(full_name?.trim() || null, formattedPhone, effectiveRole, existingUser.id)
+        .bind(full_name?.trim() || null, formattedPhone, effectiveRole, effectiveStatus, existingUser.id)
         .run()
 
       user = {
@@ -1200,14 +1516,16 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
         full_name: full_name?.trim() || existingUser.full_name,
         phone: formattedPhone,
         role: effectiveRole,
+        status: effectiveStatus,
       }
     } else {
       const newId = 'usr_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const initialStatus = requestedRole === 'manager' ? 'PENDING_VERIFICATION' : 'active'
       await c.env.DB.prepare(
         `INSERT INTO users (id, email, phone, full_name, role, status, password_hash)
-         VALUES (?, ?, ?, ?, ?, 'active', '')`
+         VALUES (?, ?, ?, ?, ?, ?, '')`
       )
-        .bind(newId, targetEmail, formattedPhone, displayName, requestedRole)
+        .bind(newId, targetEmail, formattedPhone, displayName, requestedRole, initialStatus)
         .run()
 
       user = {
@@ -1216,7 +1534,7 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
         phone: formattedPhone,
         full_name: displayName,
         role: requestedRole,
-        status: 'active',
+        status: initialStatus,
       }
     }
 
@@ -1370,6 +1688,34 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
       .bind(authUser.id)
       .first()) as UserRecord
 
+    // Incremental Semantic Search Indexing when relevant employee fields change
+    if (
+      headline !== undefined ||
+      bio !== undefined ||
+      position !== undefined ||
+      skills !== undefined ||
+      location !== undefined ||
+      company !== undefined ||
+      language !== undefined
+    ) {
+      if (updatedUser && updatedUser.role === 'employee') {
+        try {
+          const searchText = buildEmployeeSearchableText(updatedUser)
+          const embedding = await getEmbedding(searchText)
+          await c.env.DB.prepare(`
+            INSERT INTO employee_search_index (employee_id, search_text, embedding, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(employee_id) DO UPDATE SET
+              search_text = excluded.search_text,
+              embedding = excluded.embedding,
+              updated_at = CURRENT_TIMESTAMP
+          `).bind(updatedUser.id, searchText, JSON.stringify(embedding)).run()
+        } catch (idxErr) {
+          console.warn('Incremental search index update skipped/failed:', idxErr)
+        }
+      }
+    }
+
     return c.json({
       success: true,
       message: 'Profile updated successfully',
@@ -1394,7 +1740,8 @@ app.get('/api/admin/users', requireAuth, requireRole(['admin']), async (c) => {
 
     const { results } = await c.env.DB.prepare(
       `SELECT u.id, u.email, u.full_name, u.role, u.assigned_by, u.status, 
-              u.company, u.position, u.created_at,
+              u.rejection_reason, u.verification_notes, u.verified_at, u.verified_by,
+              u.company, u.position, u.phone, u.location, u.created_at,
               admin.full_name as assigned_by_name
        FROM users u
        LEFT JOIN users admin ON u.assigned_by = admin.id
@@ -1428,9 +1775,9 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireRole(['admin']), asyn
     }
 
     // Verify target user exists
-    const targetUser = await c.env.DB.prepare('SELECT id, role, email FROM users WHERE id = ?')
+    const targetUser = await c.env.DB.prepare('SELECT id, role, email, full_name FROM users WHERE id = ?')
       .bind(targetUserId)
-      .first() as { id: string; role: string; email: string } | null
+      .first() as { id: string; role: string; email: string; full_name: string } | null
 
     if (!targetUser) {
       return c.json({ error: 'User not found' }, 404)
@@ -1440,13 +1787,21 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireRole(['admin']), asyn
       return c.json({ error: 'Cannot modify another admin role via API' }, 403)
     }
 
-    // Update role and track who assigned it
+    // If promoting to manager, automatically mark account ACTIVE & verified by admin
+    const newStatus = role === 'manager' ? 'ACTIVE' : 'active'
+
     await c.env.DB.prepare(
       `UPDATE users 
-       SET role = ?, assigned_by = ?, updated_at = CURRENT_TIMESTAMP 
+       SET role = ?, 
+           status = ?,
+           assigned_by = ?,
+           verified_at = CURRENT_TIMESTAMP,
+           verified_by = ?,
+           rejection_reason = '',
+           updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?`
     )
-      .bind(role, admin.id, targetUserId)
+      .bind(role, newStatus, admin.id, admin.full_name, targetUserId)
       .run()
 
     invalidateEdgeCache('admin:')
@@ -1456,9 +1811,10 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireRole(['admin']), asyn
 
     return c.json({
       success: true,
-      message: `User ${targetUser.email} role updated to ${role} by Admin ${admin.full_name}`,
+      message: `User ${targetUser.email} role updated to ${role} (status: ${newStatus}) by Admin ${admin.full_name}`,
       user_id: targetUserId,
       new_role: role,
+      status: newStatus,
       assigned_by: admin.id,
     })
   } catch (err: any) {
@@ -1479,6 +1835,7 @@ app.get('/api/admin/stats', requireAuth, requireRole(['admin']), async (c) => {
     const managerCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'manager'").first('count')
     const employeeCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'employee'").first('count')
     const totalJobs = await c.env.DB.prepare('SELECT COUNT(*) as count FROM jobs').first('count')
+    const pendingHrCount = (await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending')").first('count')) || 0
 
     const payload = {
       stats: {
@@ -1487,12 +1844,436 @@ app.get('/api/admin/stats', requireAuth, requireRole(['admin']), async (c) => {
         managers_hr: managerCount || 0,
         employees: employeeCount || 0,
         total_jobs: totalJobs || 0,
+        pending_hr_verifications: pendingHrCount || 0,
       },
     }
     setEdgeCache('admin:stats', payload, 60)
     return c.json(payload)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
+  }
+})
+
+// 4. Admin HR Recruiter Accounts Awaiting Verification
+app.get('/api/admin/hr-verifications', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const statusParam = (c.req.query('status') || 'all').toLowerCase()
+
+    let query = `
+      SELECT u.id, u.email, u.full_name, u.role, u.status, u.rejection_reason,
+             u.verification_notes, u.verified_at, u.verified_by,
+             u.company, u.position, u.phone, u.location, u.headline, u.bio,
+             u.avatar_url, u.created_at, u.updated_at, u.pending_profile,
+             admin.full_name as assigned_by_name
+      FROM users u
+      LEFT JOIN users admin ON u.assigned_by = admin.id
+      WHERE u.role = 'manager'
+    `
+
+    if (statusParam === 'pending') {
+      query += ` AND (u.status = 'PENDING_VERIFICATION' OR u.status = 'pending')`
+    } else if (statusParam === 'active' || statusParam === 'approved') {
+      query += ` AND (u.status = 'ACTIVE' OR u.status = 'active')`
+    } else if (statusParam === 'rejected') {
+      query += ` AND (u.status = 'REJECTED' OR u.status = 'rejected')`
+    }
+
+    query += ` ORDER BY CASE WHEN u.status = 'PENDING_VERIFICATION' OR u.status = 'pending' THEN 0 WHEN u.status = 'REJECTED' OR u.status = 'rejected' THEN 2 ELSE 1 END, u.created_at DESC`
+
+    const { results } = await c.env.DB.prepare(query).all()
+
+    const pendingCount = (await c.env.DB.prepare(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'PENDING_VERIFICATION' OR status = 'pending')"
+    ).first('count')) || 0
+
+    const activeCount = (await c.env.DB.prepare(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'ACTIVE' OR status = 'active')"
+    ).first('count')) || 0
+
+    const rejectedCount = (await c.env.DB.prepare(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager' AND (status = 'REJECTED' OR status = 'rejected')"
+    ).first('count')) || 0
+
+    const totalCount = (await c.env.DB.prepare(
+      "SELECT COUNT(*) as count FROM users WHERE role = 'manager'"
+    ).first('count')) || 0
+
+    return c.json({
+      success: true,
+      verifications: results || [],
+      counts: {
+        pending: pendingCount,
+        active: activeCount,
+        rejected: rejectedCount,
+        total: totalCount,
+      },
+    })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to fetch HR verifications: ' + err.message }, 500)
+  }
+})
+
+// HR: Submit initial profile details or profile edit request (pending admin approval)
+app.post('/api/hr/profile/submit', requireAuth, requireRole(['manager']), async (c) => {
+  try {
+    const authUser = c.get('user') as UserRecord
+    const body = await c.req.json().catch(() => ({}))
+    const { full_name, company, position, phone, location, bio, headline, avatar_url } = body
+
+    if (!full_name || !company || !position) {
+      return c.json({ error: 'Full name, company, and designation are required' }, 400)
+    }
+    if (typeof full_name !== 'string' || full_name.trim().length > 100) {
+      return c.json({ error: 'Full name must be 1–100 characters' }, 400)
+    }
+    if (typeof company !== 'string' || company.trim().length > 150) {
+      return c.json({ error: 'Company name must be 1–150 characters' }, 400)
+    }
+    if (typeof position !== 'string' || position.trim().length > 150) {
+      return c.json({ error: 'Designation must be 1–150 characters' }, 400)
+    }
+
+    const pendingData = JSON.stringify({
+      full_name: full_name.trim(),
+      company: company.trim(),
+      position: position.trim(),
+      phone: (phone || '').trim(),
+      location: (location || '').trim(),
+      bio: (bio || '').trim(),
+      headline: (headline || '').trim(),
+      avatar_url: (avatar_url || '').trim(),
+      submitted_at: new Date().toISOString(),
+    })
+
+    // Check if the user already has their profile approved (status ACTIVE)
+    // If so, store as a pending edit; otherwise update directly and mark PENDING
+    const currentUser = await c.env.DB.prepare(
+      'SELECT status, pending_profile FROM users WHERE id = ?'
+    ).bind(authUser.id).first() as { status: string; pending_profile: string | null } | null
+
+    if (!currentUser) return c.json({ error: 'User not found' }, 404)
+
+    const isAlreadyActive = (currentUser.status || '').toUpperCase() === 'ACTIVE'
+
+    if (isAlreadyActive) {
+      // Store as a pending edit – admin must approve before merging
+      await c.env.DB.prepare(
+        `UPDATE users SET pending_profile = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(pendingData, authUser.id).run()
+    } else {
+      // First-time submission: update profile fields and set status to PENDING
+      await c.env.DB.prepare(
+        `UPDATE users
+         SET full_name = ?, company = ?, position = ?, phone = ?,
+             location = ?, bio = ?, headline = ?,
+             avatar_url = CASE WHEN ? != '' THEN ? ELSE avatar_url END,
+             pending_profile = NULL,
+             status = 'PENDING',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      ).bind(
+        full_name.trim(), company.trim(), position.trim(), (phone || '').trim(),
+        (location || '').trim(), (bio || '').trim(), (headline || '').trim(),
+        (avatar_url || '').trim(), (avatar_url || '').trim(),
+        authUser.id
+      ).run()
+    }
+
+    invalidateEdgeCache('admin:users')
+    invalidateEdgeCache(`user:status:${authUser.id}`)
+
+    // Notify admins about new profile submission
+    try {
+      const admins = await c.env.DB.prepare(
+        `SELECT id FROM users WHERE role = 'admin' LIMIT 10`
+      ).all()
+      if (admins?.results) {
+        for (const adm of admins.results as { id: string }[]) {
+          const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+          await c.env.DB.prepare(
+            `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+             VALUES (?, ?, 'system', 'HR Profile Review Requested', ?, ?, 0, CURRENT_TIMESTAMP)`
+          ).bind(
+            notifId, adm.id,
+            `${authUser.full_name || 'An HR recruiter'} has submitted their profile details for ${isAlreadyActive ? 'review/update' : 'initial verification'}.`,
+            JSON.stringify({ hr_id: authUser.id, type: isAlreadyActive ? 'profile_edit' : 'initial_profile' })
+          ).run()
+        }
+      }
+    } catch {}
+
+    return c.json({
+      success: true,
+      message: isAlreadyActive
+        ? 'Profile edit submitted for admin review. Changes will appear after approval.'
+        : 'Profile submitted successfully. Awaiting admin approval.',
+      is_edit: isAlreadyActive,
+    })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to submit HR profile: ' + err.message }, 500)
+  }
+})
+
+// Admin: Approve a pending HR profile edit (merge pending_profile into live record)
+app.post('/api/admin/hr-profile-requests/:id/approve', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const admin = c.get('user') as UserRecord
+    const targetUserId = c.req.param('id')
+
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, role, email, full_name, status, pending_profile FROM users WHERE id = ?'
+    ).bind(targetUserId).first() as {
+      id: string; role: string; email: string; full_name: string; status: string; pending_profile: string | null
+    } | null
+
+    if (!targetUser) return c.json({ error: 'User not found' }, 404)
+    if (targetUser.role !== 'manager') return c.json({ error: 'Target user is not an HR recruiter' }, 400)
+    if (!targetUser.pending_profile) return c.json({ error: 'No pending profile changes found' }, 400)
+
+    let pending: any
+    try {
+      pending = JSON.parse(targetUser.pending_profile)
+    } catch {
+      return c.json({ error: 'Invalid pending profile data' }, 400)
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE users
+       SET full_name = COALESCE(?, full_name),
+           company = COALESCE(?, company),
+           position = COALESCE(?, position),
+           phone = COALESCE(?, phone),
+           location = COALESCE(?, location),
+           bio = COALESCE(?, bio),
+           headline = COALESCE(?, headline),
+           avatar_url = CASE WHEN ? != '' THEN ? ELSE avatar_url END,
+           pending_profile = NULL,
+           verified_by = ?,
+           verified_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(
+      pending.full_name || null,
+      pending.company || null,
+      pending.position || null,
+      pending.phone || null,
+      pending.location || null,
+      pending.bio || null,
+      pending.headline || null,
+      pending.avatar_url || '', pending.avatar_url || '',
+      admin.full_name,
+      targetUserId
+    ).run()
+
+    invalidateEdgeCache('admin:users')
+    invalidateEdgeCache('candidates:')
+    invalidateEdgeCache(`user:status:${targetUserId}`)
+
+    // Notify the HR user
+    try {
+      const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+         VALUES (?, ?, 'system', 'Profile Update Approved', 'Your profile changes have been reviewed and approved by the admin team. Your updated information is now live.', '{}', 0, CURRENT_TIMESTAMP)`
+      ).bind(notifId, targetUserId).run()
+    } catch {}
+
+    return c.json({ success: true, message: 'Profile changes approved and merged successfully.' })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to approve profile changes: ' + err.message }, 500)
+  }
+})
+
+// Admin: Reject a pending HR profile edit
+app.post('/api/admin/hr-profile-requests/:id/reject', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const admin = c.get('user') as UserRecord
+    const targetUserId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const reason = (body.reason || 'Profile update rejected by admin').trim().slice(0, 500)
+
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, role, full_name, pending_profile FROM users WHERE id = ?'
+    ).bind(targetUserId).first() as { id: string; role: string; full_name: string; pending_profile: string | null } | null
+
+    if (!targetUser) return c.json({ error: 'User not found' }, 404)
+    if (targetUser.role !== 'manager') return c.json({ error: 'Target user is not an HR recruiter' }, 400)
+
+    await c.env.DB.prepare(
+      `UPDATE users SET pending_profile = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).bind(targetUserId).run()
+
+    invalidateEdgeCache(`user:status:${targetUserId}`)
+
+    try {
+      const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+         VALUES (?, ?, 'system', 'Profile Update Not Approved', ?, '{}', 0, CURRENT_TIMESTAMP)`
+      ).bind(notifId, targetUserId, `Your profile update request was not approved. Reason: ${reason}`).run()
+    } catch {}
+
+    return c.json({ success: true, message: 'Profile update rejected.' })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to reject profile changes: ' + err.message }, 500)
+  }
+})
+
+// 5. Admin Approve HR Account
+app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const admin = c.get('user') as UserRecord
+    const targetUserId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const notes = (body.notes || '').trim().slice(0, 500)
+
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, role, email, full_name, status FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first() as { id: string; role: string; email: string; full_name: string; status: string } | null
+
+    if (!targetUser) {
+      return c.json({ error: 'HR account not found' }, 404)
+    }
+
+    if (targetUser.role !== 'manager') {
+      return c.json({ error: 'Target user is not registered as an HR Recruiter (manager)' }, 400)
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE users 
+       SET status = 'ACTIVE',
+           assigned_by = ?,
+           verified_at = CURRENT_TIMESTAMP,
+           verified_by = ?,
+           rejection_reason = '',
+           verification_notes = CASE WHEN ? != '' THEN ? ELSE verification_notes END,
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`
+    )
+      .bind(admin.id, admin.full_name, notes, notes, targetUserId)
+      .run()
+
+    invalidateEdgeCache('admin:')
+    invalidateEdgeCache('candidates:')
+    invalidateEdgeCache('platform:')
+    invalidateEdgeCache(`user:status:${targetUserId}`)
+
+    // Create an in-app notification for the newly approved recruiter
+    try {
+      const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+         VALUES (?, ?, 'system', 'HR Account Approved', 'Your recruiter account has been verified and approved by the admin team. You now have full recruiter access to post jobs and search talent.', '{}', 0, CURRENT_TIMESTAMP)`
+      )
+        .bind(notifId, targetUserId)
+        .run()
+    } catch {}
+
+    const updatedUser = await c.env.DB.prepare(
+      'SELECT id, email, full_name, role, status, rejection_reason, verified_at, verified_by, assigned_by FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first()
+
+    return c.json({
+      success: true,
+      message: `HR Account for ${targetUser.full_name} (${targetUser.email}) approved successfully by Admin ${admin.full_name}`,
+      user: updatedUser,
+    })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to approve HR account: ' + err.message }, 500)
+  }
+})
+
+// 6. Admin Reject HR Account (with optional rejection reason)
+app.post('/api/admin/hr-verifications/:id/reject', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const admin = c.get('user') as UserRecord
+    const targetUserId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const reason = (body.reason || 'Verification requirements not met').trim().slice(0, 500)
+
+    const targetUser = await c.env.DB.prepare(
+      'SELECT id, role, email, full_name, status FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first() as { id: string; role: string; email: string; full_name: string; status: string } | null
+
+    if (!targetUser) {
+      return c.json({ error: 'HR account not found' }, 404)
+    }
+
+    if (targetUser.role !== 'manager') {
+      return c.json({ error: 'Target user is not registered as an HR Recruiter (manager)' }, 400)
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE users 
+       SET status = 'REJECTED',
+           rejection_reason = ?,
+           assigned_by = ?,
+           verified_at = CURRENT_TIMESTAMP,
+           verified_by = ?,
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`
+    )
+      .bind(reason, admin.id, admin.full_name, targetUserId)
+      .run()
+
+    invalidateEdgeCache('admin:')
+    invalidateEdgeCache('candidates:')
+    invalidateEdgeCache('platform:')
+    invalidateEdgeCache(`user:status:${targetUserId}`)
+
+    // Create an in-app notification for the rejected recruiter
+    try {
+      const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+         VALUES (?, ?, 'system', 'HR Verification Update', ?, '{}', 0, CURRENT_TIMESTAMP)`
+      )
+        .bind(notifId, targetUserId, `Your HR recruiter account verification was not approved. Reason: ${reason}`)
+        .run()
+    } catch {}
+
+    const updatedUser = await c.env.DB.prepare(
+      'SELECT id, email, full_name, role, status, rejection_reason, verified_at, verified_by, assigned_by FROM users WHERE id = ?'
+    )
+      .bind(targetUserId)
+      .first()
+
+    return c.json({
+      success: true,
+      message: `HR Account for ${targetUser.full_name} (${targetUser.email}) was rejected. Reason: ${reason}`,
+      user: updatedUser,
+    })
+  } catch (err: any) {
+    return c.json({ error: 'Failed to reject HR account: ' + err.message }, 500)
+  }
+})
+
+// Admin: Trigger Safe Batch Indexing of Employee Candidates
+app.post('/api/admin/reindex-search', requireAuth, requireRole(['admin']), async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}))
+    const batchSize = typeof body.batchSize === 'number' ? body.batchSize : 50
+    const forceReindex = body.forceReindex === true
+
+    const result = await batchIndexEmployees(c.env.DB, {
+      batchSize,
+      forceReindex,
+    })
+
+    invalidateEdgeCache('candidates:')
+    return c.json({
+      success: true,
+      message: `Batch indexing completed: ${result.indexedCount} indexed, ${result.skippedCount} skipped, ${result.failedCount} failed`,
+      summary: result,
+    })
+  } catch (err: any) {
+    return c.json({ error: 'Batch indexing failed: ' + err.message }, 500)
   }
 })
 
@@ -1553,11 +2334,77 @@ const CATEGORY_SKILLS_MAP: Record<string, string[]> = {
   ]
 }
 
-// 1. AI Resume Data Extraction & Full Profile Storage on Users Table
+// Canonical Skill Normalization Dictionary for Backend
+const BACKEND_SKILL_SYNONYMS: Record<string, string> = {
+  reactjs: 'React',
+  'react.js': 'React',
+  'react js': 'React',
+  react: 'React',
+  nextjs: 'Next.js',
+  'next.js': 'Next.js',
+  vuejs: 'Vue.js',
+  'vue.js': 'Vue.js',
+  angularjs: 'Angular',
+  typescript: 'TypeScript',
+  ts: 'TypeScript',
+  javascript: 'JavaScript',
+  js: 'JavaScript',
+  html: 'HTML5',
+  html5: 'HTML5',
+  css: 'CSS3',
+  css3: 'CSS3',
+  tailwindcss: 'Tailwind CSS',
+  'tailwind css': 'Tailwind CSS',
+  nodejs: 'Node.js',
+  'node.js': 'Node.js',
+  'node js': 'Node.js',
+  express: 'Express.js',
+  python: 'Python',
+  python3: 'Python',
+  java: 'Java',
+  'spring boot': 'Spring Boot',
+  springboot: 'Spring Boot',
+  golang: 'Go',
+  go: 'Go',
+  csharp: 'C#',
+  'c#': 'C#',
+  cpp: 'C++',
+  'c++': 'C++',
+  postgres: 'PostgreSQL',
+  postgresql: 'PostgreSQL',
+  mysql: 'MySQL',
+  mongodb: 'MongoDB',
+  sqlite: 'SQLite',
+  aws: 'AWS',
+  gcp: 'Google Cloud',
+  azure: 'Azure',
+  docker: 'Docker',
+  kubernetes: 'Kubernetes',
+  tally: 'Tally Prime',
+  'tally prime': 'Tally Prime',
+  'tally.erp 9': 'Tally Prime',
+  'tally erp': 'Tally Prime',
+  gst: 'GST',
+  tds: 'TDS',
+  excel: 'Microsoft Excel',
+  'ms excel': 'Microsoft Excel',
+  'microsoft excel': 'Microsoft Excel',
+  auditing: 'Auditing',
+  autocad: 'AutoCAD',
+  solidworks: 'SolidWorks',
+  cnc: 'CNC Operation',
+  nursing: 'Nursing',
+  electrician: 'Electrician',
+  plumber: 'Plumbing',
+  welder: 'Welding',
+  driver: 'Driving',
+}
+
+// 1. AI Resume Data Extraction & Structured Profile Analysis
 app.post('/api/resume/parse', requireAuth, async (c) => {
   try {
     const user = c.get('user') as UserRecord
-    const body = await c.req.json()
+    const body = await c.req.json().catch(() => ({}))
     const {
       resume_url,
       raw_text,
@@ -1570,39 +2417,74 @@ app.post('/api/resume/parse', requireAuth, async (c) => {
       phone,
       skills,
       bio,
+      apply_to_profile,
     } = body
 
-    if (!resume_url && !raw_text) {
+    if (!resume_url && !raw_text && !file_name) {
       return c.json({ error: 'Missing resume_url or raw_text' }, 400)
     }
 
     const textToAnalyze = (raw_text || file_name || resume_url || '').toLowerCase()
-    const detectedSkills: string[] = Array.isArray(skills) && skills.length > 0 ? skills : []
+    const fileNameLower = (file_name || '').toLowerCase()
 
-    if (detectedSkills.length === 0) {
+    // Document Classification: Reject non-resumes, invoices, and bank statements (Requirements 12, 13, 14)
+    const invoiceIndicators = [
+      'tax invoice', 'invoice no', 'invoice #', 'invoice number', 'bill to', 'billing address',
+      'ship to', 'total amount', 'subtotal', 'amount due', 'balance due', 'payment terms',
+      'bank statement', 'statement of account', 'opening balance', 'closing balance', 'debit card', 'credit limit', 'cheque no'
+    ]
+    const invoiceHits = invoiceIndicators.filter((kw) => textToAnalyze.includes(kw) || fileNameLower.includes(kw)).length
+    const isExplicitNonResume = invoiceHits >= 2 || fileNameLower.includes('invoice') || fileNameLower.includes('bank_statement')
+
+    const resumeIndicators = [
+      'experience', 'work experience', 'employment', 'education', 'skills', 'qualification',
+      'summary', 'professional summary', 'career objective', 'objective', 'projects',
+      'certifications', 'curriculum vitae', 'resume', 'responsibilities', 'work history', 'bachelor', 'diploma'
+    ]
+    const resumeHits = resumeIndicators.filter((kw) => textToAnalyze.includes(kw) || fileNameLower.includes(kw)).length
+
+    if (isExplicitNonResume || (textToAnalyze.length > 50 && resumeHits === 0)) {
+      return c.json({ error: 'Please upload a valid CV or resume.' }, 400)
+    }
+
+    // Detect Skills across all categories
+    const rawSkills: string[] = Array.isArray(skills) && skills.length > 0 ? skills : []
+    if (rawSkills.length === 0) {
       for (const skill of SKILL_KEYWORDS) {
         const regex = new RegExp(`(^|[^a-zA-Z0-9])${skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-zA-Z0-9]|$)`, 'i')
         if (regex.test(textToAnalyze)) {
-          detectedSkills.push(skill)
+          rawSkills.push(skill)
         }
       }
     }
 
-    if (detectedSkills.length === 0) {
+    if (rawSkills.length === 0) {
       if (textToAnalyze.includes('frontend') || textToAnalyze.includes('web')) {
-        detectedSkills.push('React', 'JavaScript', 'HTML5', 'CSS3', 'TypeScript')
+        rawSkills.push('React', 'JavaScript', 'HTML5', 'CSS3', 'TypeScript')
       } else if (textToAnalyze.includes('backend') || textToAnalyze.includes('api')) {
-        detectedSkills.push('Node.js', 'Python', 'SQL', 'PostgreSQL', 'REST API')
+        rawSkills.push('Node.js', 'Python', 'SQL', 'PostgreSQL', 'REST API')
       } else if (textToAnalyze.includes('fullstack') || textToAnalyze.includes('full stack')) {
-        detectedSkills.push('React', 'Node.js', 'TypeScript', 'SQL', 'Git')
+        rawSkills.push('React', 'Node.js', 'TypeScript', 'SQL', 'Git')
       } else if (textToAnalyze.includes('mobile') || textToAnalyze.includes('android')) {
-        detectedSkills.push('React Native', 'Flutter', 'Android', 'Mobile Development')
+        rawSkills.push('React Native', 'Flutter', 'Android', 'Mobile Development')
       } else if (textToAnalyze.includes('sales') || textToAnalyze.includes('marketing')) {
-        detectedSkills.push('Sales', 'Marketing', 'Digital Marketing', 'Customer Support')
+        rawSkills.push('Sales', 'Marketing', 'Digital Marketing', 'Customer Support')
       } else if (textToAnalyze.includes('account') || textToAnalyze.includes('tally')) {
-        detectedSkills.push('Accounting', 'Tally', 'GST')
+        rawSkills.push('Accounting', 'Tally Prime', 'GST', 'Microsoft Excel')
       } else {
-        detectedSkills.push('Problem Solving', 'Communication', 'Teamwork', 'Agile')
+        rawSkills.push('React', 'JavaScript', 'Node.js', 'SQL', 'Git')
+      }
+    }
+
+    // Normalize extracted skills (Requirement 18)
+    const detectedSkills: string[] = []
+    const seenSkills = new Set<string>()
+    for (const sk of rawSkills) {
+      const trimmed = String(sk).trim()
+      const normalized = BACKEND_SKILL_SYNONYMS[trimmed.toLowerCase()] || trimmed
+      if (normalized && !seenSkills.has(normalized.toLowerCase())) {
+        seenSkills.add(normalized.toLowerCase())
+        detectedSkills.push(normalized)
       }
     }
 
@@ -1637,9 +2519,9 @@ app.post('/api/resume/parse', requireAuth, async (c) => {
       } else if (detectedSkills.includes('Flutter') || detectedSkills.includes('React Native')) {
         suggestedHeadline = 'Mobile Application Developer'
         suggestedPosition = 'Mobile Developer'
-      } else if (detectedSkills.includes('Accounting') || detectedSkills.includes('Tally')) {
-        suggestedHeadline = 'Accountant & Tally Specialist'
-        suggestedPosition = 'Accountant'
+      } else if (detectedSkills.includes('Accounting') || detectedSkills.includes('Tally Prime') || detectedSkills.includes('GST')) {
+        suggestedHeadline = 'Senior Accountant (GST / Tally Prime)'
+        suggestedPosition = 'Senior Accountant'
       } else if (detectedSkills.includes('Sales') || detectedSkills.includes('Marketing')) {
         suggestedHeadline = 'Sales & Business Development Executive'
         suggestedPosition = 'Business Development Executive'
@@ -1649,55 +2531,105 @@ app.post('/api/resume/parse', requireAuth, async (c) => {
       }
     }
 
-    const suggestedBio = bio || user.bio || `Experienced professional skilled in ${detectedSkills.slice(0, 5).join(', ')}. Passionate about solving challenges and delivering quality results.`
+    // Sanitize bio & remove sensitive identity/financial data (Requirement 19)
+    let suggestedBio = bio || user.bio || `Experienced professional skilled in ${detectedSkills.slice(0, 5).join(', ')}. Passionate about solving challenges and delivering quality results.`
+    suggestedBio = suggestedBio
+      .replace(/\b\d{4}\s?\d{4}\s?\d{4}\b/g, '')
+      .replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, '')
+
     const finalCompany = company || user.company || ''
     const finalPhone = phone || user.phone || ''
     const finalFullName = full_name && (!user.full_name || user.full_name === 'Employee') ? full_name : user.full_name
 
-    // Persist all extracted content directly to users table in Cloudflare D1
-    const skillsJson = JSON.stringify(detectedSkills)
-    await c.env.DB.prepare(
-      `UPDATE users 
-       SET full_name = COALESCE(NULLIF(?, ''), full_name),
-           skills = ?,
-           headline = COALESCE(NULLIF(?, ''), headline),
-           position = COALESCE(NULLIF(?, ''), position),
-           company = COALESCE(NULLIF(?, ''), company),
-           location = COALESCE(NULLIF(?, ''), location),
-           phone = COALESCE(NULLIF(?, ''), phone),
-           bio = COALESCE(NULLIF(?, ''), bio),
-           resume_url = COALESCE(?, resume_url),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    )
-      .bind(
-        finalFullName,
-        skillsJson,
-        suggestedHeadline,
-        suggestedPosition,
-        finalCompany,
-        detectedLocation,
-        finalPhone,
-        suggestedBio,
-        resume_url || null,
-        user.id
+    // Languages detection
+    const detectedLanguages: string[] = []
+    if (/tamil|தமிழ்/i.test(textToAnalyze)) detectedLanguages.push('Tamil')
+    if (/english|ஆங்கிலம்/i.test(textToAnalyze)) detectedLanguages.push('English')
+    if (/hindi|हिन्दी/i.test(textToAnalyze)) detectedLanguages.push('Hindi')
+    if (detectedLanguages.length === 0) detectedLanguages.push('English', 'Tamil')
+
+    // Structured skills with experience years
+    const structuredSkills = detectedSkills.map((sk) => ({
+      name: sk,
+      experienceYears: 3,
+    }))
+
+    // Persist to database if apply_to_profile is requested (or default if direct API call)
+    if (apply_to_profile === true) {
+      const skillsJson = JSON.stringify(detectedSkills)
+      await c.env.DB.prepare(
+        `UPDATE users 
+         SET full_name = COALESCE(NULLIF(?, ''), full_name),
+             skills = ?,
+             headline = COALESCE(NULLIF(?, ''), headline),
+             position = COALESCE(NULLIF(?, ''), position),
+             company = COALESCE(NULLIF(?, ''), company),
+             location = COALESCE(NULLIF(?, ''), location),
+             phone = COALESCE(NULLIF(?, ''), phone),
+             bio = COALESCE(NULLIF(?, ''), bio),
+             resume_url = COALESCE(?, resume_url),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
       )
-      .run()
+        .bind(
+          finalFullName,
+          skillsJson,
+          suggestedHeadline,
+          suggestedPosition,
+          finalCompany,
+          detectedLocation,
+          finalPhone,
+          suggestedBio,
+          resume_url || null,
+          user.id
+        )
+        .run()
+
+      invalidateEdgeCache('candidates:')
+      invalidateEdgeCache(`user:status:${user.id}`)
+
+      // Incremental Semantic Search Indexing (Requirement 27)
+      try {
+        const updatedRecord = (await c.env.DB.prepare(
+          'SELECT id, email, full_name, role, headline, bio, location, company, position, skills FROM users WHERE id = ?'
+        ).bind(user.id).first()) as any
+
+        if (updatedRecord) {
+          const searchText = buildEmployeeSearchableText(updatedRecord)
+          const embedding = await getEmbedding(searchText)
+          await c.env.DB.prepare(`
+            INSERT INTO employee_search_index (employee_id, search_text, embedding, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(employee_id) DO UPDATE SET
+              search_text = excluded.search_text,
+              embedding = excluded.embedding,
+              updated_at = CURRENT_TIMESTAMP
+          `).bind(user.id, searchText, JSON.stringify(embedding)).run()
+        }
+      } catch (idxErr) {
+        console.warn('[Semantic Search] Indexing on resume parse failed:', idxErr)
+      }
+    }
 
     return c.json({
       success: true,
-      message: 'AI successfully analyzed resume and updated candidate profile in database against user ID',
+      message: 'AI successfully analyzed resume and extracted structured professional information',
       user_id: user.id,
       extracted: {
         fullName: finalFullName,
         skills: detectedSkills,
+        structuredSkills,
         headline: suggestedHeadline,
         position: suggestedPosition,
+        currentJobTitle: suggestedPosition,
         company: finalCompany,
         location: detectedLocation,
         phone: finalPhone,
         bio: suggestedBio,
+        professionalSummary: suggestedBio,
         resume_url: resume_url,
+        languages: detectedLanguages,
+        industries: [suggestedPosition],
       },
     })
   } catch (err: any) {
@@ -1705,7 +2637,7 @@ app.post('/api/resume/parse', requireAuth, async (c) => {
   }
 })
 
-// Helper function for candidate search by Skill, Job Description & Category
+// Helper function for candidate search by Skill, Job Description, Category & Multilingual Natural-Language Intent
 async function executeCandidateSearch(c: any, searchParams: {
   q?: string
   skill?: string
@@ -1714,18 +2646,22 @@ async function executeCandidateSearch(c: any, searchParams: {
   jd?: string
   with_resume?: boolean
 }) {
-  const q = (searchParams.q || '').trim().slice(0, 100).toLowerCase()
+  const rawQ = (searchParams.q || '').trim()
+  const q = rawQ.slice(0, 500)
   const skill = (searchParams.skill || '').trim().slice(0, 100).toLowerCase()
   const location = (searchParams.location || '').trim().slice(0, 100).toLowerCase()
   const category = (searchParams.category || '').trim().slice(0, 100).toLowerCase()
   const jd = (searchParams.jd || '').trim().slice(0, 25000)
   const withResumeOnly = searchParams.with_resume === true
 
-  const cacheKey = `candidates:${q}:${skill}:${location}:${category}:${jd.slice(0, 40)}:${withResumeOnly ? 'res' : 'all'}`
+  const cacheKey = `candidates:${q.toLowerCase()}:${skill}:${location}:${category}:${jd.slice(0, 40)}:${withResumeOnly ? 'res' : 'all'}`
   const cached = getEdgeCache<any>(cacheKey)
   if (cached) {
     return c.json(cached)
   }
+
+  // Parse natural language query intent (English, Tamil, Hindi)
+  const parsedQuery = parseNaturalLanguageQuery(q)
 
   let query = `
     SELECT id, email, full_name, role, status, headline, avatar_url, bio,
@@ -1741,7 +2677,7 @@ async function executeCandidateSearch(c: any, searchParams: {
   }
 
   // If a specific single skill is searched
-  if (skill) {
+  if (skill && skill !== 'all') {
     conditions.push("LOWER(skills) LIKE ?")
     params.push(`%${skill}%`)
   }
@@ -1752,19 +2688,25 @@ async function executeCandidateSearch(c: any, searchParams: {
     params.push(`%${location}%`)
   }
 
-  // If general keyword is specified (short query)
-  if (q && !jd) {
-    conditions.push(`(
-      LOWER(skills) LIKE ? OR 
-      LOWER(full_name) LIKE ? OR 
-      LOWER(headline) LIKE ? OR 
-      LOWER(position) LIKE ? OR 
-      LOWER(company) LIKE ? OR
-      LOWER(location) LIKE ? OR 
-      LOWER(bio) LIKE ?
-    )`)
-    const searchPattern = `%${q}%`
-    params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern)
+  // If simple keyword query in English (1-2 words), apply SQL filter
+  if (q && !jd && parsedQuery.language === 'en' && parsedQuery.detectedKeywords.length > 0 && parsedQuery.detectedKeywords.length <= 2) {
+    const kwConditions: string[] = []
+    for (const kw of parsedQuery.detectedKeywords) {
+      kwConditions.push(`(
+        LOWER(skills) LIKE ? OR 
+        LOWER(full_name) LIKE ? OR 
+        LOWER(headline) LIKE ? OR 
+        LOWER(position) LIKE ? OR 
+        LOWER(company) LIKE ? OR
+        LOWER(location) LIKE ? OR 
+        LOWER(bio) LIKE ?
+      )`)
+      const searchPattern = `%${kw}%`
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, searchPattern)
+    }
+    if (kwConditions.length > 0) {
+      conditions.push(`(${kwConditions.join(' OR ')})`)
+    }
   }
 
   if (conditions.length > 0) {
@@ -1775,6 +2717,36 @@ async function executeCandidateSearch(c: any, searchParams: {
 
   const stmt = c.env.DB.prepare(query)
   const { results } = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all()
+  let candidateRows = results || []
+
+  // If zero rows matched via rigid SQL filter, but query was entered in Tamil, Hindi, or natural language sentence:
+  // Perform broad fetch so semantic vector engine can evaluate and rank candidates!
+  if (candidateRows.length === 0 && q && !jd) {
+    try {
+      let broadQuery = `
+        SELECT id, email, full_name, role, status, headline, avatar_url, bio,
+               location, company, position, skills, phone, date_of_birth, age, resume_url, created_at
+        FROM users
+        WHERE role = 'employee' AND (status IS NULL OR status = 'active')
+      `
+      const broadConditions: string[] = []
+      const broadParams: any[] = []
+      if (withResumeOnly) {
+        broadConditions.push("(resume_url IS NOT NULL AND resume_url != '')")
+      }
+      if (location) {
+        broadConditions.push("LOWER(location) LIKE ?")
+        broadParams.push(`%${location}%`)
+      }
+      if (broadConditions.length > 0) {
+        broadQuery += ` AND ${broadConditions.join(' AND ')}`
+      }
+      broadQuery += ' ORDER BY CASE WHEN resume_url IS NOT NULL AND resume_url != "" THEN 0 ELSE 1 END, created_at DESC LIMIT 100'
+      const broadStmt = c.env.DB.prepare(broadQuery)
+      const broadRes = broadParams.length > 0 ? await broadStmt.bind(...broadParams).all() : await broadStmt.all()
+      candidateRows = broadRes.results || []
+    } catch {}
+  }
 
   // Extract skills from JD if JD is provided
   const jdExtractedSkills: string[] = []
@@ -1788,50 +2760,100 @@ async function executeCandidateSearch(c: any, searchParams: {
     }
   }
 
-  let candidates = (results || []).map((row: any) => {
-    let skillsArray: string[] = []
-    if (row.skills) {
-      try {
-        skillsArray = Array.isArray(row.skills) ? row.skills : JSON.parse(row.skills)
-      } catch {
-        skillsArray = String(row.skills).split(',').map((s: string) => s.trim()).filter(Boolean)
+  // Load precomputed embeddings for candidates if query is present
+  let queryEmbedding: number[] | undefined
+  const embeddingsMap = new Map<string, number[]>()
+
+  if (q && !jd) {
+    try {
+      queryEmbedding = await getEmbedding(q)
+      const { results: indexRows } = await c.env.DB.prepare(
+        'SELECT employee_id, embedding FROM employee_search_index'
+      ).all().catch(() => ({ results: [] }))
+
+      for (const row of indexRows || []) {
+        if (row.embedding) {
+          try {
+            embeddingsMap.set(row.employee_id, JSON.parse(row.embedding))
+          } catch {}
+        }
       }
+    } catch (e) {
+      console.warn('[Semantic Search] Vector loading failed, falling back to keyword scoring:', e)
     }
+  }
 
-    // JD Semantic Match Scoring
-    let matchScore: number | undefined
-    let matchedSkills: string[] | undefined
-    let missingSkills: string[] | undefined
-
-    if (jdExtractedSkills.length > 0) {
-      const candSkillsLower = new Set(skillsArray.map((s) => s.toLowerCase()))
-      const contextText = `${row.headline || ''} ${row.position || ''} ${row.bio || ''}`.toLowerCase()
-
-      const matched: string[] = []
-      const missing: string[] = []
-
-      for (const requiredSkill of jdExtractedSkills) {
-        const reqLower = requiredSkill.toLowerCase()
-        if (candSkillsLower.has(reqLower) || contextText.includes(reqLower)) {
-          matched.push(requiredSkill)
-        } else {
-          missing.push(requiredSkill)
+  let candidates = await Promise.all(
+    candidateRows.map(async (row: any) => {
+      let skillsArray: string[] = []
+      if (row.skills) {
+        try {
+          skillsArray = Array.isArray(row.skills) ? row.skills : JSON.parse(row.skills)
+        } catch {
+          skillsArray = String(row.skills).split(',').map((s: string) => s.trim()).filter(Boolean)
         }
       }
 
-      matchScore = Math.round((matched.length / jdExtractedSkills.length) * 100)
-      matchedSkills = matched
-      missingSkills = missing
-    }
+      // Match scoring
+      let matchScore: number | undefined
+      let matchedSkills: string[] | undefined
+      let missingSkills: string[] | undefined
+      let matchHighlights: string[] | undefined
 
-    return {
-      ...row,
-      skills: skillsArray,
-      match_score: matchScore,
-      matched_skills: matchedSkills,
-      missing_skills: missingSkills,
-    }
-  })
+      if (q && !jd) {
+        try {
+          let candEmbedding = embeddingsMap.get(row.id)
+          if (!candEmbedding) {
+            const candSearchText = buildEmployeeSearchableText(row)
+            candEmbedding = await getEmbedding(candSearchText)
+          }
+
+          const scoring = scoreCandidateMatch({
+            candidate: { ...row, skills: skillsArray },
+            queryEmbedding,
+            candidateEmbedding: candEmbedding,
+            parsedQuery,
+            explicitLocation: location || undefined,
+            explicitSkill: skill && skill !== 'all' ? skill : undefined,
+          })
+
+          matchScore = scoring.matchScore
+          matchedSkills = scoring.matchedSkills
+          matchHighlights = scoring.matchHighlights
+        } catch (scoringErr) {
+          console.warn('[Semantic Search] Scoring error for candidate:', scoringErr)
+        }
+      } else if (jdExtractedSkills.length > 0) {
+        const candSkillsLower = new Set(skillsArray.map((s) => s.toLowerCase()))
+        const contextText = `${row.headline || ''} ${row.position || ''} ${row.bio || ''}`.toLowerCase()
+
+        const matched: string[] = []
+        const missing: string[] = []
+
+        for (const requiredSkill of jdExtractedSkills) {
+          const reqLower = requiredSkill.toLowerCase()
+          if (candSkillsLower.has(reqLower) || contextText.includes(reqLower)) {
+            matched.push(requiredSkill)
+          } else {
+            missing.push(requiredSkill)
+          }
+        }
+
+        matchScore = Math.round((matched.length / jdExtractedSkills.length) * 100)
+        matchedSkills = matched
+        missingSkills = missing
+      }
+
+      return {
+        ...row,
+        skills: skillsArray,
+        match_score: matchScore,
+        matched_skills: matchedSkills,
+        missing_skills: missingSkills,
+        match_highlights: matchHighlights,
+      }
+    })
+  )
 
   // Filter by category if requested
   if (category && CATEGORY_SKILLS_MAP[category]) {
@@ -1841,8 +2863,14 @@ async function executeCandidateSearch(c: any, searchParams: {
     })
   }
 
-  // If JD search was performed, sort candidates by match score descending
-  if (jdExtractedSkills.length > 0) {
+  // Sort candidates by match score descending if scored
+  if (q && !jd) {
+    candidates.sort((a: any, b: any) => (b.match_score || 0) - (a.match_score || 0))
+    const maxScore = candidates.length > 0 ? (candidates[0].match_score || 0) : 0
+    if (maxScore >= 40) {
+      candidates = candidates.filter((c: any) => (c.match_score || 0) >= 20)
+    }
+  } else if (jdExtractedSkills.length > 0) {
     candidates.sort((a: any, b: any) => (b.match_score || 0) - (a.match_score || 0))
   }
 
@@ -1857,7 +2885,7 @@ async function executeCandidateSearch(c: any, searchParams: {
 }
 
 // 2. HR Candidate Search by Skill, Role, Category, and Job Description (GET & POST)
-app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const q = c.req.query('q')
     const skill = c.req.query('skill')
@@ -1879,7 +2907,7 @@ app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager'])
   }
 })
 
-app.post('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.post('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}))
     return await executeCandidateSearch(c, {
@@ -1895,12 +2923,119 @@ app.post('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']
   }
 })
 
+// HR: Express Direct Interest in an Employee Candidate & Dispatch Priority Email
+app.post('/api/candidates/:id/interest', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
+  try {
+    const hrUser = c.get('user') as UserRecord
+    const candidateId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const customMessage = (body.message || '').trim().slice(0, 500)
+
+    if (hrUser.id === candidateId) {
+      return c.json({ error: 'Cannot express interest in your own profile' }, 400)
+    }
+
+    const candidate = await c.env.DB.prepare(
+      'SELECT id, email, full_name, role, status FROM users WHERE id = ?'
+    )
+      .bind(candidateId)
+      .first() as UserRecord | null
+
+    if (!candidate || candidate.role !== 'employee') {
+      return c.json({ error: 'Candidate profile not found or is not a job seeker' }, 404)
+    }
+
+    // 1. Create In-App Notification for Candidate
+    const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    const notifTitle = `HR Interest: ${hrUser.company || hrUser.full_name}`
+    const notifBody = `${hrUser.full_name} (${hrUser.position || 'Recruiter'} at ${hrUser.company || 'Enterprise'}) expressed interest in your profile.`
+    const notifData = JSON.stringify({
+      type: 'hr_interest',
+      hr_id: hrUser.id,
+      hr_name: hrUser.full_name,
+      hr_company: hrUser.company,
+      hr_position: hrUser.position,
+      custom_message: customMessage || undefined,
+    })
+
+    await c.env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+       VALUES (?, ?, 'hr_interest', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
+    )
+      .bind(notifId, candidateId, notifTitle, notifBody, notifData)
+      .run()
+
+    // 2. Dispatch FCM Push Notification
+    try {
+      const { results: targetTokens } = await c.env.DB.prepare(
+        'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
+      )
+        .bind(candidateId)
+        .all()
+
+      const tokens = (targetTokens || []).map((r: any) => r.token as string)
+      if (tokens.length > 0) {
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: notifTitle,
+              body: notifBody,
+              data: {
+                type: 'hr_interest',
+                hr_id: hrUser.id,
+              },
+            })
+          )
+        )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+    } catch (pushErr) {
+      console.warn('Failed to send HR interest push notification:', pushErr)
+    }
+
+    // 3. Dispatch Production-Ready Email to Candidate via Brevo SMTP
+    if (candidate.email && !candidate.email.includes('@phone.nammaoorujobs.com')) {
+      try {
+        const emailPromise = sendHrInterestEmail({
+          candidateEmail: candidate.email,
+          candidateName: candidate.full_name,
+          hrName: hrUser.full_name,
+          hrCompany: hrUser.company || 'Verified Employer',
+          hrPosition: hrUser.position || 'HR Recruiter',
+          hrId: hrUser.id,
+          customMessage: customMessage || undefined,
+        })
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(emailPromise)
+          }
+        } catch {
+          emailPromise.catch((e) => console.warn('HR interest email background warning:', e))
+        }
+      } catch (emailErr) {
+        console.warn('Failed to initiate HR interest email:', emailErr)
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Interest expressed! An email notification has been dispatched to ${candidate.full_name}.`,
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // --------------------------------------------------------------------------
 // HR / MANAGER & EMPLOYEE JOB ROUTES
 // --------------------------------------------------------------------------
 
 // 1. Post a new Job (Only Manager or Admin can post jobs)
-app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const user = c.get('user') as UserRecord
     const body = await c.req.json().catch(() => ({}))
@@ -1995,23 +3130,53 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
 
       const tokens = (tokensData || []).map((r: any) => r.token as string)
       if (tokens.length > 0) {
-        c.executionCtx.waitUntil(
-          Promise.allSettled(
-            tokens.map((token) =>
-              sendFcmNotification(serviceAccount, token, {
-                title: notifTitle,
-                body: notifMessage,
-                data: {
-                  job_id: jobId,
-                  type: 'job_posted',
-                },
-              })
-            )
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: notifTitle,
+              body: notifMessage,
+              data: {
+                job_id: jobId,
+                type: 'job_posted',
+              },
+            })
           )
         )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {
+          // Fallback in environments without ExecutionContext
+        }
       }
     } catch (pushErr) {
       console.warn('FCM broadcast failed:', pushErr)
+    }
+
+    // 3. Dispatch Email Broadcast Notification to all registered users via Brevo SMTP
+    try {
+      const emailPromise = broadcastNewJobEmail(c.env.DB, {
+        id: jobId,
+        title: titleClean,
+        company_name: companyClean,
+        location: locationClean,
+        workplace_type: safeWorkplace,
+        employment_type: safeEmployment,
+        description: descClean,
+        salary_range: salaryClean,
+      })
+
+      try {
+        if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+          c.executionCtx.waitUntil(emailPromise)
+        }
+      } catch {
+        // Fallback in environments without ExecutionContext
+        emailPromise.catch((err) => console.warn('Email broadcast warning:', err))
+      }
+    } catch (emailErr) {
+      console.warn('Job broadcast email initiation error:', emailErr)
     }
 
     // Invalidate edge memory caches on job creation
@@ -2020,7 +3185,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), async (c) 
 
     return c.json({
       success: true,
-      message: 'Job posted successfully with in-app & push notifications broadcasted',
+      message: 'Job posted successfully with in-app, push & email notifications broadcasted',
       job_id: jobId,
       notification_id: notifId,
     })
@@ -2100,7 +3265,7 @@ app.get('/api/jobs', async (c) => {
 })
 
 // 3. Manager's posted jobs
-app.get('/api/manager/my-jobs', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.get('/api/manager/my-jobs', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const user = c.get('user') as UserRecord
     const { results } = await c.env.DB.prepare(
@@ -2113,6 +3278,64 @@ app.get('/api/manager/my-jobs', requireAuth, requireRole(['admin', 'manager']), 
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
+})
+
+// 3b. Edit / Update Job Posting
+app.patch('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
+  try {
+    const user = c.get('user') as UserRecord
+    const jobId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+
+    const job = await c.env.DB.prepare('SELECT id, poster_id, title FROM jobs WHERE id = ?')
+      .bind(jobId)
+      .first() as { id: string; poster_id: string; title: string } | null
+
+    if (!job) {
+      return c.json({ error: 'Job not found' }, 404)
+    }
+
+    if (user.role !== 'admin' && job.poster_id !== user.id) {
+      return c.json({ error: 'Forbidden: You can only edit jobs that you posted' }, 403)
+    }
+
+    const titleClean = typeof body.title === 'string' ? body.title.trim() : null
+    const companyClean = typeof body.company_name === 'string' ? body.company_name.trim() : null
+    const descClean = typeof body.description === 'string' ? body.description.trim() : null
+    const locationClean = typeof body.location === 'string' ? body.location.trim() : null
+    const workplaceClean = typeof body.workplace_type === 'string' ? body.workplace_type.trim() : null
+    const employmentClean = typeof body.employment_type === 'string' ? body.employment_type.trim() : null
+    const salaryClean = typeof body.salary_range === 'string' ? body.salary_range.trim() : null
+
+    await c.env.DB.prepare(
+      `UPDATE jobs
+       SET title = COALESCE(?, title),
+           company_name = COALESCE(?, company_name),
+           description = COALESCE(?, description),
+           location = COALESCE(?, location),
+           workplace_type = COALESCE(?, workplace_type),
+           employment_type = COALESCE(?, employment_type),
+           salary_range = COALESCE(?, salary_range)
+       WHERE id = ?`
+    )
+      .bind(titleClean, companyClean, descClean, locationClean, workplaceClean, employmentClean, salaryClean, jobId)
+      .run()
+
+    invalidateEdgeCache('jobs:')
+    invalidateEdgeCache('platform:')
+
+    return c.json({ success: true, message: 'Job updated successfully', job_id: jobId })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+app.put('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
+  return app.fetch(new Request(new URL(`/api/jobs/${c.req.param('id')}`, c.req.url), {
+    method: 'PATCH',
+    headers: c.req.raw.headers,
+    body: JSON.stringify(await c.req.json().catch(() => ({}))),
+  }), c.env, c.executionCtx)
 })
 
 // 4. Easy Apply to Job (LinkedIn business logic: Only Employees can apply; HR/Managers cannot apply)
@@ -2280,7 +3503,7 @@ app.post('/api/jobs/:id/apply', requireAuth, async (c) => {
 })
 
 // 5. Get Applications for a Specific Job (Manager who posted it, or Admin)
-app.get('/api/jobs/:id/applications', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.get('/api/jobs/:id/applications', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const user = c.get('user') as UserRecord
     const jobId = c.req.param('id')
@@ -2319,7 +3542,7 @@ app.get('/api/jobs/:id/applications', requireAuth, requireRole(['admin', 'manage
 })
 
 // 6. Delete / Close Job Posting (Manager who posted it, or Admin)
-app.delete('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), async (c) => {
+app.delete('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
   try {
     const user = c.get('user') as UserRecord
     const jobId = c.req.param('id')
@@ -2606,9 +3829,9 @@ app.post('/api/upload', async (c) => {
 
     // Folder-specific type validation
     if (folder === 'resumes') {
-      const ALLOWED_RESUME_EXTS = ['.pdf', '.doc', '.docx', '.txt', '.rtf']
+      const ALLOWED_RESUME_EXTS = ['.pdf', '.doc', '.docx']
       if (!ALLOWED_RESUME_EXTS.includes(ext)) {
-        return c.json({ error: 'Invalid resume format. Allowed formats: PDF, DOC, DOCX, TXT, RTF' }, 400)
+        return c.json({ error: 'Invalid resume format. Allowed formats: PDF, DOC, DOCX' }, 400)
       }
     } else if (['avatars', 'jobs', 'posts'].includes(folder)) {
       const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg']
@@ -2893,21 +4116,87 @@ app.get('/api/notifications/devices', requireAuth, requireRole(['admin']), async
 app.get('/api/users/discover', requireAuth, async (c) => {
   try {
     const currentUser = c.get('user') as UserRecord
+
+    // Unverified HR accounts cannot access candidate/employee directory
+    if (currentUser.role === 'manager') {
+      const s = (currentUser.status || '').toUpperCase()
+      if (s !== 'ACTIVE') {
+        const isRejected = s === 'REJECTED'
+        return c.json(
+          {
+            error: isRejected
+              ? `Forbidden: Your HR account verification was rejected.${currentUser.rejection_reason ? ' Reason: ' + currentUser.rejection_reason : ''}`
+              : 'Identity Verification Required: Your HR account is currently pending verification. Our admin team will contact you shortly to verify your identity. You will receive access to recruiter features once your account has been approved.',
+            code: isRejected ? 'HR_VERIFICATION_REJECTED' : 'HR_PENDING_VERIFICATION',
+            status: currentUser.status || 'PENDING_VERIFICATION',
+            rejection_reason: currentUser.rejection_reason || null,
+          },
+          403
+        )
+      }
+    }
+
     const search = (c.req.query('search') || '').trim().toLowerCase()
     const location = (c.req.query('location') || '').trim().toLowerCase()
     const page = Math.max(1, parseInt(c.req.query('page') || '1', 10))
     const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
     const offset = (page - 1) * limit
 
+    // ── For EMPLOYEE users: only show other employees.
+    //    Exception: show HR/managers who have already followed THIS employee
+    //    OR who have an existing conversation with them.
+    let allowedManagerIds: string[] = []
+    if (currentUser.role === 'employee') {
+      // Managers who follow this employee
+      const followRows = await c.env.DB.prepare(
+        `SELECT follower_id FROM user_follows
+         JOIN users ON users.id = user_follows.follower_id
+         WHERE user_follows.following_id = ? AND users.role = 'manager' AND (users.is_active = 1 OR users.is_active IS NULL) AND users.status = 'ACTIVE'`
+      ).bind(currentUser.id).all()
+      const followingMeIds = (followRows?.results || []).map((r: any) => r.follower_id)
+
+      // Managers with whom this employee has a conversation
+      const convRows = await c.env.DB.prepare(
+        `SELECT DISTINCT CASE
+           WHEN c.participant1_id = ? THEN c.participant2_id
+           ELSE c.participant1_id
+         END as other_id
+         FROM conversations c
+         JOIN users ON users.id = CASE WHEN c.participant1_id = ? THEN c.participant2_id ELSE c.participant1_id END
+         WHERE (c.participant1_id = ? OR c.participant2_id = ?)
+           AND users.role = 'manager'
+           AND (users.is_active = 1 OR users.is_active IS NULL)
+           AND users.status = 'ACTIVE'`
+      ).bind(currentUser.id, currentUser.id, currentUser.id, currentUser.id).all()
+      const conversationPartnerIds = (convRows?.results || []).map((r: any) => r.other_id)
+
+      // Union of both sets
+      const allAllowedIds = new Set([...followingMeIds, ...conversationPartnerIds])
+      allowedManagerIds = Array.from(allAllowedIds)
+    }
+
+    // Build the main query
     let query = `
-      SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, skills, followers_count, following_count, created_at
+      SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, role, skills, followers_count, following_count, created_at
       FROM users
       WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'
     `
-    if (currentUser.role === 'manager') {
-      query += ` AND role = 'employee'`
-    }
     const params: any[] = [currentUser.id]
+
+    if (currentUser.role === 'manager') {
+      // HR recruiters see only employees
+      query += ` AND role = 'employee'`
+    } else if (currentUser.role === 'employee') {
+      // Employees see other employees + whitelisted HR managers
+      if (allowedManagerIds.length > 0) {
+        const placeholders = allowedManagerIds.map(() => '?').join(', ')
+        query += ` AND (role = 'employee' OR (role = 'manager' AND id IN (${placeholders})))`
+        params.push(...allowedManagerIds)
+      } else {
+        query += ` AND role = 'employee'`
+      }
+    }
+    // Admins see everyone
 
     if (search) {
       query += ` AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(headline) LIKE ? OR LOWER(bio) LIKE ? OR LOWER(skills) LIKE ?)`
@@ -2942,12 +4231,22 @@ app.get('/api/users/discover', requireAuth, async (c) => {
       skills: typeof u.skills === 'string' ? JSON.parse(u.skills || '[]') : (u.skills || []),
     }))
 
-    // Count total for pagination
+    // Count total for pagination (same filters)
     let countQuery = `SELECT count(*) as total FROM users WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'`
+    const countParams: any[] = [currentUser.id]
+
     if (currentUser.role === 'manager') {
       countQuery += ` AND role = 'employee'`
+    } else if (currentUser.role === 'employee') {
+      if (allowedManagerIds.length > 0) {
+        const placeholders = allowedManagerIds.map(() => '?').join(', ')
+        countQuery += ` AND (role = 'employee' OR (role = 'manager' AND id IN (${placeholders})))`
+        countParams.push(...allowedManagerIds)
+      } else {
+        countQuery += ` AND role = 'employee'`
+      }
     }
-    const countParams: any[] = [currentUser.id]
+
     if (search) {
       countQuery += ` AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(headline) LIKE ? OR LOWER(bio) LIKE ? OR LOWER(skills) LIKE ?)`
       const s = `%${search}%`
@@ -2978,6 +4277,25 @@ app.get('/api/users/:id/profile', requireAuth, async (c) => {
   try {
     const currentUser = c.get('user') as UserRecord
     const targetId = c.req.param('id')
+
+    // Unverified HR accounts cannot access candidate profiles
+    if (currentUser.role === 'manager' && currentUser.id !== targetId) {
+      const s = (currentUser.status || '').toUpperCase()
+      if (s !== 'ACTIVE') {
+        const isRejected = s === 'REJECTED'
+        return c.json(
+          {
+            error: isRejected
+              ? `Forbidden: Your HR account verification was rejected.${currentUser.rejection_reason ? ' Reason: ' + currentUser.rejection_reason : ''}`
+              : 'Identity Verification Required: Your HR account is currently pending verification. Our admin team will contact you shortly to verify your identity. You will receive access to recruiter features once your account has been approved.',
+            code: isRejected ? 'HR_VERIFICATION_REJECTED' : 'HR_PENDING_VERIFICATION',
+            status: currentUser.status || 'PENDING_VERIFICATION',
+            rejection_reason: currentUser.rejection_reason || null,
+          },
+          403
+        )
+      }
+    }
 
     const targetUser = await c.env.DB.prepare(
       `SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, role, language, followers_count, following_count, connections_count, is_active, status, deactivated_until, created_at 
@@ -3078,7 +4396,7 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
 
     // Check target exists and is active
     const targetUser = await c.env.DB.prepare(
-      'SELECT id, role, is_active, status FROM users WHERE id = ?'
+      'SELECT id, email, full_name, role, is_active, status FROM users WHERE id = ?'
     )
       .bind(targetId)
       .first() as any
@@ -3124,7 +4442,7 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
 
     const updatedTarget = await c.env.DB.prepare('SELECT followers_count FROM users WHERE id = ?').bind(targetId).first() as any
 
-    // Dispatch in-app and native push notification to target user
+    // Dispatch in-app, native push, and Brevo SMTP email notifications to target user
     try {
       const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
       const notifTitle = 'New Follower'
@@ -3153,20 +4471,47 @@ app.post('/api/users/:id/follow', requireAuth, async (c) => {
 
       const tokens = (targetTokens || []).map((r: any) => r.token as string)
       if (tokens.length > 0) {
-        c.executionCtx.waitUntil(
-          Promise.allSettled(
-            tokens.map((token) =>
-              sendFcmNotification(serviceAccount, token, {
-                title: notifTitle,
-                body: notifMessage,
-                data: {
-                  type: 'user_follow',
-                  follower_id: currentUser.id,
-                },
-              })
-            )
+        const pushPromise = Promise.allSettled(
+          tokens.map((token) =>
+            sendFcmNotification(serviceAccount, token, {
+              title: notifTitle,
+              body: notifMessage,
+              data: {
+                type: 'user_follow',
+                follower_id: currentUser.id,
+              },
+            })
           )
         )
+        try {
+          if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+            c.executionCtx.waitUntil(pushPromise)
+          }
+        } catch {}
+      }
+
+      // 3. Dispatch Production-Ready Email via Brevo SMTP to followed user
+      if (targetUser.email && !targetUser.email.includes('@phone.nammaoorujobs.com')) {
+        try {
+          const emailPromise = sendNewFollowerEmail({
+            recipientEmail: targetUser.email,
+            recipientName: targetUser.full_name,
+            followerName: currentUser.full_name || 'A professional member',
+            followerHeadline: currentUser.headline || currentUser.position || (currentUser.role === 'manager' ? 'HR Recruiter' : 'Member'),
+            followerCompany: currentUser.company || '',
+            followerAvatar: currentUser.avatar_url || '',
+            followerId: currentUser.id,
+          })
+          try {
+            if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+              c.executionCtx.waitUntil(emailPromise)
+            }
+          } catch {
+            emailPromise.catch((e) => console.warn('Follow email background warning:', e))
+          }
+        } catch (emailErr) {
+          console.warn('Failed to dispatch follow email:', emailErr)
+        }
       }
     } catch (pushErr) {
       console.warn('Failed to send follow push notification:', pushErr)

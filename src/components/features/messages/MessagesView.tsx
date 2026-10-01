@@ -251,8 +251,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder={t.searchConv}
-                className="w-full pl-8 pr-3 py-1.5 bg-[#EDF3F8] border border-transparent rounded-lg text-xs text-[#0F172A] placeholder-slate-500 focus:bg-white focus:border-[#0B2545] focus:outline-none transition"
+                className="w-full pl-8 pr-3 py-1.5 bg-[#EDF3F8] border border-transparent rounded-lg text-xs text-[#0F172A] focus:bg-white focus:border-[#0B2545] focus:outline-none transition"
               />
               {searchFilter && (
                 <button
@@ -483,9 +482,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder={t.typeMessage}
                 disabled={sending}
-                className="flex-1 px-4 py-2.5 bg-[#F3F2EF] border border-transparent rounded-xl text-xs sm:text-sm text-[#0F172A] placeholder-slate-500 focus:bg-white focus:border-[#0B2545] focus:outline-none transition"
+                className="flex-1 px-4 py-2.5 bg-[#F3F2EF] border border-transparent rounded-xl text-xs sm:text-sm text-[#0F172A] focus:bg-white focus:border-[#0B2545] focus:outline-none transition"
               />
 
               <button

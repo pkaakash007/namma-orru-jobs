@@ -9,7 +9,9 @@ import { JobSearchFilters } from './components/features/jobs/JobSearchFilters'
 import { JobApplyModal } from './components/features/jobs/JobApplyModal'
 import { GuestJobsLanding } from './components/features/jobs/GuestJobsLanding'
 import { PostJobForm } from './components/features/hr/PostJobForm'
+import { HrVerificationPendingView } from './components/features/hr/HrVerificationPendingView'
 import { AdminStatsGrid } from './components/features/admin/AdminStatsGrid'
+import { HrVerificationTable } from './components/features/admin/HrVerificationTable'
 import { UserDirectoryTable } from './components/features/admin/UserDirectoryTable'
 import { RoleGuideCard } from './components/features/admin/RoleGuideCard'
 import { FeedView } from './components/features/feed/FeedView'
@@ -22,21 +24,21 @@ import { ConnectionsView } from './components/features/connections/ConnectionsVi
 import { PublicUserProfileView } from './components/features/profile/PublicUserProfileView'
 import { MessagesView } from './components/features/messages/MessagesView'
 import { AdminModerationTable } from './components/features/admin/AdminModerationTable'
-import { adminService, feedService, chatService, notificationService } from './services/api'
+import { adminService, feedService, chatService, notificationService, savedJobService } from './services/api'
 import { initPushNotifications } from './services/notifications'
 import { ApkReleasePage } from './components/features/releases/ApkReleasePage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { PublicHomePage } from './components/features/home/PublicHomePage'
 import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
+import { HrProfileSetupModal } from './components/features/hr/HrProfileSetupModal'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
-import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus } from 'lucide-react'
+import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus, Bell, MessageSquare } from 'lucide-react'
 import type { Job } from './types'
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import { fetchJobs } from './store/jobsSlice'
 import { fetchPosts, postAdded, postLiked } from './store/postsSlice'
 import { fetchAdminData, userRoleUpdated } from './store/adminSlice'
 import { translateLocationSync, translateJobTitleSync, translateCompanySync } from './services/googleAiTranslate'
-import { parseSkillsArray } from './utils/skills'
 
 const isLoginPath = () => {
   if (typeof window === 'undefined') return false
@@ -85,6 +87,18 @@ const isReleasePath = () => {
 function MainContent() {
   const { user, role, hasRole, setSelectedRole } = useAuth()
   const isRecruiter = hasRole(['admin', 'manager'])
+
+  const isVerifiedHr = (u: any): boolean => {
+    if (!u) return false
+    if (u.role === 'admin') return true
+    if (u.role === 'manager') {
+      const s = (u.status || '').toUpperCase()
+      return s === 'ACTIVE' || u.status === 'active'
+    }
+    return true
+  }
+  const isHrUnverified = user?.role === 'manager' && !isVerifiedHr(user)
+
   const [isLoginRoute, setIsLoginRoute] = useState(() => isLoginPath())
   const [isReleaseRoute, setIsReleaseRoute] = useState(() => isReleasePath())
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -102,25 +116,41 @@ function MainContent() {
     return 'home'
   })
 
-  const [savedJobsCount, setSavedJobsCount] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('namma_saved_job_ids')
-      return raw ? JSON.parse(raw).length : 0
-    } catch {
-      return 0
+  const [savedJobsCount, setSavedJobsCount] = useState<number>(0)
+
+  useEffect(() => {
+    if (user?.id) {
+      savedJobService.getSavedJobIds().then((ids) => {
+        setSavedJobsCount(ids.length)
+      }).catch(() => {
+        setSavedJobsCount(0)
+      })
+    } else {
+      setSavedJobsCount(0)
+      try {
+        localStorage.removeItem('namma_saved_job_ids')
+      } catch {}
     }
-  })
+  }, [user?.id])
 
   useEffect(() => {
     const handleSavedUpdate = () => {
-      try {
-        const raw = localStorage.getItem('namma_saved_job_ids')
-        setSavedJobsCount(raw ? JSON.parse(raw).length : 0)
-      } catch {}
+      if (user?.id) {
+        savedJobService.getSavedJobIds().then((ids) => {
+          setSavedJobsCount(ids.length)
+        }).catch(() => {
+          try {
+            const raw = localStorage.getItem('namma_saved_job_ids')
+            setSavedJobsCount(raw ? JSON.parse(raw).length : 0)
+          } catch {}
+        })
+      } else {
+        setSavedJobsCount(0)
+      }
     }
     window.addEventListener('saved_jobs_updated', handleSavedUpdate)
     return () => window.removeEventListener('saved_jobs_updated', handleSavedUpdate)
-  }, [])
+  }, [user?.id])
   const dispatch = useAppDispatch()
   const { items: jobs, totalCount: reduxJobsCount } = useAppSelector((state) => state.jobs)
   const totalJobsCount = reduxJobsCount || jobs.length
@@ -132,7 +162,10 @@ function MainContent() {
     managers_hr: 0,
     employees: 0,
     total_jobs: 0,
+    pending_hr_verifications: 0,
   }
+
+  const [adminSection, setAdminSection] = useState<'hr-verifications' | 'users' | 'moderation'>('hr-verifications')
 
   const [selectedDistrict, setSelectedDistrict] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -143,7 +176,18 @@ function MainContent() {
   const [candidateSearchJd, setCandidateSearchJd] = useState('')
   const [viewingPublicProfileId, setViewingPublicProfileId] = useState<string | null>(null)
   const [chatRecipientId, setChatRecipientId] = useState<string | null>(null)
+  const [showHrProfileModal, setShowHrProfileModal] = useState<'setup' | 'edit' | null>(null)
 
+  // Auto-show HR profile setup modal when HR user has never filled company details
+  useEffect(() => {
+    if (
+      user?.role === 'manager' &&
+      !user?.company &&
+      !showHrProfileModal
+    ) {
+      setShowHrProfileModal('setup')
+    }
+  }, [user?.id, user?.role, user?.company])
 
   // Dynamic Unread Messages State
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0)
@@ -545,9 +589,28 @@ function MainContent() {
           setActiveTab('jobs')
           if (jobTitle) setSearchQuery(jobTitle)
         }}
+        onSelectNotificationUser={(uid) => {
+          setViewingPublicProfileId(uid)
+        }}
+        onSelectNotificationConversation={(uid) => {
+          if (uid) setChatRecipientId(uid)
+          setViewingPublicProfileId(null)
+          setActiveTab('messages')
+        }}
+        onSelectNotificationFeed={() => {
+          setViewingPublicProfileId(null)
+          setActiveTab('feed')
+        }}
       />
 
       <main className="mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8">
+        {/* Unverified HR Recruiter Alert Notice on Platform */}
+        {isHrUnverified && activeTab !== 'post-job' && activeTab !== 'candidates' && !viewingPublicProfileId && (
+          <div className="mb-5">
+            <HrVerificationPendingView compact onBackToFeed={() => setActiveTab('jobs')} />
+          </div>
+        )}
+
         {viewingPublicProfileId ? (
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
             <PublicUserProfileView
@@ -601,7 +664,10 @@ function MainContent() {
           </div>
         ) : activeTab === 'profile' && user ? (
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
-            <UserProfilePage onBack={() => setActiveTab('jobs')} />
+            <UserProfilePage
+              onBack={() => setActiveTab('jobs')}
+              onRequestEdit={() => setShowHrProfileModal('edit')}
+            />
           </div>
         ) : activeTab === 'saved-jobs' ? (
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
@@ -621,10 +687,10 @@ function MainContent() {
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             {/* LEFT SIDEBAR: Mini Profile Card & Regional Hubs */}
             <aside className="hidden lg:block lg:col-span-3 space-y-4">
-              {/* User Profile Card */}
-            <div className="rounded-lg border border-[#E0DFDC] bg-white shadow-xs overflow-hidden">
+            {/* User Profile Card (Human Apple iOS Design) */}
+            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
               {/* Cover Banner */}
-              <div className="h-16 bg-[#0B2545]" />
+              <div className="h-16 bg-gradient-to-r from-[#0B2545] to-[#1E3A8A]" />
 
               {/* Avatar & Headline */}
               <div className="px-4 pb-4 text-center">
@@ -653,9 +719,9 @@ function MainContent() {
                 {user && (
                   <button
                     onClick={() => setActiveTab('profile')}
-                    className="mt-2.5 flex items-center justify-center gap-1.5 w-full rounded-full border border-gray-200 bg-gray-50/80 py-1 text-xs font-semibold text-slate-700 hover:bg-gray-100 transition cursor-pointer"
+                    className="mt-2.5 flex items-center justify-center gap-1.5 w-full rounded-full border border-slate-200 bg-slate-50/80 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer active:scale-98"
                   >
-                    <Settings className="h-3 w-3 text-[#0B2545]" />
+                    <Settings className="h-3.5 w-3.5 text-[#0B2545]" />
                     <span>{t('nav_edit_profile')}</span>
                   </button>
                 )}
@@ -666,54 +732,6 @@ function MainContent() {
                   </div>
                 )}
 
-                {/* Employee Resume Skills Status */}
-                {user && role === 'employee' && (
-                  <div className="mt-3 border-t border-gray-100 pt-2.5 text-left">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                        <Briefcase className="h-3 w-3 text-[#0B2545]" />
-                        {t('app_skills_in_hr_search')}
-                      </span>
-                      {user.resume_url && (
-                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                          {t('app_resume_active')}
-                        </span>
-                      )}
-                    </div>
-                    {(() => {
-                      const userSkillsList = parseSkillsArray(user.skills)
-                      return userSkillsList.length > 0 ? (
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap gap-1">
-                            {userSkillsList.slice(0, 4).map((s: string) => (
-                              <span
-                                key={s}
-                                className="px-2 py-0.5 bg-slate-100 text-[#0B2545] font-semibold rounded-full text-[10px] border border-slate-200/80"
-                              >
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-[10px] text-slate-400">
-                            {t('app_discoverable_by_hr')}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-slate-500">
-                          {t('app_upload_resume_prompt')}
-                        </p>
-                      )
-                    })()}
-                    <button
-                      onClick={() => setActiveTab('profile')}
-                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-dashed border-[#0B2545]/30 text-[#0B2545] bg-[#0B2545]/5 hover:bg-[#0B2545]/10 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      <FileText className="h-3 w-3 text-[#F97316]" />
-                      <span>{user.resume_url ? t('app_update_resume') : t('app_upload_resume_skills')}</span>
-                    </button>
-                  </div>
-                )}
-
                 {!user && (
                   <div className="mt-3">
                     <button
@@ -721,73 +739,113 @@ function MainContent() {
                         window.history.pushState({}, '', '/login')
                         window.dispatchEvent(new PopStateEvent('popstate'))
                       }}
-                      className="w-full rounded-full bg-[#0B2545] py-1.5 text-xs font-bold text-white hover:bg-[#0B2545]/90 transition shadow-xs cursor-pointer"
+                      className="w-full rounded-full bg-[#0B2545] py-2 text-xs font-bold text-white hover:bg-[#071A31] transition shadow-xs cursor-pointer active:scale-98"
                     >
                       {t('nav_sign_in_register')}
                     </button>
                   </div>
                 )}
 
-                <div className="mt-4 border-t border-gray-100 pt-3 text-left text-xs space-y-1">
-                  <div
+                {/* Simple Human Navigation Menu */}
+                <div className="mt-3 border-t border-slate-100 pt-2 text-left space-y-0.5 text-xs">
+                  {/* Live Openings */}
+                  <button
+                    type="button"
                     onClick={() => {
                       if (!user) navigateToLogin()
                       else setActiveTab('jobs')
                     }}
-                    className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+                    className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
                   >
-                    <span>{isRecruiter ? 'My Job Postings' : t('sidebar_live_openings')}</span>
-                    <span className="font-bold text-[#0B2545]">
+                    <span className="flex items-center gap-2.5">
+                      <Briefcase className="h-4 w-4 text-slate-400" />
+                      <span>{isRecruiter ? 'My Job Postings' : t('sidebar_live_openings')}</span>
+                    </span>
+                    <span className="text-slate-500 font-medium">
                       {isRecruiter ? myPostedJobs.length : (user ? jobs.length : (totalJobsCount || 50))} {t('sidebar_active_count')}
                     </span>
-                  </div>
+                  </button>
+
+                  {/* Saved Jobs */}
                   {user && (
-                    <div
+                    <button
+                      type="button"
                       onClick={() => setActiveTab('saved-jobs')}
-                      className="flex justify-between items-center py-1 px-1 rounded transition cursor-pointer text-slate-500 hover:bg-gray-50"
+                      className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
                     >
-                      <span className="flex items-center gap-1.5">
-                        <Bookmark className="h-3.5 w-3.5 text-[#0B2545]" />
+                      <span className="flex items-center gap-2.5">
+                        <Bookmark className="h-4 w-4 text-slate-400" />
                         <span>{t('saved_jobs_title') || 'Saved Jobs'}</span>
                       </span>
-                      <span className="font-bold text-[#0B2545] bg-blue-50 px-1.5 py-0.2 rounded text-[10px]">
-                        {savedJobsCount}
-                      </span>
-                    </div>
+                      {savedJobsCount > 0 ? (
+                        <span className="text-slate-600 font-semibold">{savedJobsCount}</span>
+                      ) : null}
+                    </button>
                   )}
-                  {user && (
-                    <div
-                      onClick={() => setActiveTab('notifications')}
-                      className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+
+                  {/* Resume / CV */}
+                  {user && role === 'employee' && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('profile')}
+                      className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
                     >
-                      <span>{t('notif_title')}</span>
-                      <span className="font-bold text-[#F97316]">{t('sidebar_alerts')}</span>
-                    </div>
+                      <span className="flex items-center gap-2.5">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                        <span>Resume / CV</span>
+                      </span>
+                    </button>
                   )}
-                  <div
+
+                  {/* Notifications */}
+                  {user && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('notifications')}
+                      className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Bell className="h-4 w-4 text-slate-400" />
+                        <span>{t('notif_title')}</span>
+                      </span>
+                      <span className="text-slate-500 font-medium">{t('sidebar_alerts')}</span>
+                    </button>
+                  )}
+
+                  {/* Community Discussions */}
+                  <button
+                    type="button"
                     onClick={() => setActiveTab('feed')}
-                    className="flex justify-between py-1 text-slate-500 hover:bg-gray-50 px-1 rounded transition cursor-pointer"
+                    className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
                   >
-                    <span>{t('sidebar_discussions')}</span>
-                    <span className="font-bold text-[#0B2545]">
+                    <span className="flex items-center gap-2.5">
+                      <MessageSquare className="h-4 w-4 text-slate-400" />
+                      <span>{t('sidebar_discussions')}</span>
+                    </span>
+                    <span className="text-slate-500 font-medium">
                       {posts.length} {t('sidebar_posts_count')}
                     </span>
-                  </div>
+                  </button>
                 </div>
 
-                <div className="mt-3 border-t border-gray-100 pt-3 text-left text-xs font-semibold text-[#0B2545]">
-                  <div
+                {/* Explore All Jobs Link */}
+                <div className="mt-2 border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
                     onClick={() => {
                       if (!user) navigateToLogin()
                       else setActiveTab('jobs')
                     }}
-                    className="flex items-center gap-2 py-1 text-slate-700 hover:text-[#0B2545] cursor-pointer"
+                    className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-xs font-semibold text-slate-700 hover:text-[#0B2545] hover:bg-slate-50 transition cursor-pointer"
                   >
-                    <Compass className="h-4 w-4 text-[#0B2545]" />
-                    <span>
-                      {isRecruiter ? 'My Listings' : t('sidebar_explore_all')} ({isRecruiter ? myPostedJobs.length : (user ? jobs.length : (totalJobsCount || 50))})
+                    <span className="flex items-center gap-2">
+                      <Compass className="h-4 w-4 text-slate-400" />
+                      <span>{isRecruiter ? 'My Listings' : t('sidebar_explore_all')}</span>
                     </span>
-                  </div>
+                    <span className="text-slate-500 font-medium">
+                      {isRecruiter ? myPostedJobs.length : (user ? jobs.length : (totalJobsCount || 50))}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -807,20 +865,6 @@ function MainContent() {
                 >
                   <Plus className="h-4 w-4" />
                   <span>Post New Job</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('candidates')}
-                  className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition font-semibold cursor-pointer ${
-                    activeTab === 'candidates'
-                      ? 'bg-[#0B2545] text-white shadow-xs'
-                      : 'bg-slate-50 text-[#0B2545] hover:bg-slate-100'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 text-xs">
-                    <Users className="h-4 w-4 text-[#F97316]" />
-                    <span>{t('app_search_by_skill')}</span>
-                  </span>
-                  <span className="text-xs font-bold">→</span>
                 </button>
               </div>
             )}
@@ -1074,7 +1118,9 @@ function MainContent() {
 
             {/* TAB 2: HR Post a Job */}
             {activeTab === 'post-job' && (
-              hasRole(['admin', 'manager']) ? (
+              isHrUnverified ? (
+                <HrVerificationPendingView onBackToFeed={() => setActiveTab('jobs')} />
+              ) : hasRole(['admin', 'manager']) ? (
                 <PostJobForm
                   onSuccess={() => {
                     loadJobs(true)
@@ -1143,15 +1189,77 @@ function MainContent() {
             {activeTab === 'admin-panel' && (
               hasRole(['admin']) ? (
                 <div className="space-y-5">
-                  <AdminStatsGrid stats={adminStats} />
-                  <RoleGuideCard />
-                  <UserDirectoryTable
-                    users={usersList}
-                    onPromote={handlePromote}
-                    onDemote={handleDemote}
-                    onRefresh={loadAdminData}
+                  <AdminStatsGrid
+                    stats={adminStats}
+                    onSelectHrTab={() => setAdminSection('hr-verifications')}
                   />
-                  <AdminModerationTable lang={language} />
+
+                  {/* Admin Section Tabs */}
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+                    <button
+                      type="button"
+                      onClick={() => setAdminSection('hr-verifications')}
+                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+                        adminSection === 'hr-verifications'
+                          ? 'bg-[#0B2545] text-white shadow-xs'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Briefcase className="h-4 w-4" />
+                      <span>HR Recruiter Verifications</span>
+                      {(adminStats?.pending_hr_verifications || 0) > 0 && (
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white">
+                          {adminStats.pending_hr_verifications}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminSection('users')}
+                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+                        adminSection === 'users'
+                          ? 'bg-[#0B2545] text-white shadow-xs'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Users className="h-4 w-4" />
+                      <span>User Directory & Roles</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminSection('moderation')}
+                      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+                        adminSection === 'moderation'
+                          ? 'bg-[#0B2545] text-white shadow-xs'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      <span>Content Moderation</span>
+                    </button>
+                  </div>
+
+                  {adminSection === 'hr-verifications' && (
+                    <HrVerificationTable onRefreshStats={() => loadAdminData(true)} />
+                  )}
+
+                  {adminSection === 'users' && (
+                    <div className="space-y-5">
+                      <RoleGuideCard />
+                      <UserDirectoryTable
+                        users={usersList}
+                        onPromote={handlePromote}
+                        onDemote={handleDemote}
+                        onRefresh={() => loadAdminData(true)}
+                      />
+                    </div>
+                  )}
+
+                  {adminSection === 'moderation' && (
+                    <AdminModerationTable lang={language} />
+                  )}
                 </div>
               ) : (
                 <div className="rounded-xl border border-red-200 bg-white p-6 sm:p-8 text-center shadow-xs">
@@ -1188,11 +1296,17 @@ function MainContent() {
 
             {/* TAB 5: HR Candidate Talent Search by AI Skill */}
             {activeTab === 'candidates' && (
-              hasRole(['admin', 'manager']) ? (
+              isHrUnverified ? (
+                <HrVerificationPendingView onBackToFeed={() => setActiveTab('jobs')} />
+              ) : hasRole(['admin', 'manager']) ? (
                 <CandidateSearchView
                   initialQuery={candidateSearchQuery}
                   initialJd={candidateSearchJd}
                   onOpenProfile={(candidateId) => setViewingPublicProfileId(candidateId)}
+                  onOpenChat={(recipientId) => {
+                    setChatRecipientId(recipientId)
+                    setActiveTab('messages')
+                  }}
                 />
               ) : (
                 <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 text-center shadow-xs">
@@ -1316,6 +1430,15 @@ function MainContent() {
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
       />
+
+      {/* HR Profile Setup / Edit Modal */}
+      {showHrProfileModal && user?.role === 'manager' && (
+        <HrProfileSetupModal
+          isEdit={showHrProfileModal === 'edit'}
+          onClose={() => setShowHrProfileModal(null)}
+          onSubmitted={() => setShowHrProfileModal(null)}
+        />
+      )}
     </div>
   )
 }

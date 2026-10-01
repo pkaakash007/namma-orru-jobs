@@ -157,16 +157,9 @@ export const GoogleLocationSearchInput: React.FC<GoogleLocationSearchInputProps>
           ref={inputRef}
           type="text"
           value={value}
+          placeholder={placeholder}
           required={required}
           autoFocus={autoFocus}
-          placeholder={
-            placeholder ||
-            (language === 'ta'
-              ? 'இருப்பிடத்தைத் தேடுக (எ.கா. சென்னை, கோயம்புத்தூர்)...'
-              : language === 'hi'
-              ? 'स्थान खोजें (उदा. चेन्नई, कोयंबटूर)...'
-              : 'Search location (e.g. Chennai, Coimbatore)...')
-          }
           onChange={(e) => {
             onChange(e.target.value)
             if (!isOpen) setIsOpen(true)

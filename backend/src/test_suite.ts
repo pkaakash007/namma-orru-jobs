@@ -13,6 +13,7 @@ const colors = {
   red: '\x1b[31m',
   yellow: '\x1b[33m',
   cyan: '\x1b[36m',
+  blue: '\x1b[34m',
   bold: '\x1b[1m',
 }
 
@@ -43,6 +44,7 @@ function createMockDB() {
   const chatMessages = new Map<string, any>()
   const userViolations = new Map<string, any>()
   const savedJobs = new Map<string, any>()
+  const employeeSearchIndex = new Map<string, any>()
 
   // Seed sample users with social & moderation fields
   users.set('usr_emp_01', {
@@ -58,9 +60,116 @@ function createMockDB() {
     following_count: 0,
     connections_count: 0,
     headline: 'Frontend Engineer',
+    location: 'Chennai, Tamil Nadu',
     skills: JSON.stringify(['React', 'TypeScript']),
+    bio: 'Frontend developer with React experience in Chennai.',
     phone: '+91 98401 23456',
     resume_url: 'https://cdn.example.com/resumes/karthik.pdf',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_nurse_01', {
+    id: 'usr_nurse_01',
+    email: 'deepa.nurse@hospital.com',
+    full_name: 'Deepa Selvam',
+    username: 'deepa_nurse',
+    role: 'employee',
+    status: 'active',
+    is_active: 1,
+    deactivated_until: null,
+    followers_count: 0,
+    following_count: 0,
+    connections_count: 0,
+    headline: 'Senior Staff Nurse with 5+ Years ICU Experience',
+    location: 'Coimbatore, Tamil Nadu',
+    skills: JSON.stringify(['Nursing', 'ICU', 'Patient Care', 'Emergency Care']),
+    bio: 'Dedicated registered nurse with 5 years experience in hospital ICU and patient care in Coimbatore.',
+    phone: '+91 98422 11223',
+    resume_url: 'https://cdn.example.com/resumes/deepa.pdf',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_electrician_01', {
+    id: 'usr_electrician_01',
+    email: 'murugan.elec@trade.com',
+    full_name: 'Murugan Palanisamy',
+    username: 'murugan_elec',
+    role: 'employee',
+    status: 'active',
+    is_active: 1,
+    deactivated_until: null,
+    followers_count: 0,
+    following_count: 0,
+    connections_count: 0,
+    headline: 'Industrial Maintenance Electrician',
+    location: 'Madurai, Tamil Nadu',
+    skills: JSON.stringify(['Electrical Wiring', 'Motor Rewinding', 'Industrial Maintenance', 'Substation']),
+    bio: 'Experienced electrician with 8 years of industrial maintenance and electrical wiring experience in Madurai.',
+    phone: '+91 98433 22334',
+    resume_url: 'https://cdn.example.com/resumes/murugan.pdf',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_accountant_01', {
+    id: 'usr_accountant_01',
+    email: 'venkatesh.acc@finance.com',
+    full_name: 'Venkatesh Raman',
+    username: 'venkatesh_acc',
+    role: 'employee',
+    status: 'active',
+    is_active: 1,
+    deactivated_until: null,
+    followers_count: 0,
+    following_count: 0,
+    connections_count: 0,
+    headline: 'Senior Accountant & Tax Consultant',
+    location: 'Chennai, Tamil Nadu',
+    skills: JSON.stringify(['GST', 'Tally', 'Taxation', 'Financial Accounting', 'Auditing']),
+    bio: 'Senior accountant with 6 years experience managing GST filings, Tally Prime accounting, and balance sheets in Chennai.',
+    phone: '+91 98444 33445',
+    resume_url: 'https://cdn.example.com/resumes/venkatesh.pdf',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_hotel_01', {
+    id: 'usr_hotel_01',
+    email: 'rajesh.hotel@hospitality.com',
+    full_name: 'Rajesh Kumar',
+    username: 'rajesh_hotel',
+    role: 'employee',
+    status: 'active',
+    is_active: 1,
+    deactivated_until: null,
+    followers_count: 0,
+    following_count: 0,
+    connections_count: 0,
+    headline: 'Hotel Operations Manager',
+    location: 'Tiruchirappalli, Tamil Nadu',
+    skills: JSON.stringify(['Hotel Operations', 'Staff Management', 'Hospitality', 'Front Office']),
+    bio: 'Experienced in managing hotel staff, guest relations, and daily operations in luxury hospitality.',
+    phone: '+91 98455 44556',
+    resume_url: 'https://cdn.example.com/resumes/rajesh.pdf',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_dev_01', {
+    id: 'usr_dev_01',
+    email: 'anand.dev@tech.com',
+    full_name: 'Anand Natarajan',
+    username: 'anand_dev',
+    role: 'employee',
+    status: 'active',
+    is_active: 1,
+    deactivated_until: null,
+    followers_count: 0,
+    following_count: 0,
+    connections_count: 0,
+    headline: 'Lead Java SpringBoot Developer',
+    location: 'Chennai, Tamil Nadu',
+    skills: JSON.stringify(['Java', 'SpringBoot', 'Microservices', 'Hibernate', 'SQL']),
+    bio: 'Experienced backend engineer with 7 years experience in Java SpringBoot microservices and database design in Chennai.',
+    phone: '+91 98466 55667',
+    resume_url: 'https://cdn.example.com/resumes/anand.pdf',
     created_at: new Date().toISOString(),
   })
 
@@ -78,6 +187,35 @@ function createMockDB() {
     connections_count: 0,
     headline: 'Senior Talent Acquisition',
     company: 'TechCorp Chennai',
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_hr_pending', {
+    id: 'usr_hr_pending',
+    email: 'anita.hr@startup.com',
+    full_name: 'Anita Recruiter',
+    username: 'anita_hr',
+    role: 'manager',
+    status: 'PENDING_VERIFICATION',
+    company: 'Madurai Tech Ventures',
+    position: 'HR Specialist',
+    phone: '+91 99887 76655',
+    is_active: 1,
+    created_at: new Date().toISOString(),
+  })
+
+  users.set('usr_hr_rejected', {
+    id: 'usr_hr_rejected',
+    email: 'fake.recruiter@invalid.com',
+    full_name: 'Suspicious Recruiter',
+    username: 'suspicious_hr',
+    role: 'manager',
+    status: 'REJECTED',
+    rejection_reason: 'Unverified company email domain and missing business license',
+    company: 'Fake Corp',
+    position: 'Recruiter',
+    phone: '+91 91234 56789',
+    is_active: 1,
     created_at: new Date().toISOString(),
   })
 
@@ -140,6 +278,8 @@ function createMockDB() {
     created_at: new Date().toISOString(),
   })
 
+  const otpVerifications = new Map<string, any>()
+
   return {
     prepare(sql: string) {
       let boundParams: any[] = []
@@ -150,10 +290,21 @@ function createMockDB() {
         },
         async first(column?: string) {
           const sqlLower = sql.toLowerCase()
+          if (sqlLower.includes('from otp_verifications where phone =')) {
+            const phone = boundParams[0]
+            return otpVerifications.get(phone) || null
+          }
           if (sqlLower.includes('from users where id =')) {
             const id = boundParams[0]
             const u = users.get(id)
             return u || null
+          }
+          if (sqlLower.includes('from users where email = ? or google_id = ?')) {
+            const email = boundParams[0]
+            for (const u of users.values()) {
+              if (u.email === email) return u
+            }
+            return null
           }
           if (sqlLower.includes('from users where email =')) {
             const email = boundParams[0]
@@ -162,10 +313,21 @@ function createMockDB() {
             }
             return null
           }
-          if (sqlLower.includes('from users where email = ? or google_id = ?')) {
-            const email = boundParams[0]
+          if (sqlLower.includes('from users where phone =') || sqlLower.includes('from users where (phone =')) {
+            const p1 = boundParams[0]
+            const p2 = boundParams[1]
+            const pEmail = boundParams[2]
             for (const u of users.values()) {
-              if (u.email === email) return u
+              const uClean = (u.phone || '').replace(/\D/g, '')
+              const p1Clean = (p1 || '').replace(/\D/g, '')
+              const p2Clean = (p2 || '').replace(/\D/g, '')
+              if (
+                (p1Clean && uClean && (uClean === p1Clean || uClean.endsWith(p1Clean) || p1Clean.endsWith(uClean))) ||
+                (p2Clean && uClean && (uClean === p2Clean || uClean.endsWith(p2Clean) || p2Clean.endsWith(uClean))) ||
+                (pEmail && u.email === pEmail)
+              ) {
+                return u
+              }
             }
             return null
           }
@@ -245,17 +407,56 @@ function createMockDB() {
           if (sqlLower.includes('count(*) as count from posts')) {
             return column ? posts.size : { count: posts.size }
           }
+          if (sqlLower.includes("where role = 'manager' and (status = 'pending_verification'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'manager' && (u.status === 'PENDING_VERIFICATION' || u.status === 'pending')).length
+            return column ? count : { count }
+          }
+          if (sqlLower.includes("where role = 'manager' and (status = 'active'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'manager' && (u.status === 'ACTIVE' || u.status === 'active')).length
+            return column ? count : { count }
+          }
+          if (sqlLower.includes("where role = 'manager' and (status = 'rejected'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'manager' && (u.status === 'REJECTED' || u.status === 'rejected')).length
+            return column ? count : { count }
+          }
+          if (sqlLower.includes("where role = 'manager'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'manager').length
+            return column ? count : { count }
+          }
+          if (sqlLower.includes("where role = 'admin'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'admin').length
+            return column ? count : { count }
+          }
+          if (sqlLower.includes("where role = 'employee'")) {
+            const count = Array.from(users.values()).filter(u => u.role === 'employee').length
+            return column ? count : { count, total: count }
+          }
           if (sqlLower.includes('count(*) as count from users') || sqlLower.includes('count(*) as total from users')) {
             return column ? users.size : { total: users.size, count: users.size }
           }
           if (sqlLower.includes('count(*) as total from user_violations')) {
             return { total: userViolations.size }
           }
+          if (sqlLower.includes('from employee_search_index where employee_id = ?')) {
+            const id = boundParams[0]
+            return employeeSearchIndex.get(id) || null
+          }
           return null
         },
         async all() {
           const sqlLower = sql.toLowerCase()
           const sqlNorm = sqlLower.replace(/\s+/g, ' ')
+          if (sqlNorm.includes("from users u") && sqlNorm.includes("where u.role = 'manager'")) {
+            let res = Array.from(users.values()).filter(u => u.role === 'manager')
+            if (sqlNorm.includes("and (u.status = 'pending_verification'")) {
+              res = res.filter(u => u.status === 'PENDING_VERIFICATION' || u.status === 'pending')
+            } else if (sqlNorm.includes("and (u.status = 'active'")) {
+              res = res.filter(u => u.status === 'ACTIVE' || u.status === 'active')
+            } else if (sqlNorm.includes("and (u.status = 'rejected'")) {
+              res = res.filter(u => u.status === 'REJECTED' || u.status === 'rejected')
+            }
+            return { results: res }
+          }
           if (sqlNorm.includes('from users where id != ?') || sqlNorm.includes('from users where id !=')) {
             const excludeId = boundParams[0]
             const filtered = Array.from(users.values()).filter(
@@ -359,6 +560,9 @@ function createMockDB() {
           if (sqlLower.includes('from users')) {
             return { results: Array.from(users.values()) }
           }
+          if (sqlLower.includes('from employee_search_index')) {
+            return { results: Array.from(employeeSearchIndex.values()) }
+          }
           if (sqlLower.includes('from device_tokens')) {
             return { results: Array.from(deviceTokens.values()) }
           }
@@ -372,7 +576,20 @@ function createMockDB() {
         async run() {
           const sqlLower = sql.toLowerCase()
           const sqlNorm = sqlLower.replace(/\s+/g, ' ')
-          if (sqlNorm.includes('insert or ignore into saved_jobs') || sqlNorm.includes('insert into saved_jobs')) {
+          if (sqlNorm.includes('into otp_verifications')) {
+            const [phone, otp_code, full_name, expires_at] = boundParams
+            otpVerifications.set(phone, { phone, otp_code, full_name, expires_at, attempts: 0 })
+          } else if (sqlNorm.includes('delete from otp_verifications where phone =')) {
+            const phone = boundParams[0]
+            otpVerifications.delete(phone)
+          } else if (sqlNorm.includes('update otp_verifications set attempts = attempts + 1')) {
+            const phone = boundParams[0]
+            const rec = otpVerifications.get(phone)
+            if (rec) rec.attempts = (rec.attempts || 0) + 1
+          } else if (sqlLower.includes('into employee_search_index')) {
+            const [empId, sText, embJson] = boundParams
+            employeeSearchIndex.set(empId, { employee_id: empId, search_text: sText, embedding: embJson, updated_at: new Date().toISOString() })
+          } else if (sqlNorm.includes('insert or ignore into saved_jobs') || sqlNorm.includes('insert into saved_jobs')) {
             const [id, uId, jId] = boundParams
             const key = `${uId}_${jId}`
             savedJobs.set(key, { id, user_id: uId, job_id: jId, created_at: new Date().toISOString() })
@@ -455,9 +672,36 @@ function createMockDB() {
               u.status = 'active'
               u.deactivated_until = null
             }
+          } else if (sqlLower.includes('update users') && (sqlLower.includes("status = 'active'") || sqlLower.includes('status = ?'))) {
+            const id = boundParams[boundParams.length - 1]
+            const u = users.get(id)
+            if (u) {
+              if (sqlLower.includes("status = 'active'")) {
+                u.status = 'ACTIVE'
+                u.rejection_reason = ''
+                u.verified_at = new Date().toISOString()
+              } else if (sqlLower.includes("status = 'rejected'")) {
+                u.status = 'REJECTED'
+                u.rejection_reason = boundParams[0]
+                u.verified_at = new Date().toISOString()
+              } else if (boundParams.length >= 3) {
+                u.full_name = boundParams[0]
+                u.role = boundParams[1]
+                u.status = boundParams[2]
+              }
+            }
+          } else if (sqlLower.includes('update users') && sqlLower.includes("status = 'rejected'")) {
+            const id = boundParams[boundParams.length - 1]
+            const u = users.get(id)
+            if (u) {
+              u.status = 'REJECTED'
+              u.rejection_reason = boundParams[0]
+            }
           } else if (sqlLower.includes('insert into users')) {
-            const [id, email, full_name, role, status] = boundParams
-            users.set(id, { id, email, full_name, role, status: status || 'active', is_active: 1 })
+            const [id, email, full_name, role, status, company, position, phone] = boundParams
+            users.set(id, { id, email, full_name, role, status: status || (role === 'manager' ? 'PENDING_VERIFICATION' : 'active'), company, position, phone, is_active: 1 })
+          } else if (sqlLower.includes('insert into notifications')) {
+            // Notification recorded
           } else if (sqlLower.includes('update users set full_name = ?, role = ?')) {
             const [full_name, role, id] = boundParams
             const u = users.get(id)
@@ -559,6 +803,14 @@ async function runTestSuite() {
   )
   const suspendedToken = await sign(
     { id: 'usr_suspended_01', email: 'banned@spammer.com', role: 'employee' },
+    JWT_SECRET
+  )
+  const hrPendingToken = await sign(
+    { id: 'usr_hr_pending', email: 'anita.hr@startup.com', role: 'manager' },
+    JWT_SECRET
+  )
+  const hrRejectedToken = await sign(
+    { id: 'usr_hr_rejected', email: 'fake.recruiter@invalid.com', role: 'manager' },
     JWT_SECRET
   )
 
@@ -1278,6 +1530,618 @@ async function runTestSuite() {
     }),
   }, env)
   assert(resBadResume.status === 400, 'Job application with missing resume URL rejected with 400')
+
+  // --------------------------------------------------------------------------
+  console.log(`\n${colors.bold}[9. HR RECRUITER VERIFICATION & ACCESS CONTROL]${colors.reset}`)
+  // --------------------------------------------------------------------------
+
+  // Test 59: Unverified HR cannot post a job (403 Forbidden with HR_PENDING_VERIFICATION)
+  const resPendingPostJob = await app.request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      title: 'DevOps Engineer',
+      company_name: 'Madurai Tech Ventures',
+      location: 'Madurai, TN',
+      workplace_type: 'On-site',
+      employment_type: 'Full-time',
+      description: 'Senior DevOps specialist needed immediately with Kubernetes experience.',
+    }),
+  }, env)
+  assert(resPendingPostJob.status === 403, 'Unverified HR attempting to post a job is blocked with 403 Forbidden')
+  const pendingPostJobJson = await resPendingPostJob.json() as any
+  assert(pendingPostJobJson.code === 'HR_PENDING_VERIFICATION', 'Unverified HR post job returns code HR_PENDING_VERIFICATION')
+  assert(pendingPostJobJson.error.includes('pending verification'), 'Unverified HR post job returns informative verification message')
+
+  // Test 60: Unverified HR cannot search or access candidate data (403 Forbidden)
+  const resPendingCandidateSearch = await app.request('/api/candidates/search?skill=React', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resPendingCandidateSearch.status === 403, 'Unverified HR searching candidates is blocked with 403 Forbidden')
+  const pendingCandidateSearchJson = await resPendingCandidateSearch.json() as any
+  assert(pendingCandidateSearchJson.code === 'HR_PENDING_VERIFICATION', 'Candidate search returns HR_PENDING_VERIFICATION')
+
+  // Test 61: Unverified HR cannot access candidate discovery or profiles
+  const resPendingDiscover = await app.request('/api/users/discover', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resPendingDiscover.status === 403, 'Unverified HR discovering candidate network is blocked with 403')
+
+  const resPendingCandidateProfile = await app.request('/api/users/usr_emp_01/profile', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resPendingCandidateProfile.status === 403, 'Unverified HR viewing candidate profile is blocked with 403')
+
+  // Test 62: Unverified HR cannot view job applications
+  const resPendingApps = await app.request('/api/jobs/job_react_101/applications', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resPendingApps.status === 403, 'Unverified HR viewing job applications is blocked with 403')
+
+  // Test 63: Rejected HR cannot post jobs and receives rejection reason
+  const resRejectedPostJob = await app.request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrRejectedToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      title: 'Sales Lead',
+      company_name: 'Invalid Corp',
+      location: 'Chennai',
+      workplace_type: 'Remote',
+      employment_type: 'Full-time',
+      description: 'Sales person needed for quick outreach campaigns.',
+    }),
+  }, env)
+  assert(resRejectedPostJob.status === 403, 'Rejected HR attempting to post job is blocked with 403 Forbidden')
+  const rejectedPostJobJson = await resRejectedPostJob.json() as any
+  assert(rejectedPostJobJson.code === 'HR_VERIFICATION_REJECTED', 'Rejected HR returns code HR_VERIFICATION_REJECTED')
+  assert(typeof rejectedPostJobJson.rejection_reason === 'string', 'Rejected HR response includes rejection_reason')
+
+  // Test 64: Non-admin cannot view the HR verification queue
+  const resForbiddenQueue = await app.request('/api/admin/hr-verifications', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resForbiddenQueue.status === 403, 'Regular HR cannot access admin HR verification queue')
+
+  // Test 65: Admin can retrieve the HR verification queue with counts and filters
+  const resAdminQueue = await app.request('/api/admin/hr-verifications?status=pending', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resAdminQueue.status === 200, 'Admin can view HR verification queue (200 OK)')
+  const adminQueueJson = await resAdminQueue.json() as any
+  assert(adminQueueJson.success === true, 'Admin verification queue returns success: true')
+  assert(Array.isArray(adminQueueJson.verifications), 'Admin verification queue returns verifications array')
+  assert(adminQueueJson.counts && typeof adminQueueJson.counts.pending === 'number', 'Admin verification queue returns status counts')
+  assert(adminQueueJson.verifications.some((v: any) => v.id === 'usr_hr_pending'), 'Pending HR user is present in pending queue')
+
+  // Test 66: Admin can retrieve rejected HR verifications
+  const resAdminRejectedQueue = await app.request('/api/admin/hr-verifications?status=rejected', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resAdminRejectedQueue.status === 200, 'Admin can filter rejected HR verifications (200 OK)')
+  const adminRejectedJson = await resAdminRejectedQueue.json() as any
+  assert(adminRejectedJson.verifications.some((v: any) => v.id === 'usr_hr_rejected'), 'Rejected HR user is present in rejected queue')
+
+  // Test 67: Admin approves pending HR account -> status becomes ACTIVE
+  const resApprove = await app.request('/api/admin/hr-verifications/usr_hr_pending/approve', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({ notes: 'Verified GST and business registration' }),
+  }, env)
+  assert(resApprove.status === 200, 'Admin approves HR account successfully with 200 OK')
+  const approveJson = await resApprove.json() as any
+  assert(approveJson?.success === true, 'Approve response confirms success: true')
+  assert(approveJson?.user?.status === 'ACTIVE', 'Approved user status changed to ACTIVE')
+
+  // Test 68: Newly approved HR now has full recruiter access
+  const resApprovedSearch = await app.request('/api/candidates/search', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resApprovedSearch.status === 200, 'Newly approved HR can now search candidates (200 OK)')
+
+  const resApprovedPostJob = await app.request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      title: 'DevOps Engineer Lead',
+      company_name: 'Madurai Tech Ventures',
+      location: 'Madurai, TN',
+      workplace_type: 'On-site',
+      employment_type: 'Full-time',
+      description: 'Senior DevOps specialist needed immediately with Kubernetes experience.',
+      salary_range: '₹12,00,000 - ₹18,00,000',
+    }),
+  }, env)
+  assert(resApprovedPostJob.status === 200, 'Newly approved HR can now publish jobs (200 OK)')
+
+  // Test 69: Admin rejects an HR account with an explicit reason
+  const resReject = await app.request('/api/admin/hr-verifications/usr_hr_pending/reject', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({ reason: 'Audit failed: invalid registered business address' }),
+  }, env)
+  assert(resReject.status === 200, 'Admin rejects HR account with 200 OK')
+  const rejectJson = await resReject.json() as any
+  assert(rejectJson?.user?.status === 'REJECTED', 'User status changed to REJECTED')
+  assert(rejectJson?.user?.rejection_reason === 'Audit failed: invalid registered business address', 'Rejection reason recorded')
+
+  // Test 70: Normal employee dev-login is immediately active and unaffected
+  const resEmpLogin = await app.request('/api/auth/dev-login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({ email: 'newcandidate@jobseeker.com', role: 'employee' }),
+  }, env)
+  assert(resEmpLogin.status === 200, 'Normal employee dev-login returns 200 OK')
+  const empLoginJson = await resEmpLogin.json() as any
+  assert(empLoginJson.user.role === 'employee', 'User role is employee')
+  assert(empLoginJson.user.status === 'active', 'Normal employee account is immediately active without admin verification')
+
+  // Test 71: Admin stats includes pending_hr_verifications count
+  const resAdminStats = await app.request('/api/admin/stats', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resAdminStats.status === 200, 'Admin stats returns 200 OK')
+  const statsJson = await resAdminStats.json() as any
+  assert(typeof statsJson?.stats?.pending_hr_verifications === 'number', 'Admin stats includes pending_hr_verifications count')
+
+  // --------------------------------------------------------------------------
+  console.log(`\n${colors.bold}${colors.cyan}[10. AI-POWERED MULTILINGUAL SEMANTIC EMPLOYEE SEARCH]${colors.reset}`)
+  // --------------------------------------------------------------------------
+
+  // Test 72: Admin triggers batch employee search indexing
+  const resReindex = await app.request('/api/admin/reindex-search', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({ batchSize: 50, forceReindex: true }),
+  }, env)
+  assert(resReindex.status === 200, 'Admin can trigger batch employee indexing with 200 OK')
+  const reindexJson = await resReindex.json() as any
+  assert(reindexJson?.success === true, 'Batch index response confirms success: true')
+  assert(reindexJson?.summary?.indexedCount > 0, 'Batch index successfully generated employee embeddings')
+
+  // Test 73: English natural language query for accountants in Chennai
+  const resSearchEnAccountant = await app.request('/api/candidates/search?q=Find%20experienced%20accountants%20in%20Chennai', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchEnAccountant.status === 200, 'HR search for "Find experienced accountants in Chennai" returns 200 OK')
+  const searchEnAccJson = await resSearchEnAccountant.json() as any
+  assert(searchEnAccJson.candidates.length > 0, 'Accountant search returns matching candidates')
+  assert(searchEnAccJson.candidates[0].full_name === 'Venkatesh Raman', 'Top candidate is Venkatesh Raman (Accountant in Chennai)')
+  assert(searchEnAccJson.candidates[0].match_score > 60, 'Top accountant candidate has high semantic match score')
+
+  // Test 74: Tamil natural language query for accountants
+  const resSearchTaAccountant = await app.request('/api/candidates/search?q=' + encodeURIComponent('சென்னையில் அனுபவம் உள்ள கணக்காளர்களை தேடு'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchTaAccountant.status === 200, 'Tamil query "சென்னையில் அனுபவம் உள்ள கணக்காளர்களை தேடு" returns 200 OK')
+  const searchTaAccJson = await resSearchTaAccountant.json() as any
+  assert(searchTaAccJson.candidates.length > 0, 'Tamil accountant search returns candidates')
+  assert(searchTaAccJson.candidates[0].full_name === 'Venkatesh Raman', 'Tamil query correctly matched Chennai accountant profile')
+
+  // Test 75: Hindi natural language query for accountants
+  const resSearchHiAccountant = await app.request('/api/candidates/search?q=' + encodeURIComponent('चेन्नई में अनुभवी अकाउंटेंट खोजें'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchHiAccountant.status === 200, 'Hindi query "चेन्नई में अनुभवी अकाउंटेंट खोजें" returns 200 OK')
+  const searchHiAccJson = await resSearchHiAccountant.json() as any
+  assert(searchHiAccJson.candidates.length > 0, 'Hindi accountant search returns candidates')
+  assert(searchHiAccJson.candidates[0].full_name === 'Venkatesh Raman', 'Hindi query correctly matched Chennai accountant profile')
+
+  // Test 76: Cross-language search: Tamil query -> English profile (Healthcare / Nurses)
+  const resCrossLangNurse = await app.request('/api/candidates/search?q=' + encodeURIComponent('கோயம்புத்தூரில் 5 வருட அனுபவம் உள்ள செவிலியர்களைக் கண்டுபிடி'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resCrossLangNurse.status === 200, 'Tamil cross-language query for Coimbatore nurses returns 200 OK')
+  const crossLangNurseJson = await resCrossLangNurse.json() as any
+  assert(crossLangNurseJson.candidates.length > 0, 'Nurse search returns candidate pool')
+  assert(crossLangNurseJson.candidates[0].full_name === 'Deepa Selvam', 'Top match is Deepa Selvam (Senior Staff Nurse in Coimbatore)')
+  assert(crossLangNurseJson.candidates[0].match_score >= 55, 'Nurse candidate has strong match score (>= 55%)')
+
+  // Test 77: Cross-language search: Hindi query -> English profile (Healthcare / Nurses)
+  const resHiCrossLangNurse = await app.request('/api/candidates/search?q=' + encodeURIComponent('कोयंबटूर में 5 साल के अनुभव वाले नर्स खोजें'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resHiCrossLangNurse.status === 200, 'Hindi cross-language query for Coimbatore nurses returns 200 OK')
+  const hiCrossLangNurseJson = await resHiCrossLangNurse.json() as any
+  assert(hiCrossLangNurseJson.candidates[0].full_name === 'Deepa Selvam', 'Hindi query correctly ranked Deepa Selvam as top match')
+
+  // Test 78: Skilled Trades sector: Electricians in Madurai
+  const resSearchElectrician = await app.request('/api/candidates/search?q=' + encodeURIComponent('Find industrial maintenance electricians in Madurai'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchElectrician.status === 200, 'Skilled trade search for electricians in Madurai returns 200 OK')
+  const electricianJson = await resSearchElectrician.json() as any
+  assert(electricianJson.candidates.length > 0, 'Electrician search returns candidates')
+  assert(electricianJson.candidates[0].full_name === 'Murugan Palanisamy', 'Top match is Murugan Palanisamy (Industrial Maintenance Electrician)')
+
+  // Test 79: Hospitality sector: Hotel Operations Manager
+  const resSearchHotel = await app.request('/api/candidates/search?q=' + encodeURIComponent('Find someone who can manage hotel staff and daily operations'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchHotel.status === 200, 'Hospitality search for hotel staff management returns 200 OK')
+  const hotelJson = await resSearchHotel.json() as any
+  assert(hotelJson.candidates.length > 0, 'Hotel search returns candidates')
+  assert(hotelJson.candidates[0].full_name === 'Rajesh Kumar', 'Top match is Rajesh Kumar (Hotel Operations Manager)')
+
+  // Test 80: Skills & tool matching: GST and Tally
+  const resSearchSkills = await app.request('/api/candidates/search?q=' + encodeURIComponent('Find people with GST and Tally experience'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchSkills.status === 200, 'Specific skill search for GST and Tally returns 200 OK')
+  const skillsJsonRes = await resSearchSkills.json() as any
+  assert(skillsJsonRes.candidates.length > 0, 'Skills search returns candidates')
+  assert(skillsJsonRes.candidates[0].full_name === 'Venkatesh Raman', 'Accountant with GST & Tally ranked top')
+  assert(skillsJsonRes.candidates[0].matched_skills?.includes('GST') || skillsJsonRes.candidates[0].matched_skills?.includes('Tally'), 'Matched skills array contains GST/Tally')
+
+  // Test 81: Combined Experience query: Developers with 5+ years experience
+  const resSearchExpDev = await app.request('/api/candidates/search?q=' + encodeURIComponent('Find Java developers in Chennai with 5+ years experience'), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resSearchExpDev.status === 200, 'Experience query for Java developers in Chennai returns 200 OK')
+  const expDevJson = await resSearchExpDev.json() as any
+  assert(expDevJson.candidates.length > 0, 'Developer query returns candidates')
+  assert(expDevJson.candidates[0].full_name === 'Anand Natarajan', 'Lead Java developer with 7 years exp ranked top')
+
+  // Test 82: Structured Location Filter with POST candidate search
+  const resPostSearch = await app.request('/api/candidates/search', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      q: 'Patient care',
+      location: 'Coimbatore',
+    }),
+  }, env)
+  assert(resPostSearch.status === 200, 'POST candidate search with structured location filter returns 200 OK')
+  const postSearchJson = await resPostSearch.json() as any
+  assert(postSearchJson.candidates.length > 0, 'POST search returns candidates')
+  assert(postSearchJson.candidates[0].location.includes('Coimbatore'), 'Result matches Coimbatore location filter')
+
+  // Test 83: Fallback behavior - Empty search query returns default candidate pool
+  const resEmptySearch = await app.request('/api/candidates/search', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resEmptySearch.status === 200, 'Empty search query fallback returns 200 OK')
+  const emptySearchJson = await resEmptySearch.json() as any
+  assert(emptySearchJson.candidates.length > 0, 'Candidate listing without search query returns all active candidates')
+
+  // Test 84: Security & Access Control: Unauthorized or unverified HR cannot use semantic search
+  const resUnauthSearch = await app.request('/api/candidates/search?q=Nurses', {
+    method: 'GET',
+  }, env)
+  assert(resUnauthSearch.status === 401, 'Unauthenticated candidate search rejected with 401')
+
+  const resUnverifiedSearch = await app.request('/api/candidates/search?q=Nurses', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${hrPendingToken}`,
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+  }, env)
+  assert(resUnverifiedSearch.status === 403, 'Unverified HR candidate search strictly rejected with 403')
+
+  // Test: Verified HR expresses direct interest in an employee candidate -> 200 OK + triggers priority email
+  const sampleCandidate = emptySearchJson.candidates[0]
+  const resExpressInterest = await app.request(`/api/candidates/${sampleCandidate.id}/interest`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      message: 'We are very impressed with your profile and would like to invite you for an interview.',
+    }),
+  }, env)
+  assert(resExpressInterest.status === 200, 'HR expressing interest in candidate returns 200 OK')
+  const expressInterestJson = await resExpressInterest.json() as any
+  assert(expressInterestJson.success === true, 'Interest expression response confirms success: true')
+  assert(typeof expressInterestJson.message === 'string' && expressInterestJson.message.length > 0, 'Interest expression returns confirmation message')
+
+  // --------------------------------------------------------------------------
+  console.log(`\n${colors.bold}${colors.blue}[11. AI CV/RESUME EXTRACTION & PROFILE VALIDATION]${colors.reset}`)
+
+  // Test: Non-resume document (invoice) is rejected with 400 Bad Request
+  const resInvoice = await app.request('/api/resume/parse', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${empToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      file_name: 'invoice_march_2026.pdf',
+      raw_text: 'Tax Invoice. Invoice No: INV-9921. Bill To: ACME Corp. Total Amount Due: $4,500. GSTIN: 33AAAAA0000A1Z5. Payment terms: Net 30.',
+    }),
+  }, env)
+  assert(resInvoice.status === 400, 'Non-resume document (invoice) is rejected with 400 Bad Request')
+  const invoiceJson = await resInvoice.json() as any
+  assert(invoiceJson.error === 'Please upload a valid CV or resume.', 'Error message instructs to upload a valid CV or resume')
+
+  // Test: Valid CV document parses and normalizes skills
+  const resValidParse = await app.request('/api/resume/parse', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${empToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      file_name: 'Karthik_Resume.pdf',
+      raw_text: 'Karthik Raja. Professional Summary: Senior Frontend Engineer with 6 years experience. Work Experience at Cognizant Chennai. Skills: ReactJS, TypeScript, NodeJS, HTML5, CSS3, Docker Containers, AWS. Education: Bachelor of Engineering in Computer Science. Languages: Tamil, English.',
+      skills: ['ReactJS', 'NodeJS', 'MS Excel', 'Tally.ERP 9'],
+      apply_to_profile: true,
+    }),
+  }, env)
+  assert(resValidParse.status === 200, 'Valid resume parses successfully with 200 OK')
+  const validParseJson = await resValidParse.json() as any
+  assert(validParseJson.success === true, 'Response confirms success')
+  assert(validParseJson.extracted.skills.includes('React'), 'Skill ReactJS normalized to React')
+  assert(validParseJson.extracted.skills.includes('Node.js'), 'Skill NodeJS normalized to Node.js')
+  assert(validParseJson.extracted.skills.includes('Microsoft Excel'), 'Skill MS Excel normalized to Microsoft Excel')
+  assert(validParseJson.extracted.skills.includes('Tally Prime'), 'Skill Tally.ERP 9 normalized to Tally Prime')
+  assert(validParseJson.extracted.structuredSkills.length > 0, 'Structured skills list with experience generated')
+  assert(validParseJson.extracted.languages.includes('Tamil'), 'Multilingual detection includes Tamil')
+
+  // --------------------------------------------------------------------------
+  console.log(`\n${colors.bold}[12. ROLE CONFLICT & ACCOUNT SEPARATION VALIDATION]${colors.reset}`)
+  // --------------------------------------------------------------------------
+
+  // Test 96: Existing employee attempting HR recruiter dev-login is rejected with 400 and ROLE_CONFLICT_EMPLOYEE
+  const resEmpAsHrLogin = await app.request('/api/auth/dev-login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'anand.dev@tech.com', // Registered employee
+      role: 'manager', // Attempting to sign in under HR tab
+    }),
+  }, env)
+  assert(resEmpAsHrLogin.status === 400, 'Employee signing in as HR dev-login rejected with 400 Bad Request')
+  const empAsHrJson = await resEmpAsHrLogin.json() as any
+  assert(empAsHrJson.code === 'ROLE_CONFLICT_EMPLOYEE', 'Returns error code ROLE_CONFLICT_EMPLOYEE')
+  assert(empAsHrJson.error.includes('already registered as a Job Seeker account'), 'Validation error message informs user of Job Seeker status')
+
+  // Test 97: Existing employee phone requesting WhatsApp OTP as HR is rejected with 400
+  const resEmpAsHrOtpSend = await app.request('/api/auth/whatsapp/send-otp', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      phone: '9846655667', // Anand's phone number
+      selected_role: 'manager',
+    }),
+  }, env)
+  assert(resEmpAsHrOtpSend.status === 400, 'Employee phone requesting HR OTP rejected with 400 Bad Request')
+  const empAsHrOtpJson = await resEmpAsHrOtpSend.json() as any
+  assert(empAsHrOtpJson.code === 'ROLE_CONFLICT_EMPLOYEE', 'OTP send returns code ROLE_CONFLICT_EMPLOYEE')
+
+  // Test 98: Existing employee phone verifying WhatsApp OTP as HR is rejected with 400
+  const resEmpAsHrOtpVerify = await app.request('/api/auth/whatsapp/verify-otp', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      phone: '9846655667',
+      otp: '123456',
+      selected_role: 'manager',
+    }),
+  }, env)
+  assert(resEmpAsHrOtpVerify.status === 400, 'Employee verifying HR OTP rejected with 400')
+
+  // Test 99: Existing employee email attempting HR registration is rejected with 409
+  const resEmpAsHrRegister = await app.request('/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'anand.dev@tech.com',
+      role: 'manager',
+      full_name: 'Anand Recruiter',
+      company: 'TechCorp Chennai',
+    }),
+  }, env)
+  assert(resEmpAsHrRegister.status === 409, 'Employee email registering as HR rejected with 409 Conflict')
+  const empRegisterJson = await resEmpAsHrRegister.json() as any
+  assert(empRegisterJson.code === 'ROLE_CONFLICT_EMPLOYEE', 'Returns code ROLE_CONFLICT_EMPLOYEE')
+
+  // Test 100: Existing employee phone attempting HR registration is rejected with 409
+  const resEmpPhoneAsHrRegister = await app.request('/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'different.email@corp.com',
+      phone: '9846655667', // Anand's phone number
+      role: 'manager',
+      full_name: 'Imposter Recruiter',
+      company: 'Another Corp',
+    }),
+  }, env)
+  assert(resEmpPhoneAsHrRegister.status === 409, 'Employee phone registering as HR rejected with 409 Conflict')
+  const empPhoneRegisterJson = await resEmpPhoneAsHrRegister.json() as any
+  assert(empPhoneRegisterJson.code === 'ROLE_CONFLICT_EMPLOYEE', 'Phone conflict returns code ROLE_CONFLICT_EMPLOYEE')
+
+  // Test 101: Existing HR recruiter attempting to sign in as Employee is rejected with 400
+  const resHrAsEmpLogin = await app.request('/api/auth/dev-login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'priya.hr@company.com', // Registered HR
+      role: 'employee', // Attempting to sign in under Job Seeker tab
+    }),
+  }, env)
+  assert(resHrAsEmpLogin.status === 400, 'HR recruiter signing in as Employee rejected with 400 Bad Request')
+  const hrAsEmpJson = await resHrAsEmpLogin.json() as any
+  assert(hrAsEmpJson.code === 'ROLE_CONFLICT_HR', 'Returns error code ROLE_CONFLICT_HR')
+  assert(hrAsEmpJson.error.includes('already registered as an HR Recruiter account'), 'Validation error message informs user of HR Recruiter status')
+
+  // Test 102: Existing HR recruiter attempting to register as Employee is rejected with 409
+  const resHrAsEmpRegister = await app.request('/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'priya.hr@company.com',
+      role: 'employee',
+      full_name: 'Priya JobSeeker',
+    }),
+  }, env)
+  assert(resHrAsEmpRegister.status === 409, 'HR email registering as Employee rejected with 409 Conflict')
+  const hrRegisterJson = await resHrAsEmpRegister.json() as any
+  assert(hrRegisterJson.code === 'ROLE_CONFLICT_HR', 'Returns code ROLE_CONFLICT_HR')
+
+  // Test 103: Valid matching logins succeed normally
+  const resValidEmpLogin = await app.request('/api/auth/dev-login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'anand.dev@tech.com',
+      role: 'employee',
+    }),
+  }, env)
+  assert(resValidEmpLogin.status === 200, 'Valid employee login succeeds with 200 OK')
+  const validEmpJson = await resValidEmpLogin.json() as any
+  assert(validEmpJson.user.role === 'employee', 'Employee role preserved')
+
+  const resValidHrLogin = await app.request('/api/auth/dev-login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-security-bypass': 'test-bypass-key-2026',
+    },
+    body: JSON.stringify({
+      email: 'priya.hr@company.com',
+      role: 'manager',
+    }),
+  }, env)
+  assert(resValidHrLogin.status === 200, 'Valid HR manager login succeeds with 200 OK')
+  const validHrJson = await resValidHrLogin.json() as any
+  assert(validHrJson.user.role === 'manager', 'HR manager role preserved')
+  assert(validHrJson.user.status === 'active', 'Active HR status preserved')
+  assert(validHrJson.user.role === 'manager', 'HR manager role preserved')
+  assert(validHrJson.user.status === 'active', 'Active HR status preserved')
 
   // --------------------------------------------------------------------------
   console.log(`\n${colors.bold}${colors.cyan}================================================================${colors.reset}`)

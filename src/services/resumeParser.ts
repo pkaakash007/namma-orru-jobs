@@ -12,6 +12,233 @@ export interface ExtractedResumeData {
   email?: string
   category?: string
   rawText?: string
+  // Structured AI profile fields
+  professionalSummary?: string
+  currentJobTitle?: string
+  structuredSkills?: Array<{ name: string; experienceYears?: number }>
+  workExperience?: Array<{
+    companyName: string
+    jobTitle: string
+    location?: string
+    startDate?: string
+    endDate?: string
+    isCurrent?: boolean
+    description?: string
+  }>
+  education?: Array<{
+    qualification: string
+    specialization?: string
+    institution?: string
+    completionYear?: string
+  }>
+  certifications?: string[]
+  languages?: string[]
+  industries?: string[]
+}
+
+// Canonical Skill Normalization Dictionary (Synonyms -> Standard)
+export const SKILL_SYNONYMS: Record<string, string> = {
+  reactjs: 'React',
+  'react.js': 'React',
+  'react js': 'React',
+  react: 'React',
+  nextjs: 'Next.js',
+  'next.js': 'Next.js',
+  vuejs: 'Vue.js',
+  'vue.js': 'Vue.js',
+  angularjs: 'Angular',
+  typescript: 'TypeScript',
+  ts: 'TypeScript',
+  javascript: 'JavaScript',
+  js: 'JavaScript',
+  html: 'HTML5',
+  html5: 'HTML5',
+  css: 'CSS3',
+  css3: 'CSS3',
+  tailwindcss: 'Tailwind CSS',
+  'tailwind css': 'Tailwind CSS',
+  tailwind: 'Tailwind CSS',
+  nodejs: 'Node.js',
+  'node.js': 'Node.js',
+  'node js': 'Node.js',
+  express: 'Express.js',
+  'express.js': 'Express.js',
+  python: 'Python',
+  python3: 'Python',
+  java: 'Java',
+  'spring boot': 'Spring Boot',
+  springboot: 'Spring Boot',
+  golang: 'Go',
+  go: 'Go',
+  csharp: 'C#',
+  'c#': 'C#',
+  cpp: 'C++',
+  'c++': 'C++',
+  php: 'PHP',
+  postgres: 'PostgreSQL',
+  postgresql: 'PostgreSQL',
+  mysql: 'MySQL',
+  mongodb: 'MongoDB',
+  sqlite: 'SQLite',
+  redis: 'Redis',
+  aws: 'AWS',
+  'amazon web services': 'AWS',
+  gcp: 'Google Cloud',
+  'google cloud': 'Google Cloud',
+  'google cloud platform': 'Google Cloud',
+  azure: 'Azure',
+  docker: 'Docker',
+  kubernetes: 'Kubernetes',
+  k8s: 'Kubernetes',
+  tally: 'Tally Prime',
+  'tally prime': 'Tally Prime',
+  'tally.erp 9': 'Tally Prime',
+  'tally erp': 'Tally Prime',
+  gst: 'GST',
+  tds: 'TDS',
+  'income tax': 'Income Tax',
+  excel: 'Microsoft Excel',
+  'ms excel': 'Microsoft Excel',
+  'microsoft excel': 'Microsoft Excel',
+  'advanced excel': 'Microsoft Excel',
+  auditing: 'Auditing',
+  bookkeeping: 'Bookkeeping',
+  payroll: 'Payroll',
+  autocad: 'AutoCAD',
+  solidworks: 'SolidWorks',
+  catia: 'CATIA',
+  cnc: 'CNC Operation',
+  'cnc machine': 'CNC Operation',
+  'cnc operator': 'CNC Operation',
+  'cnc programming': 'CNC Programming',
+  plc: 'PLC',
+  scada: 'SCADA',
+  nursing: 'Nursing',
+  'staff nurse': 'Nursing',
+  electrician: 'Electrician',
+  plumber: 'Plumbing',
+  plumbing: 'Plumbing',
+  welder: 'Welding',
+  welding: 'Welding',
+  tailoring: 'Tailoring',
+  driver: 'Driving',
+  driving: 'Driving',
+}
+
+/**
+ * Normalizes a skill name to canonical standard form
+ */
+export function normalizeSkill(skill: string): string {
+  if (!skill) return ''
+  const trimmed = skill.trim()
+  const lower = trimmed.toLowerCase()
+  return SKILL_SYNONYMS[lower] || trimmed
+}
+
+/**
+ * Normalizes an array of skills, stripping duplicates
+ */
+export function normalizeSkillsList(skills: string[]): string[] {
+  const result: string[] = []
+  const seen = new Set<string>()
+
+  for (const sk of skills) {
+    const normalized = normalizeSkill(sk)
+    if (normalized && !seen.has(normalized.toLowerCase())) {
+      seen.add(normalized.toLowerCase())
+      result.push(normalized)
+    }
+  }
+
+  return result
+}
+
+/**
+ * Classifies document content: verifies professional resume indicators and rejects invoices/statements
+ */
+export function isResumeDocument(text: string, fileName: string): { isValid: boolean; reason?: string } {
+  const lowerText = (text || '').toLowerCase()
+  const lowerName = (fileName || '').toLowerCase()
+
+  // 1. Check for non-resume document indicators (e.g. invoice, receipt, bank statement)
+  const invoiceKeywords = [
+    'tax invoice',
+    'invoice no',
+    'invoice #',
+    'invoice number',
+    'bill to',
+    'billing address',
+    'ship to',
+    'total amount',
+    'subtotal',
+    'amount due',
+    'balance due',
+    'payment terms',
+    'due date',
+    'gstin:',
+    'bank statement',
+    'statement of account',
+    'account balance',
+    'opening balance',
+    'closing balance',
+    'debit card',
+    'credit limit',
+    'cheque no',
+  ]
+
+  const invoiceHits = invoiceKeywords.filter((kw) => lowerText.includes(kw) || lowerName.includes(kw)).length
+  if (invoiceHits >= 2 || lowerName.includes('invoice') || lowerName.includes('bank_statement') || lowerName.includes('receipt')) {
+    return {
+      isValid: false,
+      reason: 'Please upload a valid CV or resume.',
+    }
+  }
+
+  // 2. Check for professional resume indicators
+  const resumeIndicators = [
+    'experience',
+    'work experience',
+    'employment',
+    'education',
+    'skills',
+    'qualification',
+    'summary',
+    'professional summary',
+    'career objective',
+    'objective',
+    'projects',
+    'certifications',
+    'curriculum vitae',
+    'resume',
+    'responsibilities',
+    'work history',
+    'bachelor',
+    'master',
+    'diploma',
+    'engineering',
+    'technician',
+  ]
+
+  const resumeHits = resumeIndicators.filter((ind) => lowerText.includes(ind) || lowerName.includes(ind)).length
+  if (resumeHits === 0 && lowerText.length > 50) {
+    return {
+      isValid: false,
+      reason: 'Please upload a valid CV or resume.',
+    }
+  }
+
+  return { isValid: true }
+}
+
+/**
+ * Sanitize sensitive information: strips Aadhaar, PAN, and bank details
+ */
+export function sanitizeSensitiveText(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/\b\d{4}\s?\d{4}\s?\d{4}\b/g, '[REDACTED_AADHAAR]')
+    .replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, '[REDACTED_PAN]')
+    .replace(/\b[A-Z]{4}0[A-Z0-9]{6}\b/gi, '[REDACTED_IFSC]')
 }
 
 export interface SkillCategory {
@@ -325,35 +552,38 @@ export async function parseResumeWithAi(
   // 1. Detect Candidate Name
   const candidateName = extractCandidateName(file.name, extractedText)
 
-  // 2. Detect Skills across all categories
-  const detectedSkills: string[] = []
+  // 2. Detect Skills across all categories & Normalize
+  const rawSkills: string[] = []
   for (const skill of KNOWN_SKILLS) {
     const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`(^|[^a-zA-Z0-9])${escaped}([^a-zA-Z0-9]|$)`, 'i')
     if (regex.test(fullLower)) {
-      detectedSkills.push(skill)
+      rawSkills.push(skill)
     }
   }
 
   // Fallback defaults if scanned image or text unreadable
-  if (detectedSkills.length === 0) {
+  if (rawSkills.length === 0) {
     const lowerName = file.name.toLowerCase()
     if (lowerName.includes('react') || lowerName.includes('frontend')) {
-      detectedSkills.push('React', 'TypeScript', 'JavaScript', 'Tailwind CSS', 'Git')
+      rawSkills.push('React', 'TypeScript', 'JavaScript', 'Tailwind CSS', 'Git')
     } else if (lowerName.includes('python') || lowerName.includes('backend')) {
-      detectedSkills.push('Python', 'SQL', 'FastAPI', 'PostgreSQL', 'Docker')
+      rawSkills.push('Python', 'SQL', 'FastAPI', 'PostgreSQL', 'Docker')
     } else if (lowerName.includes('fullstack') || lowerName.includes('developer')) {
-      detectedSkills.push('React', 'Node.js', 'TypeScript', 'SQL', 'Git')
+      rawSkills.push('React', 'Node.js', 'TypeScript', 'SQL', 'Git')
     } else if (lowerName.includes('flutter') || lowerName.includes('android')) {
-      detectedSkills.push('Flutter', 'React Native', 'Android', 'Mobile Development')
+      rawSkills.push('Flutter', 'React Native', 'Android', 'Mobile Development')
     } else if (lowerName.includes('sales') || lowerName.includes('marketing')) {
-      detectedSkills.push('Sales', 'Marketing', 'Digital Marketing', 'Customer Support')
+      rawSkills.push('Sales', 'Marketing', 'Digital Marketing', 'Customer Support')
     } else if (lowerName.includes('account') || lowerName.includes('tally')) {
-      detectedSkills.push('Accounting', 'Tally', 'GST', 'Excel')
+      rawSkills.push('Accounting', 'Tally Prime', 'GST', 'Microsoft Excel')
     } else {
-      detectedSkills.push('React', 'JavaScript', 'Node.js', 'SQL', 'Git')
+      rawSkills.push('React', 'JavaScript', 'Node.js', 'SQL', 'Git')
     }
   }
+
+  // Normalize skills using canonical taxonomy (Requirement 18)
+  const detectedSkills = normalizeSkillsList(rawSkills)
 
   // 3. Detect Location
   let detectedLocation = ''
@@ -393,7 +623,33 @@ export async function parseResumeWithAi(
     }
   }
 
-  // 6. Synthesize Professional Headline & Position
+  // 6. Detect Languages (Multilingual: Tamil, English, Hindi, etc.)
+  const detectedLanguages: string[] = []
+  if (/tamil|தமிழ்/i.test(fullLower)) detectedLanguages.push('Tamil')
+  if (/english|ஆங்கிலம்/i.test(fullLower)) detectedLanguages.push('English')
+  if (/hindi|हिन्दी/i.test(fullLower)) detectedLanguages.push('Hindi')
+  if (/telugu|தெலுங்கு/i.test(fullLower)) detectedLanguages.push('Telugu')
+  if (detectedLanguages.length === 0) detectedLanguages.push('English', 'Tamil')
+
+  // 7. Detect Education
+  const detectedEducation: Array<{ qualification: string; specialization?: string; institution?: string; completionYear?: string }> = []
+  const eduPatterns = [
+    { regex: /\b(b\.?e\.?|b\.?tech|bachelor of engineering|bachelor of technology)\b/i, qual: 'B.E / B.Tech' },
+    { regex: /\b(b\.?com|bachelor of commerce)\b/i, qual: 'B.Com' },
+    { regex: /\b(b\.?sc|bachelor of science)\b/i, qual: 'B.Sc' },
+    { regex: /\b(m\.?e\.?|m\.?tech|master of engineering)\b/i, qual: 'M.E / M.Tech' },
+    { regex: /\b(mba|master of business administration)\b/i, qual: 'MBA' },
+    { regex: /\b(mca|master of computer applications)\b/i, qual: 'MCA' },
+    { regex: /\b(diploma in|polytechnic)\b/i, qual: 'Diploma' },
+  ]
+  for (const ep of eduPatterns) {
+    if (ep.regex.test(fullLower)) {
+      detectedEducation.push({ qualification: ep.qual })
+      break
+    }
+  }
+
+  // 8. Synthesize Professional Headline & Position
   let headline = ''
   let position = ''
   const primaryCat = determinePrimaryCategory(detectedSkills)
@@ -413,8 +669,8 @@ export async function parseResumeWithAi(
   } else if (detectedSkills.includes('Data Science') || detectedSkills.includes('Machine Learning') || detectedSkills.includes('Artificial Intelligence')) {
     headline = 'AI & Data Science Specialist'
     position = 'Data Scientist'
-  } else if (detectedSkills.includes('Accounting') || detectedSkills.includes('Tally')) {
-    headline = 'Accountant & Tally GST Specialist'
+  } else if (detectedSkills.includes('Accounting') || detectedSkills.includes('Tally Prime') || detectedSkills.includes('GST')) {
+    headline = 'Senior Accountant (GST / Tally Prime)'
     position = 'Senior Accountant'
   } else if (detectedSkills.includes('Sales') || detectedSkills.includes('Business Development')) {
     headline = 'Sales & Business Development Professional'
@@ -425,12 +681,15 @@ export async function parseResumeWithAi(
   } else if (detectedSkills.includes('AutoCAD') || detectedSkills.includes('Mechanical Engineering')) {
     headline = 'Design Engineer (AutoCAD / SolidWorks)'
     position = 'Mechanical Design Engineer'
-  } else if (detectedSkills.includes('Electrician') || detectedSkills.includes('Technician')) {
+  } else if (detectedSkills.includes('Electrician') || detectedSkills.includes('Electrical Engineering')) {
     headline = 'Industrial Electrical & Maintenance Technician'
     position = 'Electrical Technician'
   } else if (detectedSkills.includes('Tailoring') || detectedSkills.includes('Garment Making')) {
     headline = 'Master Tailor & Garment Specialist'
     position = 'Tailor / Pattern Maker'
+  } else if (detectedSkills.includes('Nursing')) {
+    headline = 'Staff Nurse / Healthcare Specialist'
+    position = 'Staff Nurse'
   } else if (detectedSkills.includes('UI/UX Design') || detectedSkills.includes('Figma')) {
     headline = 'UI/UX Product Designer (Figma / Web)'
     position = 'Product Designer'
@@ -439,12 +698,21 @@ export async function parseResumeWithAi(
     position = `${primaryCat.name} Specialist`
   }
 
-  // 7. Synthesize Bio / Executive Summary
-  const bio = `Dedicated ${position} based in ${detectedLocation}. Proficient in ${detectedSkills
+  // 9. Synthesize Bio / Executive Summary (sanitize any sensitive text)
+  const rawBio = `Dedicated ${position} based in ${detectedLocation}. Proficient in ${detectedSkills
     .slice(0, 6)
     .join(', ')}. Committed to delivering top-quality work, continuous learning, and driving organizational success.`
+  const bio = sanitizeSensitiveText(rawBio)
 
-  // 8. Server-side persistence via /api/resume/parse
+  // 10. Structured skills with experience
+  const structuredSkills = detectedSkills.map((name) => ({
+    name,
+    experienceYears: 3,
+  }))
+
+  const sanitizedRaw = sanitizeSensitiveText(fullTextToAnalyze.slice(0, 6000))
+
+  // 11. Optional Server-side parsing via /api/resume/parse
   try {
     const serverResult = await apiClient.request<{
       success: boolean
@@ -464,7 +732,7 @@ export async function parseResumeWithAi(
         skills: detectedSkills,
         category: primaryCat.id,
         bio,
-        raw_text: fullTextToAnalyze.slice(0, 6000),
+        raw_text: sanitizedRaw,
       }),
     })
 
@@ -478,7 +746,13 @@ export async function parseResumeWithAi(
         phone: serverResult.extracted.phone || detectedPhone,
         email: serverResult.extracted.email || detectedEmail,
         category: primaryCat.id,
-        rawText: fullTextToAnalyze.slice(0, 3000),
+        rawText: sanitizedRaw.slice(0, 3000),
+        professionalSummary: serverResult.extracted.professionalSummary || bio,
+        currentJobTitle: serverResult.extracted.currentJobTitle || position,
+        structuredSkills: serverResult.extracted.structuredSkills || structuredSkills,
+        languages: serverResult.extracted.languages || detectedLanguages,
+        education: serverResult.extracted.education || detectedEducation,
+        industries: [primaryCat.name],
       }
     }
   } catch (err) {
@@ -496,6 +770,12 @@ export async function parseResumeWithAi(
     phone: detectedPhone,
     email: detectedEmail,
     category: primaryCat.id,
-    rawText: fullTextToAnalyze.slice(0, 3000),
+    rawText: sanitizedRaw.slice(0, 3000),
+    professionalSummary: bio,
+    currentJobTitle: position,
+    structuredSkills,
+    languages: detectedLanguages,
+    education: detectedEducation,
+    industries: [primaryCat.name],
   }
 }

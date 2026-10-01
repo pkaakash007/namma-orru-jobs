@@ -17,13 +17,16 @@ import {
   Trash2,
   X,
   Plus,
+  Edit,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
 import { useLanguage } from '../../../context/LanguageContext'
 import { Badge } from '../../ui/Badge'
 import { uploadService } from '../../../services/api'
-import { parseResumeWithAi } from '../../../services/resumeParser'
+import { parseResumeWithAi, extractTextFromPdf, isResumeDocument } from '../../../services/resumeParser'
 import type { SupportedLanguage } from '../../../utils/i18n'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { parseSkillsArray, cleanSkillString } from '../../../utils/skills'
@@ -58,14 +61,23 @@ function cleanResumeFileName(url?: string): string {
   }
 }
 
+interface ResumeMeta {
+  fileName: string
+  fileSize: string
+  fileType: string
+  uploadedAt: string
+}
+
 export interface UserProfilePageProps {
   onBack?: () => void
+  onRequestEdit?: () => void
   className?: string
   showHeaderBack?: boolean
 }
 
 export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   onBack,
+  onRequestEdit,
   className = '',
   showHeaderBack = true,
 }) => {
@@ -91,6 +103,20 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [selectedLang, setSelectedLang] = useState<SupportedLanguage>(
     (user?.language as SupportedLanguage) || language
   )
+
+  const [resumeMeta, setResumeMeta] = useState<ResumeMeta | null>(() => {
+    try {
+      if (user?.id) {
+        const raw = localStorage.getItem(`namma_resume_meta_${user.id}`)
+        if (raw) return JSON.parse(raw)
+      }
+    } catch {}
+    return null
+  })
+  const [extractedSkillsFeedback, setExtractedSkillsFeedback] = useState<string[]>([])
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+  const [uploadFileName, setUploadFileName] = useState<string>('')
+  const [uploadStepText, setUploadStepText] = useState<string>('')
 
   const [isUploadingResume, setIsUploadingResume] = useState(false)
   const [isUploadingBanner, setIsUploadingBanner] = useState(false)
@@ -157,17 +183,34 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     }
   }
 
-  // Handle Resume Upload & AI Content Extraction
+  // Interactive Resume Review State (Requirement 17: User Review is Required)
+  const [reviewModalOpen, setReviewModalOpen] = useState(false)
+  const [reviewData, setReviewData] = useState<{
+    fullName: string
+    headline: string
+    position: string
+    company: string
+    location: string
+    bio: string
+    phone: string
+    skills: string[]
+    languages: string[]
+    resumeUrl: string
+    resumeMeta: ResumeMeta
+  } | null>(null)
+  const [reviewSkillInput, setReviewSkillInput] = useState('')
+
+  // Handle Resume Upload & AI Content Extraction with User Review
   const handleResumeFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
     const lowerName = file.name.toLowerCase()
-    const validExtensions = ['.pdf', '.docx', '.doc', '.txt']
+    const validExtensions = ['.pdf', '.docx', '.doc']
     const hasValidExt = validExtensions.some((ext) => lowerName.endsWith(ext))
 
     if (!hasValidExt && file.type !== 'application/pdf') {
-      showToast('Please upload a PDF, Word (DOCX/DOC), or TXT document', 'error')
+      showToast('Please upload a PDF or Word (DOCX/DOC) document', 'error')
       return
     }
 
@@ -182,71 +225,199 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       return
     }
 
+    setUploadFileName(file.name)
     setIsUploadingResume(true)
     setIsExtractingAi(true)
+    setUploadProgress(20)
+    setUploadStepText('Validating document content...')
+
     try {
+      // 1. Technical & Content Classification Validation (Requirements 12, 13, 14)
+      const rawText = await extractTextFromPdf(file)
+      const classification = isResumeDocument(rawText, file.name)
+      if (!classification.isValid) {
+        showToast(classification.reason || 'Please upload a valid CV or resume.', 'error')
+        setIsUploadingResume(false)
+        setIsExtractingAi(false)
+        setUploadProgress(0)
+        return
+      }
+
+      setUploadProgress(45)
+      setUploadStepText(
+        language === 'ta'
+          ? 'கிளவுட் சேமிப்பகத்தில் ஆவணம் பதிவேற்றப்படுகிறது...'
+          : language === 'hi'
+          ? 'क्लाउड स्टोरेज में दस्तावेज़ अपलोड किया जा रहा है...'
+          : 'Uploading document to secure cloud storage...'
+      )
+
+      // 2. Upload to Cloudflare R2
       const uploaded = await uploadService.uploadFile(file, 'resumes')
       setResumeUrl(uploaded.url)
-      showToast('Resume uploaded securely to Cloudflare R2', 'success')
 
-      // AI Resume Intelligence Extraction
-      const parsedData = await parseResumeWithAi(file, uploaded.url)
-
-      // Merge skills
-      const newExtracted = parseSkillsArray(parsedData.skills)
-      const combinedSkills = Array.from(new Set([...skillsList, ...newExtracted]))
-
-      // Populate user details form fields from extracted content
-      if (parsedData.fullName && (!fullName || fullName.trim() === '')) {
-        setFullName(parsedData.fullName)
-      }
-      if (parsedData.headline) setHeadline(parsedData.headline)
-      if (parsedData.position) setPosition(parsedData.position)
-      if (parsedData.company) setCompany(parsedData.company)
-      if (parsedData.location) setLocation(parsedData.location)
-      if (parsedData.bio) setBio(parsedData.bio)
-      if (parsedData.phone && (!phone || phone.trim() === '')) setPhone(parsedData.phone)
-      setSkillsList(combinedSkills)
-
-      // Store all extracted content directly onto users table in Cloudflare D1
-      const finalName =
-        parsedData.fullName && (!fullName || fullName.trim() === '')
-          ? parsedData.fullName
-          : fullName
-      const finalHeadline = parsedData.headline || headline || undefined
-      const finalPosition = parsedData.position || position || undefined
-      const finalCompany = parsedData.company || company || undefined
-      const finalLocation = parsedData.location || location || undefined
-      const finalBio = parsedData.bio || bio || undefined
-      const finalPhone =
-        parsedData.phone && (!phone || phone.trim() === '') ? parsedData.phone : phone || undefined
-
-      await updateUserProfile({
-        full_name: finalName || undefined,
-        skills: combinedSkills,
-        headline: finalHeadline,
-        position: finalPosition,
-        company: finalCompany,
-        location: finalLocation,
-        bio: finalBio,
-        phone: finalPhone,
-        resume_url: uploaded.url,
-      })
-
-
-      showToast(
+      setUploadProgress(70)
+      setUploadStepText(
         language === 'ta'
-          ? 'தன்விவரக் குறிப்பு விவரங்கள் வெற்றிகரமாக புதுப்பிக்கப்பட்டன'
+          ? 'திறன்கள் மற்றும் அனுபவங்களை பகுப்பாய்வு செய்கிறது...'
           : language === 'hi'
-          ? 'बायोडाटा विवरण सफलतापूर्वक अपडेट किए गए'
-          : 'Resume uploaded and profile details updated',
-        'success'
+          ? 'कौशल और अनुभव का विश्लेषण किया जा रहा है...'
+          : 'Extracting skills, credentials & experience...'
       )
+
+      // 3. Store resume metadata
+      const sizeFormatted =
+        file.size > 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(file.size / 1024))} KB`
+      const extFormatted = file.name.split('.').pop()?.toUpperCase() || 'PDF'
+      const meta: ResumeMeta = {
+        fileName: file.name,
+        fileSize: sizeFormatted,
+        fileType: `${extFormatted} Document`,
+        uploadedAt: new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+      }
+      setResumeMeta(meta)
+      if (user?.id) {
+        try {
+          localStorage.setItem(`namma_resume_meta_${user.id}`, JSON.stringify(meta))
+        } catch {}
+      }
+
+      // 4. AI Resume Intelligence Extraction
+      const parsedData = await parseResumeWithAi(file, uploaded.url)
+      setUploadProgress(100)
+
+      // 5. User Review Flow (Requirement 17: User Review is Required before saving)
+      const extractedSkills = parseSkillsArray(parsedData.skills)
+      setReviewData({
+        fullName: parsedData.fullName || fullName,
+        headline: parsedData.headline || headline || `${extractedSkills.slice(0, 3).join(' / ')} Specialist`,
+        position: parsedData.position || position || parsedData.currentJobTitle || 'Specialist',
+        company: parsedData.company || company || '',
+        location: parsedData.location || location || 'Chennai, Tamil Nadu',
+        bio: parsedData.bio || bio || parsedData.professionalSummary || '',
+        phone: parsedData.phone || phone || '',
+        skills: extractedSkills,
+        languages: parsedData.languages || ['English', 'Tamil'],
+        resumeUrl: uploaded.url,
+        resumeMeta: meta,
+      })
+      setReviewModalOpen(true)
     } catch (err: any) {
       showToast(err.message || 'Failed to upload/analyze resume', 'error')
     } finally {
       setIsUploadingResume(false)
       setIsExtractingAi(false)
+      setTimeout(() => {
+        setUploadProgress(0)
+        setUploadFileName('')
+        setUploadStepText('')
+      }, 500)
+    }
+  }
+
+  // Confirm Reviewed Resume Information and Apply to Profile (Requirement 17)
+  const handleConfirmReview = async () => {
+    if (!reviewData) return
+    setIsSaving(true)
+    try {
+      setFullName(reviewData.fullName)
+      setHeadline(reviewData.headline)
+      setPosition(reviewData.position)
+      setCompany(reviewData.company)
+      setLocation(reviewData.location)
+      setBio(reviewData.bio)
+      if (reviewData.phone) setPhone(reviewData.phone)
+      setSkillsList(reviewData.skills)
+      setResumeUrl(reviewData.resumeUrl)
+      setResumeMeta(reviewData.resumeMeta)
+      setExtractedSkillsFeedback(reviewData.skills)
+
+      await updateUserProfile({
+        full_name: reviewData.fullName || undefined,
+        skills: reviewData.skills,
+        headline: reviewData.headline,
+        position: reviewData.position,
+        company: reviewData.company,
+        location: reviewData.location,
+        bio: reviewData.bio,
+        phone: reviewData.phone || undefined,
+        resume_url: reviewData.resumeUrl,
+      })
+
+      showToast(
+        language === 'ta'
+          ? 'தன்விவரக் குறிப்பு விவரங்கள் உறுதி செய்யப்பட்டு சேமிக்கப்பட்டன!'
+          : language === 'hi'
+          ? 'बायोडाटा विवरण की पुष्टि की गई और सहेजा गया!'
+          : 'Resume details reviewed and applied to your profile!',
+        'success'
+      )
+      setReviewModalOpen(false)
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update profile from resume', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleRemoveReviewSkill = (index: number) => {
+    if (!reviewData) return
+    setReviewData({
+      ...reviewData,
+      skills: reviewData.skills.filter((_, idx) => idx !== index),
+    })
+  }
+
+  const handleAddReviewSkill = () => {
+    if (!reviewData || !reviewSkillInput.trim()) return
+    const cleaned = cleanSkillString(reviewSkillInput.trim())
+    if (cleaned && !reviewData.skills.some((s) => s.toLowerCase() === cleaned.toLowerCase())) {
+      setReviewData({
+        ...reviewData,
+        skills: [...reviewData.skills, cleaned],
+      })
+    }
+    setReviewSkillInput('')
+  }
+
+  const handleRemoveResume = async () => {
+    const confirmMessage =
+      language === 'ta'
+        ? 'உங்கள் தன்விவரக் குறிப்பை அகற்ற விரும்புகிறீர்களா?'
+        : language === 'hi'
+        ? 'क्या आप अपना बायोडाटा हटाना चाहते हैं?'
+        : 'Are you sure you want to remove this resume from your profile?'
+    if (!window.confirm(confirmMessage)) return
+
+    const prevResume = resumeUrl
+    setResumeUrl('')
+    setExtractedSkillsFeedback([])
+    setResumeMeta(null)
+    if (user?.id) {
+      try {
+        localStorage.removeItem(`namma_resume_meta_${user.id}`)
+      } catch {}
+    }
+
+    try {
+      await updateUserProfile({ resume_url: '' })
+      showToast(
+        language === 'ta'
+          ? 'தன்விவரக் குறிப்பு அகற்றப்பட்டது'
+          : language === 'hi'
+          ? 'बायोडाटा हटा दिया गया'
+          : 'Resume removed successfully',
+        'info'
+      )
+    } catch (err: any) {
+      setResumeUrl(prevResume)
+      showToast(err.message || 'Failed to remove resume', 'error')
     }
   }
 
@@ -438,6 +609,217 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       setIsSaving(false)
     }
   }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // HR / Recruiter — read-only profile card with approval-gated edit workflow
+  // ─────────────────────────────────────────────────────────────────────────────
+  if (role === 'manager' && user) {
+    const isApproved = (user.status || '').toUpperCase() === 'ACTIVE'
+    const hasPending = !!user.pending_profile
+    let pendingData: any = null
+    try { if (hasPending && user.pending_profile) pendingData = JSON.parse(user.pending_profile) } catch {}
+
+    return (
+      <div className={`space-y-5 pb-12 ${className}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {showHeaderBack && onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center justify-center h-9 w-9 rounded-full bg-white border border-slate-200 text-slate-600 hover:text-[#0B2545] hover:border-slate-300 hover:bg-slate-50 transition shadow-2xs cursor-pointer"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">Recruiter Profile</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Your professional information visible to the platform</p>
+            </div>
+          </div>
+          {!hasPending && (
+            <button
+              type="button"
+              onClick={onRequestEdit}
+              className="flex items-center gap-1.5 rounded-xl bg-[#0B2545] px-4 py-2 text-xs font-bold text-white hover:bg-[#071A31] transition shadow-xs cursor-pointer"
+            >
+              <Edit className="h-3.5 w-3.5" />
+              <span>Edit Profile</span>
+            </button>
+          )}
+        </div>
+
+        {/* Pending Edit Notice */}
+        {hasPending && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 flex items-start gap-3">
+            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+              <Clock className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900">Profile update pending admin review</p>
+              <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                Your profile edit has been submitted and is awaiting admin approval. Your existing profile remains active until changes are approved.
+              </p>
+              {pendingData && (
+                <div className="mt-2 text-xs text-amber-800 space-y-0.5">
+                  {pendingData.company && <p><span className="font-medium">Company:</span> {pendingData.company}</p>}
+                  {pendingData.position && <p><span className="font-medium">Designation:</span> {pendingData.position}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Approval Status */}
+        {isApproved && !hasPending && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-3">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <p className="text-xs font-semibold text-emerald-800">Profile verified and approved by admin</p>
+          </div>
+        )}
+
+        {/* Cover Banner */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+          <div className="h-36 sm:h-44 bg-gradient-to-r from-[#0B2545] via-[#163866] to-[#0B2545] relative overflow-hidden">
+            {bannerUrl ? (
+              <img src={bannerUrl} alt="Cover" className="w-full h-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#F97316_1px,transparent_1px)] [background-size:12px_12px]" />
+            )}
+            {/* cover edit button */}
+            <div className="absolute top-3 right-3">
+              <label className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 hover:bg-black/50 backdrop-blur-sm border border-white/20 text-white text-xs font-medium cursor-pointer transition">
+                {isUploadingBanner ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                <span>{isUploadingBanner ? 'Uploading...' : 'Edit'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={handleCoverFileSelect} disabled={isUploadingBanner} />
+              </label>
+            </div>
+          </div>
+
+          <div className="px-5 pb-5">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-10 sm:-mt-12">
+              {/* Avatar */}
+              <div className="relative shrink-0">
+                <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 border-white bg-slate-100 overflow-hidden shadow-sm">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={user.full_name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center bg-[#0B2545] text-white text-2xl font-bold uppercase">
+                      {user.full_name?.charAt(0) || 'H'}
+                    </div>
+                  )}
+                </div>
+                <label className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#0B2545] border-2 border-white cursor-pointer shadow-sm">
+                  {isUploadingAvatar ? <Loader2 className="h-3 w-3 text-white animate-spin" /> : <Camera className="h-3 w-3 text-white" />}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAvatarFileSelect} disabled={isUploadingAvatar} />
+                </label>
+              </div>
+
+              <div className="pb-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">{user.full_name}</h2>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase tracking-wide">HR Recruiter</span>
+                </div>
+                <p className="text-xs text-slate-600 font-medium mt-0.5">{user.headline || (user.position ? `${user.position}${user.company ? ` at ${user.company}` : ''}` : 'HR Recruiter')}</p>
+                <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-500">
+                  {user.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3 text-slate-400" />{user.email}</span>}
+                  {user.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3 text-slate-400" />{user.phone}</span>}
+                  {user.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3 text-[#F97316]" />{user.location}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Company & Role Card */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <div className="h-7 w-7 rounded-lg bg-blue-50 flex items-center justify-center text-[#0B2545]">
+              <Building2 className="h-4 w-4" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Company & Role</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Company / Organisation</p>
+              <p className="text-sm font-semibold text-slate-900">{user.company || <span className="text-slate-400 font-normal italic">Not provided</span>}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Designation</p>
+              <p className="text-sm font-semibold text-slate-900">{user.position || <span className="text-slate-400 font-normal italic">Not provided</span>}</p>
+            </div>
+            {user.location && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Location</p>
+                <p className="text-sm font-semibold text-slate-900">{user.location}</p>
+              </div>
+            )}
+            {user.phone && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Contact</p>
+                <p className="text-sm font-semibold text-slate-900">{user.phone}</p>
+              </div>
+            )}
+          </div>
+          {user.bio && (
+            <div className="pt-2 border-t border-slate-100">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">About</p>
+              <p className="text-xs text-slate-700 leading-relaxed">{user.bio}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Language Preference */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-xl bg-orange-50 border border-orange-200/60 flex items-center justify-center text-[#F97316] shrink-0">
+                <Languages className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-slate-900">{t('profile_language_pref')}</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">{t('profile_language_desc')}</p>
+              </div>
+            </div>
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/90 border border-slate-200/70 shrink-0 self-start sm:self-auto w-full sm:w-auto">
+              {languages.map((item) => {
+                const isActive = selectedLang === item.code
+                return (
+                  <button
+                    key={item.code}
+                    type="button"
+                    onClick={() => handleLanguageSelect(item.code)}
+                    className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150 cursor-pointer text-center ${
+                      isActive
+                        ? 'bg-white text-[#0B2545] shadow-xs border border-black/5 font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/40'
+                    }`}
+                  >
+                    <span>{item.nativeName}</span>
+                    <span className="text-[10px] opacity-70 ml-1 font-normal">({item.label})</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Edit CTA bottom */}
+        {!hasPending && (
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              onClick={onRequestEdit}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition shadow-xs cursor-pointer"
+            >
+              <Edit className="h-4 w-4 text-slate-500" />
+              Request Profile Edit
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className={`space-y-6 pb-12 ${className}`}>
@@ -586,12 +968,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900">
                     {fullName || user?.full_name}
                   </h2>
-                  <Badge variant="role" role={role} />
-                  {resumeUrl && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
-                      <Check className="h-3 w-3" /> CV Attached
-                    </span>
-                  )}
+                  {role && role !== 'employee' && <Badge variant="role" role={role} />}
                 </div>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium mt-0.5">
                   {headline || 'Professional Job Seeker'}
@@ -710,8 +1087,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Kavin Selvam"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
 
@@ -722,10 +1098,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               </label>
               <input
                 type="text"
-                placeholder={t('profile_headline_placeholder')}
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
 
@@ -753,10 +1128,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 type="number"
                 min="16"
                 max="100"
-                placeholder={t('profile_age_placeholder')}
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
 
@@ -769,10 +1143,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="tel"
-                  placeholder={t('profile_phone_placeholder')}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                  className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
                 />
               </div>
             </div>
@@ -781,7 +1154,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             <div>
               <GoogleLocationSearchInput
                 label={t('profile_location')}
-                placeholder={t('profile_location_placeholder')}
                 value={location}
                 onChange={setLocation}
                 inputClassName="rounded-xl border-slate-200 py-2.5 text-xs shadow-2xs"
@@ -797,10 +1169,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 <Building2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={t('profile_company_placeholder')}
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                  className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
                 />
               </div>
             </div>
@@ -812,10 +1183,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               </label>
               <input
                 type="text"
-                placeholder={t('profile_position_placeholder')}
                 value={position}
                 onChange={(e) => setPosition(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
           </div>
@@ -863,7 +1233,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    placeholder="Type a skill and press Enter (e.g. React, UI/UX)..."
                     value={skillInput}
                     onChange={(e) => setSkillInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -872,7 +1241,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                         handleAddSkill(skillInput)
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
                   />
                 </div>
                 <button
@@ -921,10 +1290,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             </label>
             <textarea
               rows={3}
-              placeholder={t('profile_bio_placeholder')}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs leading-relaxed"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs leading-relaxed"
             />
           </div>
         </div>
@@ -933,69 +1301,160 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-xl bg-slate-100 text-[#0B2545] flex items-center justify-center">
-                <FileText className="h-4 w-4" />
+              <div className="h-9 w-9 rounded-xl bg-[#0B2545]/10 text-[#0B2545] flex items-center justify-center">
+                <FileText className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-xs font-bold text-slate-900 tracking-tight">
+                <h3 className="text-sm font-bold text-slate-900 tracking-tight">
                   {t('profile_resume_heading')}
                 </h3>
                 <p className="text-[11px] text-slate-500">{t('profile_resume_desc')}</p>
               </div>
             </div>
-            {resumeUrl && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/80">
-                <Check className="h-3 w-3" /> Ready
-              </span>
-            )}
           </div>
 
-          {/* Active Attached Resume Card (iOS Files Style) */}
-          {resumeUrl ? (
-            <div className="rounded-2xl border border-slate-200/90 bg-slate-50/50 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 text-[#0B2545] flex items-center justify-center shrink-0 shadow-2xs">
-                  <FileText className="h-5 w-5 text-red-500" />
+          {/* Active Uploading / Analyzing Progress Card */}
+          {(isUploadingResume || isExtractingAi) && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Loader2 className="h-4 w-4 animate-spin text-[#0B2545] shrink-0" />
+                  <span className="font-semibold text-slate-800 truncate">
+                    {uploadFileName || 'Processing document...'}
+                  </span>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate">
-                    {cleanResumeFileName(resumeUrl)}
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Attached to your application profile
-                  </p>
-                </div>
+                <span className="font-semibold text-slate-600">{uploadProgress}%</span>
               </div>
+              {/* Progress Bar */}
+              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-[#0B2545] h-1.5 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {uploadStepText || 'Processing resume document...'}
+              </p>
+            </div>
+          )}
 
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={resumeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-2xs transition cursor-pointer"
+          {/* Post-Upload Extraction Reaction Feedback */}
+          {extractedSkillsFeedback.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 space-y-2 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+                    <Check className="h-3.5 w-3.5 text-slate-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Resume Analyzed & Verified
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {extractedSkillsFeedback.length} skills identified and linked to your candidate profile
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExtractedSkillsFeedback([])}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition"
+                  title="Dismiss"
                 >
-                  <span>{t('profile_view_resume')}</span>
-                  <ExternalLink className="h-3 w-3 text-slate-400" />
-                </a>
-
-                <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0B2545] hover:bg-[#133966] text-xs font-semibold text-white shadow-2xs transition cursor-pointer">
-                  {isUploadingResume ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <UploadCloud className="h-3.5 w-3.5" />
-                  )}
-                  <span>{isUploadingResume ? 'Updating...' : 'Replace'}</span>
-                  <input
-                    type="file"
-                    accept="application/pdf,.pdf,.docx,.doc,.txt,text/plain"
-                    disabled={isUploadingResume}
-                    onChange={handleResumeFileSelect}
-                    className="hidden"
-                  />
-                </label>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {extractedSkillsFeedback.map((skill) => (
+                  <span
+                    key={skill}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200 text-[11px] font-medium"
+                  >
+                    <Check className="h-3 w-3 text-slate-400" />
+                    {skill}
+                  </span>
+                ))}
               </div>
             </div>
-          ) : (
+          )}
+
+          {/* Active Attached Resume Card */}
+          {resumeUrl ? (() => {
+            const displayFileName = resumeMeta?.fileName || cleanResumeFileName(resumeUrl)
+            const displayExt = displayFileName.split('.').pop()?.toUpperCase() || 'PDF'
+            const displaySize = resumeMeta?.fileSize || 'Document'
+            const displayDate = resumeMeta?.uploadedAt
+              ? `Uploaded ${resumeMeta.uploadedAt}`
+              : 'Active on your profile'
+
+            return (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition duration-200">
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Document Format Icon */}
+                  <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 text-slate-600 flex flex-col items-center justify-center shrink-0 shadow-2xs">
+                    <FileText className="h-4 w-4 text-slate-600" />
+                    <span className="text-[8px] font-bold uppercase text-slate-500">
+                      {displayExt}
+                    </span>
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {displayFileName}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[11px] text-slate-500">
+                      <span>{displaySize}</span>
+                      <span className="text-slate-300">•</span>
+                      <span>{displayDate}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-slate-600 font-medium">Attached to profile</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions: View, Replace, Remove */}
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <a
+                    href={resumeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition cursor-pointer"
+                    title="View resume document in new tab"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+                    <span>{t('profile_view_resume')}</span>
+                  </a>
+
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B2545] hover:bg-[#133966] text-xs font-medium text-white transition cursor-pointer">
+                    {isUploadingResume ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <UploadCloud className="h-3.5 w-3.5" />
+                    )}
+                    <span>{isUploadingResume ? 'Updating...' : 'Replace'}</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      disabled={isUploadingResume}
+                      onChange={handleResumeFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleRemoveResume}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:border-slate-300 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                    title="Remove resume from profile"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )
+          })() : (
             /* Upload Dropzone when no resume attached */
             <div>
               <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 p-6 hover:border-[#0B2545] hover:bg-slate-50/50 transition cursor-pointer group">
@@ -1010,7 +1469,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 </span>
                 <input
                   type="file"
-                  accept="application/pdf,.pdf,.docx,.doc,.txt,text/plain"
+                  accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   disabled={isUploadingResume}
                   onChange={handleResumeFileSelect}
                   className="hidden"
@@ -1018,23 +1477,181 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               </label>
             </div>
           )}
-
-          {/* Loading state while uploading / parsing */}
-          {isExtractingAi && (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600">
-              <Loader2 className="h-4 w-4 animate-spin text-[#0B2545] shrink-0" />
-              <span>
-                {language === 'ta'
-                  ? 'தன்விவரக் குறிப்பு பகுப்பாய்வு செய்யப்படுகிறது...'
-                  : language === 'hi'
-                  ? 'बायोडाटा का विश्लेषण किया जा रहा है...'
-                  : 'Analyzing resume and updating profile details...'}
-              </span>
-            </div>
-          )}
         </div>
 
       </form>
+
+      {/* Requirement 17: Interactive User Review Modal for Detected Resume Information */}
+      {reviewModalOpen && reviewData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-left my-8 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-[#0B2545]/10 text-[#0B2545] flex items-center justify-center">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                    Review Extracted Profile Information
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Review and adjust detected details before applying to your profile
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Fields to Review & Edit */}
+            <div className="space-y-3 text-xs max-h-[60vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={reviewData.fullName}
+                  onChange={(e) => setReviewData({ ...reviewData, fullName: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Current Job Title / Role
+                </label>
+                <input
+                  type="text"
+                  value={reviewData.position}
+                  onChange={(e) => setReviewData({ ...reviewData, position: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Professional Headline
+                </label>
+                <input
+                  type="text"
+                  value={reviewData.headline}
+                  onChange={(e) => setReviewData({ ...reviewData, headline: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Company / Employer
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewData.company}
+                    onChange={(e) => setReviewData({ ...reviewData, company: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewData.location}
+                    onChange={(e) => setReviewData({ ...reviewData, location: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Skills Review */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Detected Skills ({reviewData.skills.length})
+                </label>
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-slate-50 border border-slate-200 min-h-[44px]">
+                  {reviewData.skills.map((skill, idx) => (
+                    <span
+                      key={skill}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-slate-800 border border-slate-200 text-[11px] font-medium shadow-2xs"
+                    >
+                      <span>{skill}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReviewSkill(idx)}
+                        className="text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                        title="Remove skill"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={reviewSkillInput}
+                    onChange={(e) => setReviewSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleAddReviewSkill()
+                      }
+                    }}
+                    className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddReviewSkill}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Professional Summary
+                </label>
+                <textarea
+                  rows={3}
+                  value={reviewData.bio}
+                  onChange={(e) => setReviewData({ ...reviewData, bio: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            {/* Actions: Cancel vs Confirm & Apply */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReview}
+                className="px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-[#133966] text-xs font-semibold text-white transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>Confirm & Apply to Profile</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

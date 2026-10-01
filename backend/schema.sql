@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT CHECK(role IN ('admin', 'manager', 'employee')) DEFAULT 'employee' NOT NULL,
   assigned_by TEXT, -- Admin ID who assigned the manager role
   status TEXT DEFAULT 'active',
+  rejection_reason TEXT DEFAULT '',
+  verification_notes TEXT DEFAULT '',
+  verified_at DATETIME DEFAULT NULL,
+  verified_by TEXT DEFAULT NULL,
   headline TEXT DEFAULT '',
   avatar_url TEXT DEFAULT '',
   banner_url TEXT DEFAULT '',
@@ -26,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   connections_count INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  pending_profile TEXT DEFAULT NULL, -- JSON: HR profile edit pending admin approval
   FOREIGN KEY (assigned_by) REFERENCES users(id)
 );
 
@@ -221,3 +226,14 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_verifications(expires_at);
+
+-- 16. Employee Semantic Search Index Table
+CREATE TABLE IF NOT EXISTS employee_search_index (
+  employee_id TEXT PRIMARY KEY,
+  search_text TEXT NOT NULL,
+  embedding TEXT NOT NULL, -- JSON array of floats representing normalized vector
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_search_updated ON employee_search_index(updated_at DESC);

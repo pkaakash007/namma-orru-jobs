@@ -5,7 +5,7 @@ import { ShieldCheck, Briefcase, UserCheck } from 'lucide-react'
 
 export interface BadgeProps {
   children?: React.ReactNode
-  variant?: 'role' | 'neutral' | 'success' | 'warning'
+  variant?: 'role' | 'neutral' | 'success' | 'warning' | 'danger' | 'info'
   role?: UserRole
   className?: string
 }
@@ -33,13 +33,15 @@ export const Badge: React.FC<BadgeProps> = ({
   const variantMap = {
     neutral: 'bg-[#EDF3F8] text-[#0B2545] border border-[#D0E2EC]',
     success: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-    warning: 'bg-orange-50 text-orange-800 border border-orange-200',
+    warning: 'bg-amber-50 text-amber-800 border border-amber-200',
+    danger: 'bg-rose-50 text-rose-800 border border-rose-200',
+    info: 'bg-blue-50 text-blue-800 border border-blue-200',
   }
 
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        variantMap[variant as 'neutral' | 'success' | 'warning']
+        variantMap[(variant as keyof typeof variantMap) || 'neutral'] || variantMap.neutral
       } ${className}`}
     >
       {children}

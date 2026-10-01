@@ -25,6 +25,10 @@ export interface User {
   resume_url?: string
   language?: Language
   status?: string
+  rejection_reason?: string
+  verification_notes?: string
+  verified_at?: string
+  verified_by?: string
   username?: string
   is_active?: number | boolean
   deactivated_until?: string | null
@@ -35,8 +39,10 @@ export interface User {
   match_score?: number
   matched_skills?: string[]
   missing_skills?: string[]
+  match_highlights?: string[]
   created_at?: string
   updated_at?: string
+  pending_profile?: string | null
 }
 
 export interface Job {
@@ -78,6 +84,41 @@ export interface AdminStats {
   managers_hr: number
   employees: number
   total_jobs: number
+  pending_hr_verifications?: number
+}
+
+export interface HrVerificationAccount {
+  id: string
+  email: string
+  full_name: string
+  role: 'manager'
+  status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'REJECTED' | 'active' | string
+  rejection_reason?: string
+  verification_notes?: string
+  verified_at?: string
+  verified_by?: string
+  company?: string
+  position?: string
+  phone?: string
+  location?: string
+  headline?: string
+  bio?: string
+  avatar_url?: string
+  created_at: string
+  updated_at?: string
+  assigned_by_name?: string
+  pending_profile?: string | null
+}
+
+export interface HrVerificationsResponse {
+  success: boolean
+  verifications: HrVerificationAccount[]
+  counts: {
+    pending: number
+    active: number
+    rejected: number
+    total: number
+  }
 }
 
 export interface ApiResponse<T> {

@@ -20,6 +20,7 @@ import { useLanguage } from '../../context/LanguageContext'
 import { Badge } from '../ui/Badge'
 import { Avatar } from '../ui/Avatar'
 import { NotificationDropdown } from '../features/notifications/NotificationDropdown'
+import { savedJobService } from '../../services/api'
 import type { SupportedLanguage } from '../../utils/i18n'
 
 export type TabType =
@@ -44,6 +45,9 @@ interface NavbarProps {
   onSearchChange: (q: string) => void
   onOpenProfileEdit: () => void
   onSelectNotificationJob?: (jobId: string, jobTitle?: string) => void
+  onSelectNotificationUser?: (userId: string) => void
+  onSelectNotificationConversation?: (recipientId?: string) => void
+  onSelectNotificationFeed?: () => void
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -55,30 +59,44 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSearchChange,
   onOpenProfileEdit,
   onSelectNotificationJob,
+  onSelectNotificationUser,
+  onSelectNotificationConversation,
+  onSelectNotificationFeed,
 }) => {
   const { user, role, hasRole, logout } = useAuth()
   const { language, setLanguage, t, languages } = useLanguage()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
-  const [savedCount, setSavedCount] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('namma_saved_job_ids')
-      return raw ? JSON.parse(raw).length : 0
-    } catch {
-      return 0
-    }
-  })
+  const [savedCount, setSavedCount] = useState<number>(0)
 
   React.useEffect(() => {
+    if (user?.id) {
+      savedJobService.getSavedJobIds().then((ids) => {
+        setSavedCount(ids.length)
+      }).catch(() => {
+        setSavedCount(0)
+      })
+    } else {
+      setSavedCount(0)
+    }
+
     const updateCount = () => {
-      try {
-        const raw = localStorage.getItem('namma_saved_job_ids')
-        setSavedCount(raw ? JSON.parse(raw).length : 0)
-      } catch {}
+      if (user?.id) {
+        savedJobService.getSavedJobIds().then((ids) => {
+          setSavedCount(ids.length)
+        }).catch(() => {
+          try {
+            const raw = localStorage.getItem('namma_saved_job_ids')
+            setSavedCount(raw ? JSON.parse(raw).length : 0)
+          } catch {}
+        })
+      } else {
+        setSavedCount(0)
+      }
     }
     window.addEventListener('saved_jobs_updated', updateCount)
     return () => window.removeEventListener('saved_jobs_updated', updateCount)
-  }, [])
+  }, [user?.id])
 
   const navigateToLogin = () => {
     window.history.pushState({}, '', '/login')
@@ -250,7 +268,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Notifications Dropdown (Desktop/tablet only; on mobile, notifications is a dedicated bottom tab) */}
             {user && (
               <div className="hidden md:block">
-                <NotificationDropdown onSelectJob={onSelectNotificationJob} />
+              <NotificationDropdown
+                onSelectJob={onSelectNotificationJob}
+                onSelectUser={onSelectNotificationUser}
+                onSelectConversation={onSelectNotificationConversation}
+                onSelectFeed={onSelectNotificationFeed}
+              />
               </div>
             )}
 
@@ -338,6 +361,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <div className="mt-1 flex items-center justify-between">
                             <span className="text-[10px] text-slate-400">{t('profile_badge_role')}:</span>
                             <Badge variant="role" role={role} />
+                          </div>
+                        )}
+                        {role === 'manager' && (
+                          <div className="mt-1.5 flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">Status:</span>
+                            {(user?.status || '').toUpperCase() === 'ACTIVE' ? (
+                              <Badge variant="success">Verified HR</Badge>
+                            ) : (user?.status || '').toUpperCase() === 'REJECTED' ? (
+                              <Badge variant="danger">Rejected</Badge>
+                            ) : (
+                              <Badge variant="warning">Pending Verification</Badge>
+                            )}
                           </div>
                         )}
                       </div>

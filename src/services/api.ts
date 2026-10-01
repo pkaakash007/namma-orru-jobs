@@ -11,6 +11,7 @@ import type {
   ChatMessage,
   UserViolation,
   ModerationResult,
+  HrVerificationsResponse,
 } from '../types'
 
 // Immediate sanitization of legacy static/mock local storage keys
@@ -104,11 +105,54 @@ class ApiClient {
 export const apiClient = new ApiClient()
 
 export const authService = {
-  async devLogin(email: string, role: UserRole, full_name: string) {
+  async devLogin(
+    email: string,
+    role: UserRole,
+    full_name: string,
+    details?: { company?: string; position?: string; phone?: string }
+  ) {
     return apiClient.request<{ token: string; user: User }>('/api/auth/dev-login', {
       method: 'POST',
-      body: JSON.stringify({ email, role, full_name }),
+      body: JSON.stringify({
+        email,
+        role,
+        full_name,
+        company: details?.company,
+        position: details?.position,
+        phone: details?.phone,
+      }),
     })
+  },
+
+  async register(
+    email: string,
+    role: UserRole,
+    full_name: string,
+    details?: { company?: string; position?: string; phone?: string }
+  ) {
+    try {
+      return await apiClient.request<{ token: string; user: User; message: string }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          email,
+          role,
+          full_name,
+          company: details?.company,
+          position: details?.position,
+          phone: details?.phone,
+        }),
+      })
+    } catch (err: any) {
+      if (err.message?.includes('404')) {
+        const res = await this.devLogin(email, role, full_name, details)
+        return {
+          token: res.token,
+          user: res.user,
+          message: 'Account created successfully',
+        }
+      }
+      throw err
+    }
   },
 
   async googleAuth(id_token: string, picture?: string, selected_role?: 'employee' | 'manager') {
@@ -298,6 +342,30 @@ export const adminService = {
   async getStats() {
     return apiClient.request<{ stats: AdminStats }>('/api/admin/stats')
   },
+
+  async getHrVerifications(status: 'pending' | 'active' | 'rejected' | 'all' = 'all') {
+    return apiClient.request<HrVerificationsResponse>(`/api/admin/hr-verifications?status=${status}`)
+  },
+
+  async approveHrVerification(userId: string, notes?: string) {
+    return apiClient.request<{ success: boolean; message: string; user: any }>(
+      `/api/admin/hr-verifications/${userId}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ notes: notes || '' }),
+      }
+    )
+  },
+
+  async rejectHrVerification(userId: string, reason: string) {
+    return apiClient.request<{ success: boolean; message: string; user: any }>(
+      `/api/admin/hr-verifications/${userId}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || 'Verification requirements not met' }),
+      }
+    )
+  },
 }
 
 export const feedService = {
@@ -359,9 +427,9 @@ export const uploadService = {
     const ext = lastDot !== -1 ? cleanFileName.slice(lastDot) : ''
 
     if (folder === 'resumes') {
-      const validDocExts = ['.pdf', '.doc', '.docx', '.txt', '.rtf']
+      const validDocExts = ['.pdf', '.doc', '.docx']
       if (!validDocExts.includes(ext) && file.type !== 'application/pdf') {
-        throw new Error('Invalid resume format. Only PDF, DOC, DOCX, TXT, or RTF documents under 10MB are allowed.')
+        throw new Error('Invalid resume format. Allowed formats: PDF, DOC, DOCX')
       }
     } else if (['avatars', 'jobs', 'posts'].includes(folder)) {
       const validImgExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg']
@@ -402,6 +470,39 @@ export const userService = {
         method: 'PATCH',
         body: JSON.stringify(profileData),
       }
+    )
+  },
+}
+
+export const hrService = {
+  async submitProfile(profileData: {
+    full_name: string
+    company: string
+    position: string
+    phone?: string
+    location?: string
+    bio?: string
+    headline?: string
+    avatar_url?: string
+  }) {
+    return apiClient.request<{ success: boolean; message: string; is_edit: boolean }>(
+      '/api/hr/profile/submit',
+      {
+        method: 'POST',
+        body: JSON.stringify(profileData),
+      }
+    )
+  },
+  async approveProfileRequest(userId: string) {
+    return apiClient.request<{ success: boolean; message: string }>(
+      `/api/admin/hr-profile-requests/${userId}/approve`,
+      { method: 'POST' }
+    )
+  },
+  async rejectProfileRequest(userId: string, reason: string) {
+    return apiClient.request<{ success: boolean; message: string }>(
+      `/api/admin/hr-profile-requests/${userId}/reject`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
     )
   },
 }
@@ -511,6 +612,16 @@ export const candidateService = {
         jd_extracted_skills: [],
       }
     }
+  },
+
+  async expressInterest(candidateId: string, message?: string): Promise<{ success: boolean; message: string }> {
+    return await apiClient.request<{ success: boolean; message: string }>(
+      `/api/candidates/${candidateId}/interest`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }
+    )
   },
 }
 

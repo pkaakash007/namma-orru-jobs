@@ -12,7 +12,18 @@ interface AuthContextType {
   setSelectedRole: (r: SelectableRole) => void
   isLoading: boolean
   hasRole: (allowed: UserRole[]) => boolean
-  loginWithEmail: (email: string, fullName?: string, roleOverride?: SelectableRole) => Promise<User>
+  loginWithEmail: (
+    email: string,
+    fullName?: string,
+    roleOverride?: SelectableRole,
+    details?: { company?: string; position?: string; phone?: string }
+  ) => Promise<User>
+  registerWithEmail: (
+    email: string,
+    fullName: string,
+    roleOverride?: SelectableRole,
+    details?: { company?: string; position?: string; phone?: string }
+  ) => Promise<User>
   loginWithGoogle: (idToken: string, picture?: string, roleOverride?: SelectableRole) => Promise<User>
   sendWhatsAppOtp: (
     phone: string,
@@ -58,14 +69,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   )
 
   const loginWithEmail = useCallback(
-    async (email: string, fullName?: string, roleOverride?: SelectableRole) => {
+    async (
+      email: string,
+      fullName?: string,
+      roleOverride?: SelectableRole,
+      details?: { company?: string; position?: string; phone?: string }
+    ) => {
       setIsLoading(true)
       const roleToUse = roleOverride || selectedRole
       try {
         const data = await authService.devLogin(
           email.trim(),
           roleToUse,
-          fullName || email.split('@')[0]
+          fullName || email.split('@')[0],
+          details
         )
         apiClient.setToken(data.token)
         setToken(data.token)
@@ -75,7 +92,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('namma_token', data.token)
         } catch {}
         syncDeviceTokenWithUser(data.user.id, data.token)
-        showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
+        
+        if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
+          showToast(`Welcome, ${data.user.full_name}! Your HR account is pending administrator verification.`, 'info')
+        } else {
+          showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
+        }
 
         // Ensure user is redirected from login page to home
         if (typeof window !== 'undefined') {
@@ -87,6 +109,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return data.user
       } catch (err: any) {
         showToast(err.message || 'Login failed', 'error')
+        throw err
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [selectedRole, showToast]
+  )
+
+  const registerWithEmail = useCallback(
+    async (
+      email: string,
+      fullName: string,
+      roleOverride?: SelectableRole,
+      details?: { company?: string; position?: string; phone?: string }
+    ) => {
+      setIsLoading(true)
+      const roleToUse = roleOverride || selectedRole
+      try {
+        const data = await authService.register(
+          email.trim(),
+          roleToUse,
+          fullName.trim(),
+          details
+        )
+        apiClient.setToken(data.token)
+        setToken(data.token)
+        setUser(data.user)
+        try {
+          localStorage.setItem('namma_user', JSON.stringify(data.user))
+          localStorage.setItem('namma_token', data.token)
+        } catch {}
+        syncDeviceTokenWithUser(data.user.id, data.token)
+
+        if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
+          showToast(`Welcome, ${data.user.full_name}! Your HR account is pending administrator verification.`, 'info')
+        } else {
+          showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
+        }
+
+        if (typeof window !== 'undefined') {
+          try {
+            window.history.pushState({}, '', '/')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          } catch {}
+        }
+        return data.user
+      } catch (err: any) {
+        showToast(err.message || 'Registration failed', 'error')
         throw err
       } finally {
         setIsLoading(false)
@@ -287,6 +357,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         hasRole,
         loginWithEmail,
+        registerWithEmail,
         loginWithGoogle,
         sendWhatsAppOtp,
         verifyWhatsAppOtp,
