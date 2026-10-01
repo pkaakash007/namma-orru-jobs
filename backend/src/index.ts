@@ -239,7 +239,7 @@ app.use('*', async (c, next) => {
   // Define route-specific rate limits (requests per 60-second window)
   const isAuthRoute = path.startsWith('/api/auth/')
   const isWriteRoute = c.req.method === 'POST' || c.req.method === 'DELETE' || c.req.method === 'PATCH'
-  const maxAllowed = isAuthRoute ? 25 : isWriteRoute ? 60 : 180
+  const maxAllowed = isAuthRoute ? 5 : isWriteRoute ? 30 : 120
 
   if (record.count > maxAllowed) {
     record.blockedUntil = now + 60000 // 60 seconds cooling block
