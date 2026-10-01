@@ -10,6 +10,7 @@ import { Bookmark, Search, ArrowLeft, Briefcase } from 'lucide-react'
 interface SavedJobsViewProps {
   onApply: (job: Job) => void
   onMatchCandidates?: (job: Job) => void
+  onViewApplications?: (job: Job) => void
   onBack?: () => void
   onBrowseJobs?: () => void
 }
@@ -17,6 +18,7 @@ interface SavedJobsViewProps {
 export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
   onApply,
   onMatchCandidates,
+  onViewApplications,
   onBack,
   onBrowseJobs,
 }) => {
@@ -168,6 +170,7 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
               job={job}
               onApply={onApply}
               onMatchCandidates={onMatchCandidates}
+              onViewApplications={onViewApplications}
             />
           ))}
         </div>

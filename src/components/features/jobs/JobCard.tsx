@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { Job } from '../../../types'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Building2, MapPin, Clock, Bookmark, Users, Languages, CheckCircle2 } from 'lucide-react'
+import { Building2, MapPin, Clock, Bookmark, Users, Languages, CheckCircle2, FileText } from 'lucide-react'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
@@ -23,12 +23,14 @@ interface JobCardProps {
   job: Job
   onApply: (job: Job) => void
   onMatchCandidates?: (job: Job) => void
+  onViewApplications?: (job: Job) => void
 }
 
 export const JobCard: React.FC<JobCardProps> = ({
   job,
   onApply,
   onMatchCandidates,
+  onViewApplications,
 }) => {
   const { t, language } = useLanguage()
   const { user, hasRole } = useAuth()
@@ -327,17 +329,39 @@ export const JobCard: React.FC<JobCardProps> = ({
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-end border-t border-gray-100 pt-3">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 pt-3">
         {isHR ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onMatchCandidates?.(job)}
-            className="rounded-full shadow-none font-bold cursor-pointer border-[#0B2545] text-[#0B2545] hover:bg-slate-50 flex items-center gap-1.5"
-          >
-            <Users className="h-3.5 w-3.5 text-[#F97316]" />
-            <span>{t('cs_find_candidates')}</span>
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onViewApplications?.(job)}
+              className={`rounded-full shadow-none font-bold cursor-pointer flex items-center gap-1.5 transition ${
+                job.applicants_count > 0
+                  ? 'border-[#F97316] text-[#F97316] bg-orange-50/80 hover:bg-orange-100'
+                  : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5 text-[#F97316]" />
+              <span>
+                {language === 'ta'
+                  ? `விண்ணப்பங்கள் (${job.applicants_count || 0})`
+                  : language === 'hi'
+                  ? `आवेदन (${job.applicants_count || 0})`
+                  : `Applications (${job.applicants_count || 0})`}
+              </span>
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onMatchCandidates?.(job)}
+              className="rounded-full shadow-none font-bold cursor-pointer border-[#0B2545] text-[#0B2545] hover:bg-slate-50 flex items-center gap-1.5"
+            >
+              <Users className="h-3.5 w-3.5 text-[#F97316]" />
+              <span>{t('cs_find_candidates')}</span>
+            </Button>
+          </>
         ) : isApplied ? (
             <button
               disabled

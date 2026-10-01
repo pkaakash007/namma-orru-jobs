@@ -7,6 +7,7 @@ import { JobCard } from './components/features/jobs/JobCard'
 import { TrendingJobRow } from './components/features/jobs/TrendingJobRow'
 import { JobSearchFilters } from './components/features/jobs/JobSearchFilters'
 import { JobApplyModal } from './components/features/jobs/JobApplyModal'
+import { JobApplicationsModal } from './components/features/jobs/JobApplicationsModal'
 import { GuestJobsLanding } from './components/features/jobs/GuestJobsLanding'
 import { PostJobForm } from './components/features/hr/PostJobForm'
 import { HrVerificationPendingView } from './components/features/hr/HrVerificationPendingView'
@@ -208,6 +209,7 @@ function MainContent() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedType, setSelectedType] = useState('All')
   const [applyingJob, setApplyingJob] = useState<Job | null>(null)
+  const [viewingApplicationsJob, setViewingApplicationsJob] = useState<Job | null>(null)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('')
   const [candidateSearchJd, setCandidateSearchJd] = useState('')
@@ -842,6 +844,7 @@ function MainContent() {
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
             <SavedJobsView
               onApply={(job: Job) => setApplyingJob(job)}
+              onViewApplications={(job: Job) => setViewingApplicationsJob(job)}
               onMatchCandidates={(job: Job) => {
                 setCandidateSearchQuery(job.title)
                 setCandidateSearchJd(`${job.title}\n${job.description}`)
@@ -1294,6 +1297,7 @@ function MainContent() {
                             key={job.id}
                             job={job}
                             onApply={(j) => setApplyingJob(j)}
+                            onViewApplications={(j) => setViewingApplicationsJob(j)}
                             onMatchCandidates={(j) => {
                               setCandidateSearchQuery(j.title)
                               setCandidateSearchJd(`${j.title}\n${j.description}`)
@@ -1313,6 +1317,18 @@ function MainContent() {
                         onSuccess={() => {
                           setApplyingJob(null)
                           loadJobs()
+                        }}
+                      />
+                    )}
+
+                    {/* Recruiter View Applications Modal */}
+                    {viewingApplicationsJob && (
+                      <JobApplicationsModal
+                        job={viewingApplicationsJob}
+                        onClose={() => setViewingApplicationsJob(null)}
+                        onMessageCandidate={(targetUserId) => {
+                          setChatRecipientId(targetUserId)
+                          setActiveTab('messages')
                         }}
                       />
                     )}
