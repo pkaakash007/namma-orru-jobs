@@ -521,12 +521,35 @@ function MainContent() {
       if (user.role === 'admin') {
         loadAdminData(true)
       }
+      // Pre-load applied job IDs into sessionStorage so JobCards show Applied state immediately
+      if (user.role === 'employee') {
+        const token = localStorage.getItem('namma_token')
+        if (token) {
+          fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://namma-ooru-jobs-api.apkavin483.workers.dev'}/api/employee/my-applications`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((r) => r.json())
+            .then((data: any) => {
+              if (data?.applications) {
+                const ids = (data.applications as { job_id: string }[]).map((a) => a.job_id)
+                sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+                // Notify all mounted JobCards to re-check
+                ids.forEach((jobId) => {
+                  window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId } }))
+                })
+              }
+            })
+            .catch(() => {})
+        }
+      }
     } else {
       // When unauthenticated, ensure protected tabs safely fall back to home landing page
       if (activeTab === 'admin-panel' || activeTab === 'notifications' || activeTab === 'profile' || activeTab === 'messages' || activeTab === 'connections') {
         setActiveTab('home')
         setIsLoginRoute(false)
       }
+      // Clear applied cache on logout
+      sessionStorage.removeItem('applied_job_ids')
     }
   }, [user?.id, user?.role, loadJobs, loadPosts, loadAdminData, activeTab])
 

@@ -197,6 +197,16 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
       })
       showToast(`Application successfully sent to ${job.company_name}!`, 'success')
       dispatch(jobApplied(job.id))
+
+      // Cache applied job ID in sessionStorage + broadcast to all JobCard instances
+      try {
+        const cached = sessionStorage.getItem('applied_job_ids')
+        const ids: string[] = cached ? JSON.parse(cached) : []
+        if (!ids.includes(job.id)) ids.push(job.id)
+        sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+      } catch {}
+      window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId: job.id } }))
+
       onSuccess()
     } catch (err: any) {
       showToast(err.message || 'Failed to submit application', 'error')

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { Job } from '../../../types'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Building2, MapPin, Clock, Bookmark, Users, Languages } from 'lucide-react'
+import { Building2, MapPin, Clock, Bookmark, Users, Languages, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
@@ -38,6 +38,18 @@ export const JobCard: React.FC<JobCardProps> = ({
   const [isSaved, setIsSaved] = useState<boolean>(() => savedJobService.isSavedSync(job.id))
   const [isSaving, setIsSaving] = useState(false)
 
+  // Applied state — check sessionStorage cache populated after apply or on load
+  const [isApplied, setIsApplied] = useState<boolean>(() => {
+    try {
+      const cached = sessionStorage.getItem('applied_job_ids')
+      if (cached) {
+        const ids: string[] = JSON.parse(cached)
+        return ids.includes(job.id)
+      }
+    } catch {}
+    return false
+  })
+
   // Sync saved state when other components dispatch saved_jobs_updated
   useEffect(() => {
     const handler = (e: Event) => {
@@ -48,6 +60,18 @@ export const JobCard: React.FC<JobCardProps> = ({
     }
     window.addEventListener('saved_jobs_updated', handler)
     return () => window.removeEventListener('saved_jobs_updated', handler)
+  }, [job.id])
+
+  // Listen for job_applied event to update button immediately after submission
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<{ jobId: string }>
+      if (custom.detail?.jobId === job.id) {
+        setIsApplied(true)
+      }
+    }
+    window.addEventListener('job_applied', handler)
+    return () => window.removeEventListener('job_applied', handler)
   }, [job.id])
 
   const [translatedTitle, setTranslatedTitle] = useState<string | null>(() =>
@@ -314,15 +338,23 @@ export const JobCard: React.FC<JobCardProps> = ({
             <Users className="h-3.5 w-3.5 text-[#F97316]" />
             <span>{t('cs_find_candidates')}</span>
           </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="orange"
-            onClick={() => onApply(job)}
-            className="rounded-full shadow-none font-bold cursor-pointer"
-          >
-            {t('jobs_easy_apply')}
-          </Button>
+        ) : isApplied ? (
+            <button
+              disabled
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed select-none"
+            >
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <span>{t('jobs_applied')}</span>
+            </button>
+          ) : (
+            <Button
+              size="sm"
+              variant="orange"
+              onClick={() => onApply(job)}
+              className="rounded-full shadow-none font-bold cursor-pointer"
+            >
+              {t('jobs_easy_apply')}
+            </Button>
         )}
       </div>
     </Card>

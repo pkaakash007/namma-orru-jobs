@@ -127,6 +127,7 @@ export const translations = {
     jobs_no_found_sub: 'Try searching for another title, city, or reset filters.',
     jobs_actively_recruiting: 'Actively Recruiting',
     jobs_easy_apply: 'Easy Apply',
+    jobs_applied: 'Applied',
     jobs_posted: 'Posted',
     jobs_by: 'by',
 
@@ -429,6 +430,7 @@ export const translations = {
     jobs_no_found_sub: 'வேறு தலைப்பு, நகரம் அல்லது வடிப்பான்களை மாற்றி முயற்சிக்கவும்.',
     jobs_actively_recruiting: 'விரைவாக ஆட்கள் தேர்வு செய்யப்படுகிறார்கள்',
     jobs_easy_apply: 'உடனடி விண்ணப்பம்',
+    jobs_applied: 'விண்ணப்பிக்கப்பட்டது',
     jobs_posted: 'பதிவிடப்பட்டது',
     jobs_by: 'இட்டவர்',
 
@@ -731,6 +733,7 @@ export const translations = {
     jobs_no_found_sub: 'किसी अन्य शीर्षक, शहर की खोज करें या फ़िल्टर रीसेट करें।',
     jobs_actively_recruiting: 'शीघ्र भर्ती जारी है',
     jobs_easy_apply: 'सरल आवेदन',
+    jobs_applied: 'आवेदन किया',
     jobs_posted: 'प्रकाशित',
     jobs_by: 'द्वारा',
 
