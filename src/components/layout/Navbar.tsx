@@ -15,7 +15,7 @@ import {
   MessageSquare,
   Bookmark,
   RotateCw,
-  WalletCards,
+  Building2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -249,11 +249,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => onSelectTab('clients')}
                 className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
                   activeTab === 'clients'
-                    ? 'border-b-2 border-indigo-600 text-indigo-700 font-bold'
+                    ? 'border-b-2 border-[#0B2545] text-[#0B2545] font-bold'
                     : 'text-[#5E5E5E] hover:text-[#0F172A]'
                 }`}
               >
-                <WalletCards className="h-5 w-5 shrink-0" />
+                <Building2 className="h-5 w-5 shrink-0" />
                 <span className="mt-0.5">{t('nav_client_maintenance')}</span>
               </button>
             )}
@@ -596,10 +596,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => onSelectTab('clients')}
             className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
-              activeTab === 'clients' ? 'text-indigo-600 font-bold' : 'text-slate-500'
+              activeTab === 'clients' ? 'text-[#0B2545] font-bold' : 'text-slate-500'
             }`}
           >
-            <WalletCards className="h-5 w-5" />
+            <Building2 className="h-5 w-5" />
             <span>{t('nav_client_maintenance')}</span>
           </button>
         )}

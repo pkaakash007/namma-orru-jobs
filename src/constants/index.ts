@@ -33,8 +33,8 @@ export const ROLE_CONFIG: Record<
   },
   staff: {
     label: 'Company Staff',
-    badgeClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
-    description: 'Internal company staff with client maintenance and company management access',
+    badgeClass: 'bg-slate-100 text-[#0B2545] border border-slate-300 font-semibold',
+    description: 'Internal company staff with client maintenance and operations management access',
   },
 }
 

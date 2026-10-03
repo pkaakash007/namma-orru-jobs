@@ -1,7 +1,7 @@
 import React from 'react'
 import type { UserRole } from '../../types'
 import { ROLE_CONFIG } from '../../constants'
-import { ShieldCheck, Briefcase, UserCheck, Shield } from 'lucide-react'
+import { ShieldCheck, Briefcase, UserCheck, Building2 } from 'lucide-react'
 
 export interface BadgeProps {
   children?: React.ReactNode
@@ -25,7 +25,7 @@ export const Badge: React.FC<BadgeProps> = ({
         {role === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-white" />}
         {role === 'manager' && <Briefcase className="h-3.5 w-3.5 text-orange-600" />}
         {role === 'employee' && <UserCheck className="h-3.5 w-3.5 text-slate-600" />}
-        {role === 'staff' && <Shield className="h-3.5 w-3.5 text-indigo-600" />}
+        {role === 'staff' && <Building2 className="h-3.5 w-3.5 text-[#0B2545]" />}
         <span>{config.label}</span>
       </span>
     )

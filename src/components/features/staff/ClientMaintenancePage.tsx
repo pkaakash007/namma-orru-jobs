@@ -3,16 +3,15 @@ import {
   Building2,
   Phone,
   Mail,
-  Receipt,
   Plus,
   Search,
   Trash2,
   Edit3,
   X,
-  CheckCircle2,
   AlertTriangle,
   RotateCw,
-  WalletCards,
+  FileText,
+  Clock,
 } from 'lucide-react'
 import { clientService } from '../../../services/api'
 import { useToast } from '../../../context/ToastContext'
@@ -211,7 +210,7 @@ export const ClientMaintenancePage: React.FC = () => {
     if (!deletingClientId) return
     try {
       await clientService.deleteClient(deletingClientId)
-      showToast('Client and all billing records deleted', 'success')
+      showToast('Client and associated billing records deleted', 'success')
       setDeletingClientId(null)
       if (selectedClientForBilling?.id === deletingClientId) {
         setSelectedClientForBilling(null)
@@ -254,11 +253,11 @@ export const ClientMaintenancePage: React.FC = () => {
     setIsAddBillOpen(true)
   }
 
-  // Auto calculate payment status when billed or paid amount changes
+  // Auto calculate payment status on amount changes
   const handleAmountChange = (field: 'billed_amount' | 'paid_amount', val: string) => {
     const updated = { ...billForm, [field]: val }
-    const billed = parseFloat(updated.billed_amount) || 0
-    const paid = parseFloat(updated.paid_amount) || 0
+    const billed = parseFloat(field === 'billed_amount' ? val : billForm.billed_amount) || 0
+    const paid = parseFloat(field === 'paid_amount' ? val : billForm.paid_amount) || 0
 
     if (paid >= billed && billed > 0) {
       updated.payment_status = 'paid'
@@ -273,14 +272,15 @@ export const ClientMaintenancePage: React.FC = () => {
     setBillForm(updated)
   }
 
-  // Save Billing Record
+  // Submit Monthly Bill
   const handleSaveBill = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedClientForBilling) return
     const billed = parseFloat(billForm.billed_amount) || 0
     const paid = parseFloat(billForm.paid_amount) || 0
+
     if (billed <= 0) {
-      showToast('Please enter a valid billed amount greater than 0', 'error')
+      showToast('Billed Amount must be greater than 0', 'error')
       return
     }
 
@@ -338,40 +338,40 @@ export const ClientMaintenancePage: React.FC = () => {
     }).format(amt || 0)
   }
 
+  const activeClientsCount = stats?.active_clients ?? clients.filter((c) => c.status === 'active').length
+  const totalAgreedValue = stats?.total_contract_value ?? clients.reduce((acc, c) => acc + (c.total_agreed_amount || 0), 0)
+  const totalBilledValue = stats?.total_billed ?? clients.reduce((acc, c) => acc + (c.total_billed || 0), 0)
+  const totalPaidValue = stats?.total_paid ?? clients.reduce((acc, c) => acc + (c.total_paid || 0), 0)
+  const totalPendingValue = stats?.total_pending ?? clients.reduce((acc, c) => acc + (c.total_pending || 0), 0)
+
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in">
-      {/* ── Top Header & Action Row ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs">
+    <div className="space-y-6 pb-12">
+      {/* ── Human Apple-style Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
-              <WalletCards className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Client Maintenance & Billing
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                Manage company clients, contract details, and month-by-month pending balance collections
-              </p>
-            </div>
-          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            Clients & Billing
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Manage company clients, service contracts, and month-by-month collections.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-center">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
             onClick={() => loadData(true)}
             disabled={isRefreshing}
-            className="p-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition cursor-pointer"
-            title="Refresh Data"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer shadow-2xs transition"
+            title="Refresh database"
           >
-            <RotateCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+            <RotateCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-slate-800' : 'text-slate-500'}`} />
+            <span>Refresh</span>
           </button>
           <button
             type="button"
             onClick={handleOpenAddClient}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#0B2545] hover:bg-[#07192f] rounded-xl shadow-xs cursor-pointer transition active:scale-[0.99]"
           >
             <Plus className="h-4 w-4" />
             <span>Add Client</span>
@@ -379,61 +379,71 @@ export const ClientMaintenancePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── KPI Overview Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Clients</p>
-          <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
+      {/* ── Unified Metric Strip (Single cohesive bar, no loud floating cards) ── */}
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs divide-y sm:divide-y-0 sm:divide-x divide-slate-100 grid grid-cols-2 sm:grid-cols-5">
+        <div className="p-4 sm:p-5">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            Total Clients
+          </span>
+          <div className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
             {stats?.total_clients ?? clients.length}
-          </p>
-          <span className="text-[11px] text-emerald-600 font-semibold inline-flex items-center gap-1 mt-1">
-            <CheckCircle2 className="h-3 w-3" />
-            {stats?.active_clients ?? clients.filter((c) => c.status === 'active').length} Active
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5 block">
+            {activeClientsCount} active
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contract Value</p>
-          <p className="text-lg sm:text-xl font-black text-slate-900 mt-1 truncate">
-            {formatCurrency(stats?.total_contract_value ?? clients.reduce((acc, c) => acc + (c.total_agreed_amount || 0), 0))}
-          </p>
-          <span className="text-[11px] text-slate-500 font-medium mt-1 block">Agreed Scope</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Billed</p>
-          <p className="text-lg sm:text-xl font-black text-blue-700 mt-1 truncate">
-            {formatCurrency(stats?.total_billed ?? clients.reduce((acc, c) => acc + (c.total_billed || 0), 0))}
-          </p>
-          <span className="text-[11px] text-blue-600 font-medium mt-1 block">All Invoices</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Collected / Paid</p>
-          <p className="text-lg sm:text-xl font-black text-emerald-700 mt-1 truncate">
-            {formatCurrency(stats?.total_paid ?? clients.reduce((acc, c) => acc + (c.total_paid || 0), 0))}
-          </p>
-          <span className="text-[11px] text-emerald-600 font-medium mt-1 block">Received In Bank</span>
-        </div>
-
-        <div className="col-span-2 bg-rose-50/70 p-4 rounded-xl border border-rose-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Total Pending Due</p>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-200 text-rose-900">
-              Outstanding
-            </span>
+        <div className="p-4 sm:p-5">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            Contract Scope
+          </span>
+          <div className="text-2xl font-bold text-slate-900 mt-1 tracking-tight truncate">
+            {formatCurrency(totalAgreedValue)}
           </div>
-          <p className="text-xl sm:text-2xl font-black text-rose-700 mt-1">
-            {formatCurrency(stats?.total_pending ?? clients.reduce((acc, c) => acc + (c.total_pending || 0), 0))}
-          </p>
-          <p className="text-[11px] text-rose-700 font-medium mt-1">
-            Active balance awaiting collection across all billing cycles
-          </p>
+          <span className="text-xs text-slate-500 mt-0.5 block">
+            Total agreed
+          </span>
+        </div>
+
+        <div className="p-4 sm:p-5">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            Total Billed
+          </span>
+          <div className="text-2xl font-bold text-slate-900 mt-1 tracking-tight truncate">
+            {formatCurrency(totalBilledValue)}
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5 block">
+            All invoices
+          </span>
+        </div>
+
+        <div className="p-4 sm:p-5">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            Collected
+          </span>
+          <div className="text-2xl font-bold text-emerald-700 mt-1 tracking-tight truncate">
+            {formatCurrency(totalPaidValue)}
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5 block">
+            Received in bank
+          </span>
+        </div>
+
+        <div className="p-4 sm:p-5 col-span-2 sm:col-span-1">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            Pending Due
+          </span>
+          <div className={`text-2xl font-bold mt-1 tracking-tight truncate ${totalPendingValue > 0 ? 'text-amber-800' : 'text-slate-900'}`}>
+            {formatCurrency(totalPendingValue)}
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5 block">
+            {totalPendingValue > 0 ? 'Awaiting collection' : 'Zero balance'}
+          </span>
         </div>
       </div>
 
-      {/* ── Search, Filters & Quick Toggles ── */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+      {/* ── Search & Filter Toolbar ── */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200/90 shadow-2xs">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
@@ -441,12 +451,12 @@ export const ClientMaintenancePage: React.FC = () => {
             placeholder="Search by client name, company, phone, email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm rounded-lg border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none transition font-medium"
+            className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm rounded-lg border border-slate-200/80 bg-slate-50/50 focus:bg-white focus:border-[#0B2545] outline-none transition font-medium"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -454,17 +464,17 @@ export const ClientMaintenancePage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+          {/* Status Segmented Control */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
             {(['all', 'active', 'paused', 'completed'] as const).map((st) => (
               <button
                 key={st}
                 type="button"
                 onClick={() => setStatusFilter(st)}
-                className={`px-2.5 py-1 rounded-md capitalize transition cursor-pointer ${
+                className={`px-3 py-1 rounded-md capitalize transition cursor-pointer text-xs ${
                   statusFilter === st
-                    ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-900 font-medium'
                 }`}
               >
                 {st}
@@ -472,46 +482,48 @@ export const ClientMaintenancePage: React.FC = () => {
             ))}
           </div>
 
-          {/* Only Pending Balance Toggle */}
+          {/* Pending Balance Filter */}
           <button
             type="button"
             onClick={() => setOnlyPendingFilter(!onlyPendingFilter)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
               onlyPendingFilter
-                ? 'bg-rose-100 text-rose-800 border-rose-300'
-                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                ? 'bg-amber-50 text-amber-900 border-amber-300 font-bold'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-            <span>Has Pending Due</span>
+            <Clock className="h-3.5 w-3.5 text-amber-600" />
+            <span>Pending Balance Only</span>
           </button>
         </div>
       </div>
 
       {/* ── Client Cards / Directory ── */}
       {isLoading ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-2xs">
-          <RotateCw className="h-8 w-8 text-indigo-600 animate-spin mx-auto mb-3" />
-          <p className="text-sm font-bold text-slate-700">Loading client registry...</p>
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
+          <RotateCw className="h-6 w-6 text-slate-600 animate-spin mx-auto mb-2" />
+          <p className="text-xs font-semibold text-slate-500">Loading client registry...</p>
         </div>
       ) : filteredClients.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-2xs">
-          <div className="h-16 w-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Building2 className="h-8 w-8" />
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
+          <div className="h-12 w-12 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center mx-auto mb-3">
+            <Building2 className="h-6 w-6 stroke-[1.5]" />
           </div>
-          <h3 className="text-base font-bold text-slate-900">No Clients Found</h3>
-          <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
+          <h3 className="text-sm sm:text-base font-bold text-slate-900">
+            {searchQuery || statusFilter !== 'all' || onlyPendingFilter ? 'No matching clients found' : 'No clients registered yet'}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-normal">
             {searchQuery || statusFilter !== 'all' || onlyPendingFilter
-              ? 'No client records matched your selected search criteria or filters.'
-              : 'Start by registering your company clients to record service contracts and maintain month-wise billing history.'}
+              ? 'Try adjusting your search keywords or clear your active filters.'
+              : 'Add company clients to record recruitment service contracts and manage month-by-month billing history.'}
           </p>
           {!searchQuery && statusFilter === 'all' && !onlyPendingFilter && (
             <button
               onClick={handleOpenAddClient}
-              className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-[#07192f] text-white font-bold text-xs shadow-xs transition cursor-pointer"
             >
               <Plus className="h-4 w-4" />
-              <span>Add Your First Client</span>
+              <span>Add First Client</span>
             </button>
           )}
         </div>
@@ -524,30 +536,27 @@ export const ClientMaintenancePage: React.FC = () => {
             return (
               <div
                 key={client.id}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs hover:shadow-xs transition flex flex-col justify-between"
+                className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-2xs hover:border-slate-300 transition flex flex-col justify-between"
               >
                 <div>
                   {/* Top row: Company & Status */}
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="h-4 w-4 text-indigo-600 shrink-0" />
-                        <h3 className="text-base font-bold text-slate-900 truncate">
-                          {client.company_name}
-                        </h3>
-                      </div>
-                      <p className="text-xs font-semibold text-slate-600 mt-0.5 truncate">
-                        Contact: <span className="text-slate-800">{client.client_name}</span>
+                      <h3 className="text-base font-bold text-slate-900 truncate">
+                        {client.company_name}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5 truncate">
+                        Contact: <span className="font-semibold text-slate-700">{client.client_name}</span>
                       </p>
                     </div>
 
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold capitalize shrink-0 border ${
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold capitalize shrink-0 border ${
                         client.status === 'active'
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           : client.status === 'paused'
                           ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
                       }`}
                     >
                       {client.status}
@@ -555,53 +564,51 @@ export const ClientMaintenancePage: React.FC = () => {
                   </div>
 
                   {/* Service type & contract amount */}
-                  <div className="bg-slate-50 rounded-xl p-3 mb-3.5 space-y-1.5 border border-slate-100">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">Service / Plan:</span>
-                      <span className="font-bold text-slate-800 truncate max-w-[170px]">
+                  <div className="bg-slate-50/80 rounded-lg p-2.5 mb-3 space-y-1 border border-slate-100 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Service:</span>
+                      <span className="font-medium text-slate-800 truncate max-w-[170px]">
                         {client.service_type || 'General'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">Contract Value:</span>
-                      <span className="font-extrabold text-slate-900">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Contract Scope:</span>
+                      <span className="font-bold text-slate-900">
                         {formatCurrency(client.total_agreed_amount)}
                       </span>
                     </div>
                   </div>
 
                   {/* Financial Collection Snapshot */}
-                  <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50/70 border border-slate-200 mb-3 text-center">
+                  <div className="grid grid-cols-3 gap-2 p-2.5 rounded-lg bg-slate-50/60 border border-slate-200/80 mb-3 text-center">
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-500 uppercase">Billed</p>
-                      <p className="text-xs font-black text-slate-800 mt-0.5">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Billed</p>
+                      <p className="text-xs font-bold text-slate-800 mt-0.5">
                         {formatCurrency(client.total_billed)}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold text-emerald-700 uppercase">Paid</p>
-                      <p className="text-xs font-black text-emerald-700 mt-0.5">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Paid</p>
+                      <p className="text-xs font-bold text-emerald-700 mt-0.5">
                         {formatCurrency(client.total_paid)}
                       </p>
                     </div>
-                    <div className={hasPending ? 'bg-rose-100/60 rounded-lg py-0.5' : ''}>
-                      <p className={`text-[10px] font-bold uppercase ${hasPending ? 'text-rose-800' : 'text-slate-500'}`}>
-                        Pending
-                      </p>
-                      <p className={`text-xs font-black mt-0.5 ${hasPending ? 'text-rose-700' : 'text-slate-800'}`}>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase">Pending</p>
+                      <p className={`text-xs font-bold mt-0.5 ${hasPending ? 'text-amber-700' : 'text-slate-600'}`}>
                         {formatCurrency(pendingBal)}
                       </p>
                     </div>
                   </div>
 
-                  {/* Contact Info Pills */}
-                  <div className="space-y-1 text-xs text-slate-600 mb-4">
+                  {/* Contact Info */}
+                  <div className="space-y-1 text-xs text-slate-500 mb-4">
                     {client.phone && (
                       <div className="flex items-center gap-1.5 truncate">
                         <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                         <a
                           href={`tel:${client.phone}`}
-                          className="hover:text-indigo-600 hover:underline truncate"
+                          className="hover:text-slate-900 hover:underline truncate"
                         >
                           {client.phone}
                         </a>
@@ -612,7 +619,7 @@ export const ClientMaintenancePage: React.FC = () => {
                         <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                         <a
                           href={`mailto:${client.email}`}
-                          className="hover:text-indigo-600 hover:underline truncate"
+                          className="hover:text-slate-900 hover:underline truncate"
                         >
                           {client.email}
                         </a>
@@ -626,17 +633,17 @@ export const ClientMaintenancePage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => loadClientBilling(client.id)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition cursor-pointer"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs transition cursor-pointer shadow-2xs"
                   >
-                    <Receipt className="h-3.5 w-3.5" />
-                    <span>Monthly Bills ({client.billing_count || 0})</span>
+                    <FileText className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Monthly Ledger ({client.billing_count || 0})</span>
                   </button>
 
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => handleOpenEditClient(client)}
-                      className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+                      className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
                       title="Edit Client"
                     >
                       <Edit3 className="h-3.5 w-3.5" />
@@ -644,7 +651,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setDeletingClientId(client.id)}
-                      className="p-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                      className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition cursor-pointer"
                       title="Delete Client"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -661,161 +668,158 @@ export const ClientMaintenancePage: React.FC = () => {
           MONTHLY BILLING DRAWER / MODAL
           ─────────────────────────────────────────────────────────── */}
       {selectedClientForBilling && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
             {/* Header */}
-            <div className="p-4 sm:p-6 border-b border-slate-200 flex items-start justify-between gap-3 bg-slate-50/80">
+            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-start justify-between gap-3 bg-white">
               <div>
-                <div className="flex items-center gap-2">
-                  <Receipt className="h-5 w-5 text-indigo-600" />
-                  <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                    {selectedClientForBilling.company_name} — Billing Ledger
-                  </h2>
-                </div>
-                <p className="text-xs text-slate-500 font-medium mt-1">
-                  Client: <strong className="text-slate-800">{selectedClientForBilling.client_name}</strong> |
-                  Plan: <span className="text-slate-700">{selectedClientForBilling.service_type || 'General'}</span> |
-                  Agreed Total: <span className="text-slate-900 font-bold">{formatCurrency(selectedClientForBilling.total_agreed_amount)}</span>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                  {selectedClientForBilling.company_name} — Billing Ledger
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Contact: <span className="font-semibold text-slate-700">{selectedClientForBilling.client_name}</span> |
+                  Service: <span className="text-slate-700">{selectedClientForBilling.service_type || 'General'}</span> |
+                  Contract Scope: <span className="text-slate-900 font-bold">{formatCurrency(selectedClientForBilling.total_agreed_amount)}</span>
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setSelectedClientForBilling(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Quick Financial Summary */}
-            <div className="grid grid-cols-3 gap-3 p-4 sm:p-6 bg-slate-100/70 border-b border-slate-200">
-              <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-2xs">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Total Billed</p>
-                <p className="text-base sm:text-lg font-black text-blue-700 mt-0.5">
+            {/* Financial Summary Strip */}
+            <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50 border-b border-slate-200 text-center py-3">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Total Billed</span>
+                <span className="text-sm sm:text-base font-bold text-slate-900 mt-0.5 block">
                   {formatCurrency(clientBillingTotals.total_billed)}
-                </p>
+                </span>
               </div>
-              <div className="bg-white p-3 rounded-xl border border-slate-200 text-center shadow-2xs">
-                <p className="text-[10px] font-bold text-emerald-700 uppercase">Total Paid</p>
-                <p className="text-base sm:text-lg font-black text-emerald-700 mt-0.5">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Total Paid</span>
+                <span className="text-sm sm:text-base font-bold text-emerald-700 mt-0.5 block">
                   {formatCurrency(clientBillingTotals.total_paid)}
-                </p>
+                </span>
               </div>
-              <div className="bg-rose-50 p-3 rounded-xl border border-rose-200 text-center shadow-2xs">
-                <p className="text-[10px] font-bold text-rose-800 uppercase">Current Pending</p>
-                <p className="text-base sm:text-lg font-black text-rose-700 mt-0.5">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">Pending Due</span>
+                <span className={`text-sm sm:text-base font-bold mt-0.5 block ${clientBillingTotals.total_pending > 0 ? 'text-amber-800' : 'text-slate-900'}`}>
                   {formatCurrency(clientBillingTotals.total_pending)}
-                </p>
+                </span>
               </div>
             </div>
 
             {/* Content & Monthly Ledger */}
-            <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4">
+            <div className="p-4 sm:p-5 flex-1 overflow-y-auto space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                  Month-Wise Billing Records ({clientBillingRecords.length})
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Monthly Invoices ({clientBillingRecords.length})
                 </h3>
                 <button
                   type="button"
                   onClick={handleOpenAddBill}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B2545] hover:bg-[#07192f] text-white font-semibold text-xs shadow-2xs transition cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span>+ Record New Month Bill</span>
+                  <span>Add Month Bill</span>
                 </button>
               </div>
 
               {isLoadingBilling ? (
                 <div className="py-12 text-center">
-                  <RotateCw className="h-7 w-7 text-indigo-600 animate-spin mx-auto mb-2" />
-                  <p className="text-xs text-slate-600 font-semibold">Loading ledger records...</p>
+                  <RotateCw className="h-5 w-5 text-slate-600 animate-spin mx-auto mb-2" />
+                  <p className="text-xs text-slate-500 font-medium">Loading billing records...</p>
                 </div>
               ) : clientBillingRecords.length === 0 ? (
-                <div className="py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <Receipt className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-bold text-slate-700">No monthly billing records yet</p>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                    Add the first monthly invoice for this client to start tracking billed amounts, collections, and pending balances.
+                <div className="py-10 text-center bg-slate-50 rounded-xl border border-slate-200">
+                  <FileText className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-700">No monthly bills recorded yet</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">
+                    Record monthly billing entries to track invoiced amounts, client payments, and pending dues.
                   </p>
                   <button
                     onClick={handleOpenAddBill}
-                    className="mt-4 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition cursor-pointer inline-flex items-center gap-1.5"
+                    className="mt-3 px-3 py-1.5 rounded-lg bg-[#0B2545] text-white text-xs font-semibold hover:bg-[#07192f] transition cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>Create Month Bill</span>
+                    <span>Record Bill</span>
                   </button>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-[#F8FAFC] text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200">
                       <tr>
-                        <th className="py-3 px-3">Billing Month</th>
-                        <th className="py-3 px-3">Billed</th>
-                        <th className="py-3 px-3">Paid</th>
-                        <th className="py-3 px-3">Pending Due</th>
-                        <th className="py-3 px-3">Status</th>
-                        <th className="py-3 px-3">Due Date</th>
-                        <th className="py-3 px-3">Payment Mode</th>
-                        <th className="py-3 px-3 text-right">Actions</th>
+                        <th className="py-2.5 px-3">Billing Month</th>
+                        <th className="py-2.5 px-3">Billed</th>
+                        <th className="py-2.5 px-3">Paid</th>
+                        <th className="py-2.5 px-3">Pending Due</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3">Due Date</th>
+                        <th className="py-2.5 px-3">Payment Mode</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {clientBillingRecords.map((bill) => (
-                        <tr key={bill.id} className="hover:bg-slate-50/80 transition font-medium">
-                          <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
+                        <tr key={bill.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-3 font-semibold text-slate-900 whitespace-nowrap">
                             {bill.billing_month}
                           </td>
-                          <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
+                          <td className="py-2.5 px-3 font-medium text-slate-800 whitespace-nowrap">
                             {formatCurrency(bill.billed_amount)}
                           </td>
-                          <td className="py-3 px-3 font-bold text-emerald-700 whitespace-nowrap">
+                          <td className="py-2.5 px-3 font-semibold text-emerald-700 whitespace-nowrap">
                             {formatCurrency(bill.paid_amount)}
                           </td>
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-2.5 px-3 whitespace-nowrap">
                             <span
-                              className={`font-black ${
-                                (bill.pending_amount || 0) > 0 ? 'text-rose-600' : 'text-slate-400'
+                              className={`font-semibold ${
+                                (bill.pending_amount || 0) > 0 ? 'text-amber-800' : 'text-slate-400'
                               }`}
                             >
                               {formatCurrency(bill.pending_amount)}
                             </span>
                           </td>
-                          <td className="py-3 px-3 whitespace-nowrap">
+                          <td className="py-2.5 px-3 whitespace-nowrap">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
                                 bill.payment_status === 'paid'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                   : bill.payment_status === 'partially_paid'
                                   ? 'bg-amber-50 text-amber-800 border-amber-200'
                                   : bill.payment_status === 'overdue'
-                                  ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
                                   : 'bg-slate-100 text-slate-700 border-slate-200'
                               }`}
                             >
                               {bill.payment_status.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
+                          <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
                             {bill.due_date || '—'}
                           </td>
-                          <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
+                          <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
                             {bill.payment_mode || '—'}
                           </td>
-                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditBill(bill)}
-                                className="px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-[11px] cursor-pointer"
+                                className="px-2 py-1 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-[11px] cursor-pointer"
                               >
                                 Edit / Pay
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setDeletingBillingId(bill.id)}
-                                className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                                 title="Delete Bill"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -831,16 +835,16 @@ export const ClientMaintenancePage: React.FC = () => {
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-medium">
-                All records stored securely in Cloudflare D1
+            <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-400">
+                Connected to Cloudflare D1
               </span>
               <button
                 type="button"
                 onClick={() => setSelectedClientForBilling(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 font-semibold text-xs cursor-pointer"
               >
-                Close Ledger
+                Close
               </button>
             </div>
           </div>
@@ -851,22 +855,22 @@ export const ClientMaintenancePage: React.FC = () => {
           ADD / EDIT CLIENT MODAL
           ─────────────────────────────────────────────────────────── */}
       {isAddClientOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
-            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
+            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-white">
+              <h2 className="text-base font-bold text-slate-900">
                 {editingClient ? 'Edit Client Details' : 'Register New Company Client'}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsAddClientOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveClient} className="p-4 sm:p-6 space-y-3.5 text-xs">
+            <form onSubmit={handleSaveClient} className="p-4 sm:p-5 space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Company Name *</label>
@@ -875,8 +879,8 @@ export const ClientMaintenancePage: React.FC = () => {
                     required
                     value={clientForm.company_name}
                     onChange={(e) => setClientForm({ ...clientForm, company_name: e.target.value })}
-                    placeholder="e.g. Acme Tech Corp"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    placeholder="e.g. Acme Tech Solutions"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
                 <div>
@@ -886,8 +890,8 @@ export const ClientMaintenancePage: React.FC = () => {
                     required
                     value={clientForm.client_name}
                     onChange={(e) => setClientForm({ ...clientForm, client_name: e.target.value })}
-                    placeholder="e.g. John Doe (Director)"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    placeholder="e.g. Ramesh Kumar"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
               </div>
@@ -900,7 +904,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     value={clientForm.phone}
                     onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
                     placeholder="+91 98765 43210"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
                 <div>
@@ -909,8 +913,8 @@ export const ClientMaintenancePage: React.FC = () => {
                     type="email"
                     value={clientForm.email}
                     onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
-                    placeholder="client@company.com"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    placeholder="contact@company.com"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
               </div>
@@ -921,7 +925,7 @@ export const ClientMaintenancePage: React.FC = () => {
                   <select
                     value={clientForm.service_type}
                     onChange={(e) => setClientForm({ ...clientForm, service_type: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                   >
                     <option value="Monthly Recruitment">Monthly Recruitment</option>
                     <option value="Candidate Staffing">Candidate Staffing</option>
@@ -941,7 +945,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     value={clientForm.total_agreed_amount}
                     onChange={(e) => setClientForm({ ...clientForm, total_agreed_amount: e.target.value })}
                     placeholder="e.g. 50000"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
               </div>
@@ -952,7 +956,7 @@ export const ClientMaintenancePage: React.FC = () => {
                   <select
                     value={clientForm.status}
                     onChange={(e) => setClientForm({ ...clientForm, status: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                   >
                     <option value="active">Active</option>
                     <option value="paused">Paused</option>
@@ -960,13 +964,13 @@ export const ClientMaintenancePage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Office Address</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Office Address / City</label>
                   <input
                     type="text"
                     value={clientForm.address}
                     onChange={(e) => setClientForm({ ...clientForm, address: e.target.value })}
-                    placeholder="City / Location"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                    placeholder="e.g. Chennai, Tamil Nadu"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                   />
                 </div>
               </div>
@@ -977,8 +981,8 @@ export const ClientMaintenancePage: React.FC = () => {
                   rows={2}
                   value={clientForm.notes}
                   onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
-                  placeholder="Payment cycles, GST number, special requirements..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium resize-none"
+                  placeholder="Billing terms, GST registration, payment cycles..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium resize-none"
                 />
               </div>
 
@@ -986,14 +990,14 @@ export const ClientMaintenancePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddClientOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingClient}
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-lg bg-[#0B2545] hover:bg-[#07192f] text-white font-bold shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingClient ? 'Saving...' : editingClient ? 'Save Changes' : 'Create Client'}
                 </button>
@@ -1007,22 +1011,22 @@ export const ClientMaintenancePage: React.FC = () => {
           RECORD / EDIT MONTHLY BILL MODAL
           ─────────────────────────────────────────────────────────── */}
       {isAddBillOpen && selectedClientForBilling && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
-            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
+            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-white">
+              <h2 className="text-base font-bold text-slate-900">
                 {editingBill ? 'Edit Monthly Bill' : 'Record Monthly Bill'}
               </h2>
               <button
                 type="button"
                 onClick={() => setIsAddBillOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBill} className="p-4 sm:p-6 space-y-3.5 text-xs">
+            <form onSubmit={handleSaveBill} className="p-4 sm:p-5 space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Billing Month *</label>
@@ -1031,7 +1035,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     required
                     value={billForm.billing_month}
                     onChange={(e) => setBillForm({ ...billForm, billing_month: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                   />
                 </div>
                 <div>
@@ -1039,7 +1043,7 @@ export const ClientMaintenancePage: React.FC = () => {
                   <select
                     value={billForm.payment_status}
                     onChange={(e) => setBillForm({ ...billForm, payment_status: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer capitalize"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer capitalize"
                   >
                     <option value="pending">Pending</option>
                     <option value="partially_paid">Partially Paid</option>
@@ -1059,7 +1063,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     value={billForm.billed_amount}
                     onChange={(e) => handleAmountChange('billed_amount', e.target.value)}
                     placeholder="e.g. 15000"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-bold text-slate-900"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-bold text-slate-900"
                   />
                 </div>
                 <div>
@@ -1070,15 +1074,15 @@ export const ClientMaintenancePage: React.FC = () => {
                     value={billForm.paid_amount}
                     onChange={(e) => handleAmountChange('paid_amount', e.target.value)}
                     placeholder="e.g. 5000"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-bold text-emerald-700"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-bold text-emerald-700"
                   />
                 </div>
               </div>
 
-              {/* Dynamic Balance preview */}
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <span className="font-semibold text-slate-600">Calculated Pending Due:</span>
-                <span className="font-black text-rose-600 text-sm">
+              {/* Dynamic Balance Preview */}
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                <span className="font-medium text-slate-600">Calculated Pending Due:</span>
+                <span className="font-bold text-amber-800 text-sm">
                   {formatCurrency(
                     Math.max(
                       0,
@@ -1095,7 +1099,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     type="date"
                     value={billForm.due_date}
                     onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                   />
                 </div>
                 <div>
@@ -1104,7 +1108,7 @@ export const ClientMaintenancePage: React.FC = () => {
                     type="date"
                     value={billForm.payment_date}
                     onChange={(e) => setBillForm({ ...billForm, payment_date: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                   />
                 </div>
               </div>
@@ -1114,7 +1118,7 @@ export const ClientMaintenancePage: React.FC = () => {
                 <select
                   value={billForm.payment_mode}
                   onChange={(e) => setBillForm({ ...billForm, payment_mode: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium cursor-pointer"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium cursor-pointer"
                 >
                   <option value="Bank Transfer (NEFT/RTGS/IMPS)">Bank Transfer (NEFT/RTGS/IMPS)</option>
                   <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
@@ -1131,8 +1135,8 @@ export const ClientMaintenancePage: React.FC = () => {
                   type="text"
                   value={billForm.notes}
                   onChange={(e) => setBillForm({ ...billForm, notes: e.target.value })}
-                  placeholder="UTR number, cheque number, invoice ref..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-indigo-600 outline-none font-medium"
+                  placeholder="UTR number, transaction ID, invoice reference..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:border-[#0B2545] outline-none font-medium"
                 />
               </div>
 
@@ -1140,14 +1144,14 @@ export const ClientMaintenancePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddBillOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingBill}
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs cursor-pointer disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-lg bg-[#0B2545] hover:bg-[#07192f] text-white font-bold shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {isSubmittingBill ? 'Saving...' : editingBill ? 'Update Record' : 'Record Bill'}
                 </button>
@@ -1161,29 +1165,29 @@ export const ClientMaintenancePage: React.FC = () => {
           CONFIRM DELETE CLIENT MODAL
           ─────────────────────────────────────────────────────────── */}
       {deletingClientId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 w-full max-w-sm text-center animate-in zoom-in-95">
-            <div className="h-12 w-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
-              <AlertTriangle className="h-6 w-6" />
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-5 w-full max-w-sm text-center animate-in zoom-in-95">
+            <div className="h-10 w-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <AlertTriangle className="h-5 w-5" />
             </div>
-            <h3 className="text-base font-bold text-slate-900">Delete Client?</h3>
-            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-              This action will permanently delete this client along with all their associated monthly billing records.
+            <h3 className="text-sm font-bold text-slate-900">Delete Client?</h3>
+            <p className="text-xs text-slate-500 mt-1 leading-normal">
+              This action will permanently remove this client and all associated monthly billing history.
             </p>
-            <div className="mt-5 flex items-center justify-center gap-2">
+            <div className="mt-4 flex items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setDeletingClientId(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleDeleteClient}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
-                Yes, Delete
+                Delete
               </button>
             </div>
           </div>
@@ -1194,27 +1198,27 @@ export const ClientMaintenancePage: React.FC = () => {
           CONFIRM DELETE BILLING MODAL
           ─────────────────────────────────────────────────────────── */}
       {deletingBillingId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 w-full max-w-sm text-center animate-in zoom-in-95">
-            <div className="h-12 w-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
-              <Trash2 className="h-6 w-6" />
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-5 w-full max-w-sm text-center animate-in zoom-in-95">
+            <div className="h-10 w-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="h-5 w-5" />
             </div>
-            <h3 className="text-base font-bold text-slate-900">Delete Billing Record?</h3>
-            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            <h3 className="text-sm font-bold text-slate-900">Delete Billing Record?</h3>
+            <p className="text-xs text-slate-500 mt-1 leading-normal">
               Are you sure you want to remove this monthly billing entry? This will update the client's total billed and pending balance.
             </p>
-            <div className="mt-5 flex items-center justify-center gap-2">
+            <div className="mt-4 flex items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setDeletingBillingId(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleDeleteBill}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
                 Delete Bill
               </button>
