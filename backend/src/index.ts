@@ -1246,12 +1246,6 @@ app.post('/api/auth/dev-login', async (c) => {
               code: 'ROLE_CONFLICT_HR',
             }, 400)
           }
-          if (phoneConflict.role === 'staff' && requestedRole !== 'staff') {
-            return c.json({
-              error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-              code: 'ROLE_CONFLICT_STAFF',
-            }, 400)
-          }
         }
       }
 

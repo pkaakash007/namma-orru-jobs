@@ -58,7 +58,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [showLangMenu, setShowLangMenu] = useState(false)
   const [roleConflictNotice, setRoleConflictNotice] = useState<{
     message: string
-    targetRole: 'employee' | 'manager' | 'staff'
+    targetRole: 'employee' | 'manager'
   } | null>(null)
 
   // Mandatory Terms of Service & Privacy Policy Acceptance (ONLY for new sign-up users)
@@ -322,8 +322,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         setRoleConflictNotice({ message: msg, targetRole: 'employee' })
       } else if (msg.includes('HR Recruiter') || msg.includes('ROLE_CONFLICT_HR')) {
         setRoleConflictNotice({ message: msg, targetRole: 'manager' })
-      } else if (msg.includes('Staff') || msg.includes('ROLE_CONFLICT_STAFF')) {
-        setRoleConflictNotice({ message: msg, targetRole: 'staff' })
       }
       showToast(msg, 'error')
     } finally {
@@ -388,8 +386,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         setRoleConflictNotice({ message: msg, targetRole: 'employee' })
       } else if (msg.includes('HR Recruiter') || msg.includes('ROLE_CONFLICT_HR')) {
         setRoleConflictNotice({ message: msg, targetRole: 'manager' })
-      } else if (msg.includes('Staff') || msg.includes('ROLE_CONFLICT_STAFF')) {
-        setRoleConflictNotice({ message: msg, targetRole: 'staff' })
       }
       showToast(msg, 'error')
     } finally {
@@ -441,8 +437,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           setRoleConflictNotice({ message: msg, targetRole: 'employee' })
         } else if (msg.includes('HR Recruiter') || msg.includes('ROLE_CONFLICT_HR')) {
           setRoleConflictNotice({ message: msg, targetRole: 'manager' })
-        } else if (msg.includes('Staff') || msg.includes('ROLE_CONFLICT_STAFF')) {
-          setRoleConflictNotice({ message: msg, targetRole: 'staff' })
         }
       } finally {
         setIsLoading(false)
@@ -471,8 +465,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           setRoleConflictNotice({ message: msg, targetRole: 'employee' })
         } else if (msg.includes('HR Recruiter') || msg.includes('ROLE_CONFLICT_HR')) {
           setRoleConflictNotice({ message: msg, targetRole: 'manager' })
-        } else if (msg.includes('Staff') || msg.includes('ROLE_CONFLICT_STAFF')) {
-          setRoleConflictNotice({ message: msg, targetRole: 'staff' })
         }
       } finally {
         setIsLoading(false)
@@ -775,15 +767,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       setRoleConflictNotice({
                         message: 'You are already registered as an HR Recruiter. Please switch to the HR Recruiter tab to sign in.',
                         targetRole: 'manager',
-                      })
-                    } else if (
-                      msg.includes('Staff') ||
-                      msg.includes('ROLE_CONFLICT_STAFF') ||
-                      msg.includes('staff')
-                    ) {
-                      setRoleConflictNotice({
-                        message: 'You are already registered as Company Staff. Please switch to the Staff Login tab to sign in.',
-                        targetRole: 'staff',
                       })
                     }
                   }}
