@@ -16,7 +16,10 @@
     "apk:upload": "npx wrangler r2 object put namma-ooru-jobs-media/apks/namma-ooru-jobs-latest.apk --file=android/app/build/outputs/apk/release/app-release.apk --remote && npx wrangler r2 object put namma-ooru-jobs-media/apks/namma-ooru-jobs-v1.0.0.apk --file=android/app/build/outputs/apk/release/app-release.apk --remote",
     "apk:release": "npm run cap:sync && npm run apk:build && npm run apk:upload",
     "playstore:build": "npm run cap:sync && npm run bundle:build",
-    "backend:dev": "npm --prefix backend run dev"
+    "backend:dev": "npm --prefix backend run dev",
+    "deploy:pages": "npm run build && npx wrangler pages deploy dist --project-name=namma-ooru-jobs --commit-dirty=true",
+    "deploy:backend": "npm --prefix backend run deploy",
+    "deploy": "npm run deploy:pages && npm run deploy:backend"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.2",
