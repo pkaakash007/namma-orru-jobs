@@ -22,6 +22,7 @@ import { Badge } from '../ui/Badge'
 import { Avatar } from '../ui/Avatar'
 import { NotificationDropdown } from '../features/notifications/NotificationDropdown'
 import { savedJobService } from '../../services/api'
+import { Capacitor } from '@capacitor/core'
 import type { SupportedLanguage } from '../../utils/i18n'
 
 export type TabType =
@@ -73,6 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
   const [savedCount, setSavedCount] = useState<number>(0)
+  const isNativeApp = Capacitor.isNativePlatform()
 
   React.useEffect(() => {
     if (user?.id) {
@@ -141,16 +143,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {/* LinkedIn-style Search Input (Desktop & Tablet) */}
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" />
-              <input
-                type="text"
-                placeholder={t('nav_search_placeholder')}
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="h-8 w-48 lg:w-64 rounded bg-[#EDF3F8] pl-8 pr-3 text-xs text-[#0F172A] placeholder-[#64748B] transition-all focus:w-72 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
-              />
-            </div>
+            {activeTab !== 'feed' && activeTab !== 'profile' && activeTab !== 'connections' && (
+              <div className="relative hidden md:block">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" />
+                <input
+                  type="text"
+                  placeholder={t('nav_search_placeholder')}
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  className="h-8 w-48 lg:w-64 rounded bg-[#EDF3F8] pl-8 pr-3 text-xs text-[#0F172A] placeholder-[#64748B] transition-all focus:w-72 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0B2545]"
+                />
+              </div>
+            )}
           </div>
 
           {/* Center: Desktop Navigation Items */}
@@ -282,16 +286,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            {/* Page Refresh Button (Accessible for Native App & Web across all pages) */}
-            <button
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50/80 text-[#0B2545] hover:bg-gray-100 hover:text-[#F97316] transition cursor-pointer active:scale-90 disabled:opacity-60 shrink-0"
-              title={language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}
-              aria-label="Refresh Page"
-            >
-              <RotateCw className={`h-3.5 w-3.5 transition-transform ${isRefreshing ? 'animate-spin text-[#F97316]' : 'text-[#0B2545]'}`} />
-            </button>
+            {/* Page Refresh Button (Accessible for Native App only across all pages) */}
+            {isNativeApp && onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50/80 text-[#0B2545] hover:bg-gray-100 hover:text-[#F97316] transition cursor-pointer active:scale-90 disabled:opacity-60 shrink-0"
+                title={language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}
+                aria-label="Refresh Page"
+              >
+                <RotateCw className={`h-3.5 w-3.5 transition-transform ${isRefreshing ? 'animate-spin text-[#F97316]' : 'text-[#0B2545]'}`} />
+              </button>
+            )}
 
             {/* Quick Language Switcher Dropdown */}
             <div className="relative">
@@ -437,16 +443,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                         )}
                       </button>
 
-                      <button
-                        onClick={() => {
-                          setShowProfileMenu(false)
-                          onRefresh?.()
-                        }}
-                        className="w-full flex items-center gap-2.5 p-2 rounded-lg text-left font-semibold cursor-pointer hover:bg-slate-100 text-slate-800 transition"
-                      >
-                        <RotateCw className={`h-4 w-4 text-[#0B2545] ${isRefreshing ? 'animate-spin text-[#F97316]' : ''}`} />
-                        <span>{language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}</span>
-                      </button>
+                      {isNativeApp && (
+                        <button
+                          onClick={() => {
+                            setShowProfileMenu(false)
+                            onRefresh?.()
+                          }}
+                          className="w-full flex items-center gap-2.5 p-2 rounded-lg text-left font-semibold cursor-pointer hover:bg-slate-100 text-slate-800 transition"
+                        >
+                          <RotateCw className={`h-4 w-4 text-[#0B2545] ${isRefreshing ? 'animate-spin text-[#F97316]' : ''}`} />
+                          <span>{language === 'ta' ? 'பக்கத்தைப் புதுப்பி' : language === 'hi' ? 'पेज रिफ्रेश करें' : 'Refresh Page'}</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {
@@ -474,8 +482,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Mobile Search Bar (Hidden on tabs that provide their own search/filter bar like jobs and messages) */}
-        {activeTab !== 'jobs' && activeTab !== 'messages' && activeTab !== 'candidates' && (
+        {/* Mobile Search Bar (Hidden on thoughts page, network page, jobs, messages, candidates, profile) */}
+        {activeTab !== 'jobs' &&
+          activeTab !== 'messages' &&
+          activeTab !== 'candidates' &&
+          activeTab !== 'feed' &&
+          activeTab !== 'profile' &&
+          activeTab !== 'connections' && (
           <div className="md:hidden border-t border-gray-100 px-3 py-2 bg-[#F8FAFC]">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />

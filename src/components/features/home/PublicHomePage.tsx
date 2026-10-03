@@ -13,6 +13,7 @@ import {
   RotateCw,
 } from 'lucide-react'
 import { PullToRefresh } from '../../ui/PullToRefresh'
+import { Capacitor } from '@capacitor/core'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
@@ -55,6 +56,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   const [showExpMenu, setShowExpMenu] = useState(false)
   const [showEmployerMenu, setShowEmployerMenu] = useState(false)
   const [showAppBanner, setShowAppBanner] = useState(true)
+  const isNativeApp = Capacitor.isNativePlatform()
 
   const [skillsQuery, setSkillsQuery] = useState('')
   const [selectedExperience, setSelectedExperience] = useState('')
@@ -127,8 +129,8 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
           {/* Right: Language Selector & Primary Action */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Page Refresh Button (Accessible across all pages) */}
-            {onRefresh && (
+            {/* Page Refresh Button (Native App only) */}
+            {isNativeApp && onRefresh && (
               <button
                 type="button"
                 onClick={onRefresh}

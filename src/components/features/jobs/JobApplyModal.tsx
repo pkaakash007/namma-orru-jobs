@@ -302,6 +302,32 @@ export const JobApplyModal: React.FC<JobApplyModalProps> = ({ job, onClose, onSu
               {translateLocationSync(job.location, language)} • {formatWorkplaceType(job.workplace_type, language)}
             </span>
           </div>
+
+          {job.image_url && (
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-10 w-10 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shrink-0">
+                  <img
+                    src={job.image_url}
+                    alt={job.title}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-800 block truncate">Attached Hiring Flyer</span>
+                  <span className="text-[11px] text-slate-500">Official recruitment poster</span>
+                </div>
+              </div>
+              <a
+                href={job.image_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-[#0B2545] hover:text-[#F97316] hover:underline px-2 py-1 rounded-md cursor-pointer"
+              >
+                View Flyer ↗
+              </a>
+            </div>
+          )}
         </div>
 
         {hasApplied && (

@@ -49,7 +49,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     deactivatedUntil?: string
   } | null>(null)
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
 
   // Instagram-style time formatting (now, 5m, 2h, 1d, or date)
   const formatTimeSnippet = (dateStr: string) => {
@@ -99,7 +99,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     viewProfile: lang === 'ta' ? 'சுயவிவரம்' : lang === 'hi' ? 'प्रोफ़ाइल' : 'Profile',
     violationTitle: lang === 'ta' ? 'உள்ளடக்கப் பாதுகாப்புக் கொள்கை மீறல்' : lang === 'hi' ? 'सामग्री सुरक्षा नीति उल्लंघन' : 'Content Safety Policy Violation',
     suspendedNotice: lang === 'ta' ? 'உங்கள் கணக்கு 24 மணிநேரத்திற்கு தற்காலிகமாக முடக்கப்பட்டுள்ளது' : lang === 'hi' ? 'आपका खाता 24 घंटे के लिए निलंबित कर दिया गया है' : 'Your account has been temporarily suspended for 24 hours due to non-professional content.',
-    online: lang === 'ta' ? 'செயலில் உள்ளார்' : lang === 'hi' ? 'सक्रिय' : 'Active now',
   }
 
   // Select a conversation and immediately mark its messages as read
@@ -195,10 +194,17 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     return () => clearInterval(msgInterval)
   }, [activeConversation?.id])
 
-  // Auto-scroll to bottom of message list
+  // Auto-scroll to bottom of message list (strictly inside chat container, never scrolls the window)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
   }, [messages])
+
+  // Ensure window stays at top when opening or switching conversations
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [activeConversation?.id])
 
   // Send message with live moderation error handling
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -265,12 +271,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       )}
 
       {/* Main Native Instagram-Style Direct Container */}
-      <div className="w-full bg-white flex flex-col md:flex-row h-[calc(100dvh-112px)] md:h-[calc(100vh-140px)] md:min-h-[620px] md:max-h-[840px] md:rounded-2xl md:border md:border-slate-200/80 md:shadow-xs overflow-hidden">
+      <div className="w-full bg-white flex flex-col md:flex-row h-[calc(100dvh-124px)] md:h-[calc(100vh-84px)] md:rounded-2xl md:border md:border-slate-200/80 md:shadow-xs overflow-hidden">
         {/* ========================================================================= */}
         {/* LEFT COLUMN: Instagram Direct Messages Inbox List                         */}
         {/* ========================================================================= */}
         <div
-          className={`w-full md:w-80 lg:w-[350px] shrink-0 md:border-r md:border-slate-100 flex flex-col bg-white ${
+          className={`w-full md:w-80 lg:w-[350px] shrink-0 md:border-r md:border-slate-100 flex flex-col bg-white overflow-hidden ${
             activeConversation ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -324,7 +330,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           </div>
 
           {/* Conversations Scrollable List / Authentic Empty State */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-50 min-h-0">
             {loadingConversations ? (
               <div className="p-4 space-y-4">
                 {[1, 2, 3, 4, 5].map((i) => (
@@ -398,7 +404,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                           {conv.participant.full_name ? conv.participant.full_name.charAt(0).toUpperCase() : 'U'}
                         </div>
                       )}
-                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" />
                     </div>
 
                     {/* Conversation Info */}
@@ -445,7 +450,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
         {/* RIGHT COLUMN: Active Chat Thread or Desktop Empty State                   */}
         {/* ========================================================================= */}
         {activeConversation ? (
-          <div className="flex-1 flex flex-col bg-white overflow-hidden">
+          <div className="flex-1 flex flex-col bg-white overflow-hidden min-h-0">
             {/* Native Instagram Chat Top Bar */}
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
               <div className="flex items-center gap-3 min-w-0">
@@ -470,22 +475,17 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                       {activeConversation.participant.full_name ? activeConversation.participant.full_name.charAt(0).toUpperCase() : 'U'}
                     </div>
                   )}
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
                 </div>
 
                 <div className="min-w-0">
                   <h3 className="font-bold text-sm text-slate-900 leading-tight truncate">
                     {activeConversation.participant.full_name}
                   </h3>
-                  <p className="text-[11px] text-slate-500 leading-tight truncate flex items-center gap-1">
-                    <span className="text-emerald-600 font-medium">{t.online}</span>
-                    {activeConversation.participant.username && (
-                      <>
-                        <span>•</span>
-                        <span>@{activeConversation.participant.username}</span>
-                      </>
-                    )}
-                  </p>
+                  {(activeConversation.participant.headline || activeConversation.participant.username) && (
+                    <p className="text-[11px] text-slate-500 leading-tight truncate mt-0.5">
+                      {activeConversation.participant.headline || `@${activeConversation.participant.username}`}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -501,7 +501,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             </div>
 
             {/* Chat Thread Messages Area (Clean Instagram Bubble Styling) */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-[#FAFAFA]">
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-[#FAFAFA] min-h-0">
               {loadingMessages ? (
                 <div className="flex items-center justify-center h-full">
                   <RefreshCw className="w-5 h-5 text-slate-400 animate-spin" />
@@ -561,7 +561,6 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   )
                 })
               )}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Native Instagram Message Compose Pill Bar */}

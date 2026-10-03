@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Briefcase,
   Phone,
   FileText,
   UploadCloud,
-  Check,
   Languages,
   ExternalLink,
   ArrowLeft,
@@ -20,14 +19,21 @@ import {
   Edit,
   Clock,
   CheckCircle2,
+  GraduationCap,
+  MessageSquare,
+  MessageCircle,
+  Heart,
+  Send,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
 import { useLanguage } from '../../../context/LanguageContext'
 import { Badge } from '../../ui/Badge'
-import { uploadService } from '../../../services/api'
-import { parseResumeWithAi, extractTextFromPdf, isResumeDocument } from '../../../services/resumeParser'
+import { uploadService, socialService, feedService, commentService, type PostComment } from '../../../services/api'
 import type { SupportedLanguage } from '../../../utils/i18n'
+import type { Post } from '../../../types'
+import { Avatar } from '../../ui/Avatar'
 import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 import { parseSkillsArray, cleanSkillString } from '../../../utils/skills'
 import { DynamicTranslatedText } from '../../ui/DynamicTranslatedText'
@@ -92,19 +98,62 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   const [headline, setHeadline] = useState(user?.headline || '')
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '')
   const [bannerUrl, setBannerUrl] = useState(user?.banner_url || '')
-  const [age, setAge] = useState<string>(user?.age ? String(user?.age) : '')
   const [dob, setDob] = useState(user?.date_of_birth || '')
   const [phone, setPhone] = useState(user?.phone || '')
   const [location, setLocation] = useState(user?.location || '')
+  const [userState, setUserState] = useState(user?.state || '')
+  const [pincode, setPincode] = useState(user?.pincode || '')
   const [company, setCompany] = useState(user?.company || '')
   const [position, setPosition] = useState(user?.position || '')
   const [bio, setBio] = useState(user?.bio || '')
   const [skillsList, setSkillsList] = useState<string[]>(() => parseSkillsArray(user?.skills))
   const [skillInput, setSkillInput] = useState('')
   const [resumeUrl, setResumeUrl] = useState(user?.resume_url || '')
-  const [selectedLang, setSelectedLang] = useState<SupportedLanguage>(
-    (user?.language as SupportedLanguage) || language
+  const [selectedLang, setSelectedLang] = useState<SupportedLanguage>(language)
+
+  // Keep selected language strictly synchronized with the actual application language
+  useEffect(() => {
+    setSelectedLang(language)
+  }, [language])
+
+  // Experience Status (Fresher vs Experienced)
+  const [experienceLevel, setExperienceLevel] = useState<'fresher' | 'experienced'>(() => {
+    if (user?.company || (user?.experience_years && user.experience_years > 0) || user?.position) {
+      return 'experienced'
+    }
+    if (user?.experience_level === 'fresher' || user?.experience_level === 'experienced') {
+      return user.experience_level
+    }
+    return 'fresher'
+  })
+
+  // Only displayed for first time user form fill; thereafter no need
+  const isFirstTimeUser = useMemo(() => {
+    if (!user) return false
+    if (user.experience_level === 'fresher' || user.experience_level === 'experienced') {
+      return false
+    }
+    const hasFilledProfile = Boolean(
+      (user.company && user.company.trim()) ||
+      (user.position && user.position.trim()) ||
+      (user.resume_url && user.resume_url.trim()) ||
+      (user.headline && user.headline.trim()) ||
+      (user.bio && user.bio.trim()) ||
+      (user.location && user.location.trim()) ||
+      (user.state && user.state.trim()) ||
+      (user.pincode && user.pincode.trim()) ||
+      (user.education_degree && user.education_degree.trim()) ||
+      (user.experience_years !== undefined && user.experience_years !== null && Number(user.experience_years) > 0) ||
+      (user.skills && user.skills.length > 0)
+    )
+    return !hasFilledProfile
+  }, [user])
+  const [experienceYears, setExperienceYears] = useState<string>(
+    user?.experience_years !== undefined ? String(user.experience_years) : ''
   )
+  const [educationDegree, setEducationDegree] = useState(user?.education_degree || '')
+  const [educationCollege, setEducationCollege] = useState(user?.education_college || '')
+  const [educationYear, setEducationYear] = useState(user?.education_year || '')
 
   const [resumeMeta, setResumeMeta] = useState<ResumeMeta | null>(() => {
     try {
@@ -115,16 +164,81 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     } catch {}
     return null
   })
-  const [extractedSkillsFeedback, setExtractedSkillsFeedback] = useState<string[]>([])
   const [uploadProgress, setUploadProgress] = useState<number>(0)
   const [uploadFileName, setUploadFileName] = useState<string>('')
-  const [uploadStepText, setUploadStepText] = useState<string>('')
+  const [uploadFileSize, setUploadFileSize] = useState<string>('')
 
   const [isUploadingResume, setIsUploadingResume] = useState(false)
   const [isUploadingBanner, setIsUploadingBanner] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
-  const [isExtractingAi, setIsExtractingAi] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Track whether user made any changes to profile
+  const hasChanges = useMemo(() => {
+    if (!user) return false
+
+    if ((fullName || '').trim() !== (user.full_name || '').trim()) return true
+    if ((headline || '').trim() !== (user.headline || '').trim()) return true
+    if ((avatarUrl || '') !== (user.avatar_url || '')) return true
+    if ((bannerUrl || '') !== (user.banner_url || '')) return true
+    if ((dob || '') !== (user.date_of_birth || '')) return true
+    if ((phone || '').trim() !== (user.phone || '').trim()) return true
+    if ((location || '').trim() !== (user.location || '').trim()) return true
+    if ((userState || '').trim() !== (user.state || '').trim()) return true
+    if ((pincode || '').trim() !== (user.pincode || '').trim()) return true
+    if ((bio || '').trim() !== (user.bio || '').trim()) return true
+    if ((resumeUrl || '') !== (user.resume_url || '')) return true
+    if (selectedLang !== ((user.language as SupportedLanguage) || 'en')) return true
+
+    // Experience Status Changes
+    const initialExpLevel =
+      user.experience_level === 'fresher' || user.experience_level === 'experienced'
+        ? user.experience_level
+        : (user.company || (user.experience_years && user.experience_years > 0) || user.position ? 'experienced' : 'fresher')
+
+    if (experienceLevel !== initialExpLevel) return true
+
+    if (experienceLevel === 'experienced') {
+      if ((company || '').trim() !== (user.company || '').trim()) return true
+      if ((position || '').trim() !== (user.position || '').trim()) return true
+      if ((experienceYears || '') !== (user.experience_years !== undefined ? String(user.experience_years) : '')) return true
+    }
+
+    // Education background changes
+    if ((educationDegree || '').trim() !== (user.education_degree || '').trim()) return true
+    if ((educationCollege || '').trim() !== (user.education_college || '').trim()) return true
+    if ((educationYear || '').trim() !== (user.education_year || '').trim()) return true
+
+    const initialSkills = parseSkillsArray(user.skills).map((s) => s.trim().toLowerCase()).sort()
+    const currentSkills = skillsList.map((s) => s.trim().toLowerCase()).sort()
+    if (initialSkills.length !== currentSkills.length) return true
+    for (let i = 0; i < initialSkills.length; i++) {
+      if (initialSkills[i] !== currentSkills[i]) return true
+    }
+
+    return false
+  }, [
+    user,
+    fullName,
+    headline,
+    avatarUrl,
+    bannerUrl,
+    dob,
+    phone,
+    location,
+    company,
+    position,
+    bio,
+    resumeUrl,
+    skillsList,
+    selectedLang,
+    language,
+    experienceLevel,
+    experienceYears,
+    educationDegree,
+    educationCollege,
+    educationYear,
+  ])
 
   // Keep form in sync if user changes
   useEffect(() => {
@@ -133,10 +247,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       if (!headline) setHeadline(user.headline || '')
       if (!isUploadingAvatar && user.avatar_url !== undefined) setAvatarUrl(user.avatar_url || '')
       if (!isUploadingBanner && user.banner_url !== undefined) setBannerUrl(user.banner_url || '')
-      if (!age && user.age) setAge(String(user.age))
       if (!dob && user.date_of_birth) setDob(user.date_of_birth)
       if (!phone && user.phone) setPhone(user.phone)
       if (!location && user.location) setLocation(user.location)
+      if (user.state !== undefined) setUserState(user.state || '')
+      if (user.pincode !== undefined) setPincode(user.pincode || '')
       if (!company && user.company) setCompany(user.company)
       if (!position && user.position) setPosition(user.position)
       if (!bio && user.bio) setBio(user.bio)
@@ -144,8 +259,180 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       if (user.skills && skillsList.length === 0) {
         setSkillsList(parseSkillsArray(user.skills))
       }
+      if (user.company || (user.experience_years && user.experience_years > 0) || user.position) {
+        setExperienceLevel('experienced')
+      } else if (user.experience_level === 'fresher' || user.experience_level === 'experienced') {
+        setExperienceLevel(user.experience_level)
+      }
+      if (user.experience_years !== undefined) setExperienceYears(String(user.experience_years))
+      if (user.education_degree) setEducationDegree(user.education_degree)
+      if (user.education_college) setEducationCollege(user.education_college)
     }
-  }, [user, isUploadingAvatar, isUploadingBanner])
+  }, [user])
+
+  // Instagram Profile View: Tabs ('thoughts' | 'edit')
+  const [activeProfileTab, setActiveProfileTab] = useState<'thoughts' | 'edit'>('thoughts')
+  const [followersCount, setFollowersCount] = useState<number>(user?.followers_count || 0)
+  const [followingCount, setFollowingCount] = useState<number>(user?.following_count || 0)
+  const [thoughtsList, setThoughtsList] = useState<Post[]>([])
+  const [loadingThoughts, setLoadingThoughts] = useState(false)
+
+  // Comments Drawer / Modal State
+  const [commentPostId, setCommentPostId] = useState<string | null>(null)
+  const [comments, setComments] = useState<PostComment[]>([])
+  const [loadingComments, setLoadingComments] = useState(false)
+  const [commentInput, setCommentInput] = useState('')
+  const [isPostingComment, setIsPostingComment] = useState(false)
+
+  // Create Thought Modal State
+  const [isCreateThoughtModalOpen, setIsCreateThoughtModalOpen] = useState(false)
+  const [thoughtTitle, setThoughtTitle] = useState('')
+  const [thoughtContent, setThoughtContent] = useState('')
+  const [thoughtMediaUrl, setThoughtMediaUrl] = useState<string | null>(null)
+  const [isUploadingThoughtMedia, setIsUploadingThoughtMedia] = useState(false)
+  const [isSubmittingThought, setIsSubmittingThought] = useState(false)
+
+  // Fetch dynamic follower/following and user thoughts from backend API
+  const fetchUserSocialData = async () => {
+    if (!user?.id) return
+    try {
+      setLoadingThoughts(true)
+      const res = await socialService.getUserProfile(user.id)
+      if (res?.profile) {
+        setFollowersCount(res.profile.followers_count ?? 0)
+        setFollowingCount(res.profile.following_count ?? 0)
+        setThoughtsList(res.profile.thoughts || res.profile.posts || [])
+      }
+    } catch (err) {
+      console.error('Failed to load profile social details:', err)
+    } finally {
+      setLoadingThoughts(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchUserSocialData()
+  }, [user?.id])
+
+  const handleLikePost = async (postId: string) => {
+    try {
+      const res = await feedService.likePost(postId)
+      setThoughtsList((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                is_liked: res.liked !== undefined ? res.liked : !p.is_liked,
+                likes_count: res.likes_count ?? (p.is_liked ? Math.max(0, p.likes_count - 1) : p.likes_count + 1),
+              }
+            : p
+        )
+      )
+    } catch {
+      showToast('Failed to update like status', 'error')
+    }
+  }
+
+  const handleCreateThought = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!thoughtContent.trim() && !thoughtTitle.trim()) {
+      showToast('Please add some content for your thought', 'error')
+      return
+    }
+    setIsSubmittingThought(true)
+    try {
+      await feedService.createPost(
+        thoughtContent.trim(),
+        thoughtMediaUrl ? [thoughtMediaUrl] : [],
+        thoughtTitle.trim() || undefined
+      )
+      showToast('Thought posted successfully!', 'success')
+      setThoughtTitle('')
+      setThoughtContent('')
+      setThoughtMediaUrl(null)
+      setIsCreateThoughtModalOpen(false)
+      setActiveProfileTab('thoughts')
+      fetchUserSocialData()
+    } catch (err: any) {
+      showToast(err.message || 'Failed to post thought', 'error')
+    } finally {
+      setIsSubmittingThought(false)
+    }
+  }
+
+  const handleThoughtMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Photo must be smaller than 10MB', 'error')
+      return
+    }
+    setIsUploadingThoughtMedia(true)
+    try {
+      const data = await uploadService.uploadFile(file, 'posts')
+      setThoughtMediaUrl(data.url)
+      showToast('Photo attached successfully!', 'success')
+    } catch (err: any) {
+      showToast(err.message || 'Failed to upload photo', 'error')
+    } finally {
+      setIsUploadingThoughtMedia(false)
+    }
+  }
+
+  const handleOpenComments = async (postId: string) => {
+    setCommentPostId(postId)
+    setLoadingComments(true)
+    try {
+      const res = await commentService.getComments(postId)
+      setComments(res.comments || [])
+    } catch {
+      setComments([])
+    } finally {
+      setLoadingComments(false)
+    }
+  }
+
+  const handlePostComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!commentPostId || !commentInput.trim() || isPostingComment) return
+    setIsPostingComment(true)
+    try {
+      const res = await commentService.postComment(commentPostId, commentInput.trim())
+      setComments((prev) => [...prev, res.comment])
+      setCommentInput('')
+      setThoughtsList((prev) =>
+        prev.map((t) =>
+          t.id === commentPostId
+            ? { ...t, comments_count: (t.comments_count || 0) + 1 }
+            : t
+        )
+      )
+    } catch (err: any) {
+      showToast(err.message || 'Failed to post comment', 'error')
+    } finally {
+      setIsPostingComment(false)
+    }
+  }
+
+  const formatInstagramTime = (dateStr?: string) => {
+    if (!dateStr) return 'JUST NOW'
+    try {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return 'JUST NOW'
+      const now = new Date()
+      const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000)
+      if (diffSec < 60) return 'JUST NOW'
+      const diffMin = Math.floor(diffSec / 60)
+      if (diffMin < 60) return `${diffMin} ${diffMin === 1 ? 'MINUTE' : 'MINUTES'} AGO`
+      const diffHour = Math.floor(diffMin / 60)
+      if (diffHour < 24) return `${diffHour} ${diffHour === 1 ? 'HOUR' : 'HOURS'} AGO`
+      const diffDay = Math.floor(diffHour / 24)
+      if (diffDay < 7) return `${diffDay} ${diffDay === 1 ? 'DAY' : 'DAYS'} AGO`
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
+    } catch {
+      return 'RECENTLY'
+    }
+  }
 
   const handleAddSkill = (skillText: string) => {
     if (!skillText) return
@@ -172,37 +459,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
     setSkillsList(skillsList.filter((_, idx) => idx !== indexToRemove))
   }
 
-  // Auto-calculate age when DOB changes
   const handleDobChange = (newDob: string) => {
     setDob(newDob)
-    if (newDob) {
-      const birthYear = new Date(newDob).getFullYear()
-      const currentYear = new Date().getFullYear()
-      const calculatedAge = currentYear - birthYear
-      if (calculatedAge > 0 && calculatedAge < 120) {
-        setAge(String(calculatedAge))
-      }
-    }
   }
 
-  // Interactive Resume Review State (Requirement 17: User Review is Required)
-  const [reviewModalOpen, setReviewModalOpen] = useState(false)
-  const [reviewData, setReviewData] = useState<{
-    fullName: string
-    headline: string
-    position: string
-    company: string
-    location: string
-    bio: string
-    phone: string
-    skills: string[]
-    languages: string[]
-    resumeUrl: string
-    resumeMeta: ResumeMeta
-  } | null>(null)
-  const [reviewSkillInput, setReviewSkillInput] = useState('')
-
-  // Handle Resume Upload & AI Content Extraction with User Review
+  // Handle Resume Upload with Smooth Human Progress UX
   const handleResumeFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -227,52 +488,32 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       return
     }
 
+    const sizeFormatted =
+      file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`
+    const extFormatted = file.name.split('.').pop()?.toUpperCase() || 'PDF'
+
     setUploadFileName(file.name)
+    setUploadFileSize(sizeFormatted)
     setIsUploadingResume(true)
-    setIsExtractingAi(true)
-    setUploadProgress(20)
-    setUploadStepText('Validating document content...')
+    setUploadProgress(15)
+
+    // Smooth fluid progress timer
+    let currentProgress = 15
+    const progressTimer = setInterval(() => {
+      currentProgress = Math.min(88, currentProgress + Math.floor(Math.random() * 12) + 8)
+      setUploadProgress(currentProgress)
+    }, 200)
 
     try {
-      // 1. Technical & Content Classification Validation (Requirements 12, 13, 14)
-      const rawText = await extractTextFromPdf(file)
-      const classification = isResumeDocument(rawText, file.name)
-      if (!classification.isValid) {
-        showToast(classification.reason || 'Please upload a valid CV or resume.', 'error')
-        setIsUploadingResume(false)
-        setIsExtractingAi(false)
-        setUploadProgress(0)
-        return
-      }
-
-      setUploadProgress(45)
-      setUploadStepText(
-        language === 'ta'
-          ? 'கிளவுட் சேமிப்பகத்தில் ஆவணம் பதிவேற்றப்படுகிறது...'
-          : language === 'hi'
-          ? 'क्लाउड स्टोरेज में दस्तावेज़ अपलोड किया जा रहा है...'
-          : 'Uploading document to secure cloud storage...'
-      )
-
-      // 2. Upload to Cloudflare R2
+      // Upload to Cloudflare R2
       const uploaded = await uploadService.uploadFile(file, 'resumes')
+      clearInterval(progressTimer)
+      setUploadProgress(100)
+
       setResumeUrl(uploaded.url)
 
-      setUploadProgress(70)
-      setUploadStepText(
-        language === 'ta'
-          ? 'திறன்கள் மற்றும் அனுபவங்களை பகுப்பாய்வு செய்கிறது...'
-          : language === 'hi'
-          ? 'कौशल और अनुभव का विश्लेषण किया जा रहा है...'
-          : 'Extracting skills, credentials & experience...'
-      )
-
-      // 3. Store resume metadata
-      const sizeFormatted =
-        file.size > 1024 * 1024
-          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-          : `${Math.max(1, Math.round(file.size / 1024))} KB`
-      const extFormatted = file.name.split('.').pop()?.toUpperCase() || 'PDF'
       const meta: ResumeMeta = {
         fileName: file.name,
         fileSize: sizeFormatted,
@@ -290,102 +531,31 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         } catch {}
       }
 
-      // 4. AI Resume Intelligence Extraction
-      const parsedData = await parseResumeWithAi(file, uploaded.url)
-      setUploadProgress(100)
-
-      // 5. User Review Flow (Requirement 17: User Review is Required before saving)
-      const extractedSkills = parseSkillsArray(parsedData.skills)
-      setReviewData({
-        fullName: parsedData.fullName || fullName,
-        headline: parsedData.headline || headline || `${extractedSkills.slice(0, 3).join(' / ')} Specialist`,
-        position: parsedData.position || position || parsedData.currentJobTitle || 'Specialist',
-        company: parsedData.company || company || '',
-        location: parsedData.location || location || 'Chennai, Tamil Nadu',
-        bio: parsedData.bio || bio || parsedData.professionalSummary || '',
-        phone: parsedData.phone || phone || '',
-        skills: extractedSkills,
-        languages: parsedData.languages || ['English', 'Tamil'],
-        resumeUrl: uploaded.url,
-        resumeMeta: meta,
-      })
-      setReviewModalOpen(true)
-    } catch (err: any) {
-      showToast(err.message || 'Failed to upload/analyze resume', 'error')
-    } finally {
-      setIsUploadingResume(false)
-      setIsExtractingAi(false)
-      setTimeout(() => {
-        setUploadProgress(0)
-        setUploadFileName('')
-        setUploadStepText('')
-      }, 500)
-    }
-  }
-
-  // Confirm Reviewed Resume Information and Apply to Profile (Requirement 17)
-  const handleConfirmReview = async () => {
-    if (!reviewData) return
-    setIsSaving(true)
-    try {
-      setFullName(reviewData.fullName)
-      setHeadline(reviewData.headline)
-      setPosition(reviewData.position)
-      setCompany(reviewData.company)
-      setLocation(reviewData.location)
-      setBio(reviewData.bio)
-      if (reviewData.phone) setPhone(reviewData.phone)
-      setSkillsList(reviewData.skills)
-      setResumeUrl(reviewData.resumeUrl)
-      setResumeMeta(reviewData.resumeMeta)
-      setExtractedSkillsFeedback(reviewData.skills)
-
+      // Persist resume directly to profile
       await updateUserProfile({
-        full_name: reviewData.fullName || undefined,
-        skills: reviewData.skills,
-        headline: reviewData.headline,
-        position: reviewData.position,
-        company: reviewData.company,
-        location: reviewData.location,
-        bio: reviewData.bio,
-        phone: reviewData.phone || undefined,
-        resume_url: reviewData.resumeUrl,
+        resume_url: uploaded.url,
       })
 
       showToast(
         language === 'ta'
-          ? 'தன்விவரக் குறிப்பு விவரங்கள் உறுதி செய்யப்பட்டு சேமிக்கப்பட்டன!'
+          ? 'தன்விவரக் குறிப்பு வெற்றிகரமாக பதிவேற்றப்பட்டது'
           : language === 'hi'
-          ? 'बायोडाटा विवरण की पुष्टि की गई और सहेजा गया!'
-          : 'Resume details reviewed and applied to your profile!',
+          ? 'बायோडाटा सफलतापूर्वक अपलोड किया गया'
+          : 'Resume uploaded successfully',
         'success'
       )
-      setReviewModalOpen(false)
     } catch (err: any) {
-      showToast(err.message || 'Failed to update profile from resume', 'error')
+      clearInterval(progressTimer)
+      showToast(err.message || 'Failed to upload resume', 'error')
     } finally {
-      setIsSaving(false)
+      setTimeout(() => {
+        setIsUploadingResume(false)
+        setUploadProgress(0)
+        setUploadFileName('')
+        setUploadFileSize('')
+      }, 400)
+      e.target.value = ''
     }
-  }
-
-  const handleRemoveReviewSkill = (index: number) => {
-    if (!reviewData) return
-    setReviewData({
-      ...reviewData,
-      skills: reviewData.skills.filter((_, idx) => idx !== index),
-    })
-  }
-
-  const handleAddReviewSkill = () => {
-    if (!reviewData || !reviewSkillInput.trim()) return
-    const cleaned = cleanSkillString(reviewSkillInput.trim())
-    if (cleaned && !reviewData.skills.some((s) => s.toLowerCase() === cleaned.toLowerCase())) {
-      setReviewData({
-        ...reviewData,
-        skills: [...reviewData.skills, cleaned],
-      })
-    }
-    setReviewSkillInput('')
   }
 
   const handleRemoveResume = () => {
@@ -411,7 +581,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       onConfirm: async () => {
         const prevResume = resumeUrl
         setResumeUrl('')
-        setExtractedSkillsFeedback([])
         setResumeMeta(null)
         if (user?.id) {
           try {
@@ -612,25 +781,36 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
       }
     }
 
-    if (age) {
-      const numAge = parseInt(age, 10)
-      if (isNaN(numAge) || numAge < 16 || numAge > 100) {
-        showToast('Please enter a valid age between 16 and 100', 'error')
+    const isFresher = experienceLevel === 'fresher'
+
+    if (!isFresher && experienceYears.trim()) {
+      const numExp = parseFloat(experienceYears)
+      if (isNaN(numExp) || numExp < 0 || numExp > 60) {
+        showToast('Please enter a valid total experience in years (0 - 60)', 'error')
         return
       }
     }
+
+    const derivedAge = dob ? (new Date().getFullYear() - new Date(dob).getFullYear()) : undefined
 
     setIsSaving(true)
     try {
       await updateUserProfile({
         full_name: fullName.trim(),
         headline: headline.trim(),
-        age: age ? parseInt(age, 10) : undefined,
+        age: derivedAge,
         date_of_birth: dob || undefined,
         phone: phone.trim() || undefined,
         location: location.trim() || undefined,
-        company: company.trim() || undefined,
-        position: position.trim() || undefined,
+        state: userState.trim() || undefined,
+        pincode: pincode.trim() || undefined,
+        experience_level: experienceLevel,
+        company: isFresher ? '' : (company.trim() || undefined),
+        position: isFresher ? '' : (position.trim() || undefined),
+        experience_years: isFresher ? 0 : (experienceYears ? parseInt(experienceYears, 10) : 0),
+        education_degree: educationDegree.trim() || undefined,
+        education_college: educationCollege.trim() || undefined,
+        education_year: educationYear.trim() || undefined,
         bio: bio.trim() || undefined,
         skills: skillsList,
         resume_url: resumeUrl || undefined,
@@ -891,30 +1071,23 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         </div>
 
         {/* Quick Save Header Button */}
-        <div className="flex items-center gap-2">
-          {onBack && (
+        {(hasChanges || isSaving) && (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onBack}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs cursor-pointer"
+              onClick={handleSubmit}
+              disabled={isSaving || isUploadingResume}
+              className="flex items-center gap-1.5 rounded-xl bg-[#0B2545] hover:bg-[#071A31] px-5 py-2 text-xs font-bold text-white transition shadow-xs disabled:opacity-50 cursor-pointer animate-in fade-in zoom-in-95 duration-150"
             >
-              {language === 'ta' ? 'திரும்பு' : language === 'hi' ? 'वापस' : 'Back to Jobs'}
+              {isSaving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              <span>{isSaving ? t('profile_saving_changes') : t('profile_save_changes')}</span>
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSaving || isUploadingResume}
-            className="flex items-center gap-1.5 rounded-xl bg-[#0B2545] hover:bg-[#071A31] px-5 py-2 text-xs font-bold text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
-          >
-            {isSaving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
-            <span>{isSaving ? t('profile_saving_changes') : t('profile_save_changes')}</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Main Profile Hero Card */}
@@ -1030,7 +1203,12 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               {role && role !== 'employee' && <Badge variant="role" role={role} />}
             </div>
             <p className="text-xs sm:text-sm text-slate-600 font-medium">
-              {headline || 'Professional Job Seeker'}
+              {headline ||
+                (experienceLevel === 'fresher'
+                  ? 'Fresher Candidate'
+                  : position
+                  ? `${position}${company ? ` at ${company}` : ''}`
+                  : 'Professional Job Seeker')}
             </p>
             <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-500">
               {user?.email && (
@@ -1052,12 +1230,191 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 </span>
               )}
             </div>
+
+            {/* Instagram Profile Stats Row: Thoughts, Followers, Following */}
+            <div className="flex items-center gap-6 pt-4 pb-1 text-xs sm:text-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-[#0F172A]">{thoughtsList.length}</span>
+                <span className="text-slate-600">Thoughts</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-[#0F172A]">{followersCount}</span>
+                <span className="text-slate-600">Followers</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-[#0F172A]">{followingCount}</span>
+                <span className="text-slate-600">Following</span>
+              </div>
+            </div>
+
+            {/* Share Thoughts Action Button */}
+            <div className="pt-3">
+              <button
+                type="button"
+                onClick={() => setIsCreateThoughtModalOpen(true)}
+                className="inline-flex items-center gap-2 bg-[#0B2545] hover:bg-[#071A31] text-white px-5 py-2.5 rounded-full text-xs font-bold transition shadow-xs cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Share Thoughts</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Profile Content Form */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Navigation Tabs: My Thoughts vs Edit Profile & Resume */}
+      <div className="flex items-center border-b border-slate-200 bg-white rounded-xl px-2 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setActiveProfileTab('thoughts')}
+          className={`flex items-center gap-2 py-3 px-4 border-b-2 font-semibold text-xs sm:text-sm transition cursor-pointer ${
+            activeProfileTab === 'thoughts'
+              ? 'border-[#0B2545] text-[#0B2545] font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>My Thoughts ({thoughtsList.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveProfileTab('edit')}
+          className={`flex items-center gap-2 py-3 px-4 border-b-2 font-semibold text-xs sm:text-sm transition cursor-pointer ${
+            activeProfileTab === 'edit'
+              ? 'border-[#0B2545] text-[#0B2545] font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>Edit Profile & Resume</span>
+        </button>
+      </div>
+
+      {activeProfileTab === 'thoughts' ? (
+        <div className="space-y-4">
+          {loadingThoughts ? (
+            <div className="space-y-4">
+              <div className="h-40 bg-white rounded-2xl border border-slate-200 animate-pulse" />
+              <div className="h-40 bg-white rounded-2xl border border-slate-200 animate-pulse" />
+            </div>
+          ) : thoughtsList.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-xs space-y-4">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-[#0B2545]">
+                <MessageSquare className="h-6 w-6" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1.5">
+                <h3 className="text-base font-bold text-slate-900">No Thoughts Shared Yet</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Share your projects, technical learnings, achievements, and experiences with the community.
+                </p>
+              </div>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateThoughtModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 bg-[#0B2545] hover:bg-[#071A31] text-white px-5 py-2.5 rounded-full text-xs font-bold transition shadow-xs cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Share Your Thoughts</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {thoughtsList.map((thought) => {
+                const isLiked = Boolean(thought.is_liked)
+                const commentsCount = thought.comments_count || 0
+                return (
+                  <article
+                    key={thought.id}
+                    className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs hover:border-slate-300 transition"
+                  >
+                    {/* Header: Author + Timestamp */}
+                    <div className="flex items-center justify-between p-4 pb-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={avatarUrl || user?.avatar_url}
+                          name={fullName || user?.full_name || 'User'}
+                          className="w-9 h-9 text-xs"
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 leading-tight">
+                            {fullName || user?.full_name}
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            {formatInstagramTime(thought.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="px-4 pb-3 space-y-2">
+                      {thought.title && (
+                        <h4 className="text-sm font-bold text-slate-900">
+                          {thought.title}
+                        </h4>
+                      )}
+                      <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                        {thought.content}
+                      </p>
+                    </div>
+
+                    {/* Media Image */}
+                    {thought.media_urls && thought.media_urls.length > 0 && (
+                      <div className="px-4 pb-3">
+                        <img
+                          src={thought.media_urls[0]}
+                          alt="Thought media"
+                          className="w-full max-h-96 object-cover rounded-xl border border-slate-100"
+                        />
+                      </div>
+                    )}
+
+                    {/* Action Bar (Like, Comment, Share) */}
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => handleLikePost(thought.id)}
+                          className={`flex items-center gap-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                            isLiked ? 'text-red-600' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-600 text-red-600' : ''}`} />
+                          <span>{thought.likes_count || 0}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenComments(thought.id)}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition active:scale-95 cursor-pointer"
+                        >
+                          <MessageCircle className="w-4 h-4 -scale-x-100" />
+                          <span>{commentsCount}</span>
+                        </button>
+                      </div>
+
+                      {commentsCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenComments(thought.id)}
+                          className="text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition font-medium"
+                        >
+                          View all {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Main Profile Content Form */
+        <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: Application Language Preference (iOS-style Segmented Control) */}
         <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
@@ -1104,11 +1461,48 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           </div>
         </div>
 
-        {/* Section 2: Personal & Professional Details */}
+        {/* Experience Status Selection (Only displayed for first-time user form fill; simple selection, no other text) */}
+        {isFirstTimeUser && (
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span className="text-xs font-bold text-slate-800 tracking-wide uppercase">
+              {t('profile_experience_status')}
+            </span>
+
+            {/* Apple iOS-Style Segmented Pill Toggle - Simple Selection, No Other Text */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/90 border border-slate-200/70 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => setExperienceLevel('fresher')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-150 cursor-pointer ${
+                  experienceLevel === 'fresher'
+                    ? 'bg-white text-[#0B2545] shadow-xs border border-black/5 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/40'
+                }`}
+              >
+                <GraduationCap className="h-4 w-4 text-[#0B2545]" />
+                <span>{t('profile_fresher_title')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExperienceLevel('experienced')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-150 cursor-pointer ${
+                  experienceLevel === 'experienced'
+                    ? 'bg-white text-[#0B2545] shadow-xs border border-black/5 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/40'
+                }`}
+              >
+                <Briefcase className="h-4 w-4 text-[#0B2545]" />
+                <span>{t('profile_experienced_title')}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Section 2: Personal Details */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <div className="h-7 w-7 rounded-lg bg-blue-50 flex items-center justify-center text-[#0B2545]">
-              <Briefcase className="h-4 w-4" />
+              <FileText className="h-4 w-4" />
             </div>
             <div>
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
@@ -1144,6 +1538,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                 type="text"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
+                placeholder={
+                  experienceLevel === 'fresher'
+                    ? 'e.g. Aspiring Frontend Developer | 2024 Graduate'
+                    : t('profile_headline_placeholder')
+                }
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
@@ -1163,21 +1562,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               </div>
             </div>
 
-            {/* Age */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t('profile_current_age')}
-              </label>
-              <input
-                type="number"
-                min="16"
-                max="100"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
-              />
-            </div>
-
             {/* Phone Number */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1195,7 +1579,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             </div>
 
             {/* Location (with Google API suggestions) */}
-            <div>
+            <div className="sm:col-span-2">
               <GoogleLocationSearchInput
                 label={t('profile_location')}
                 value={location}
@@ -1204,36 +1588,200 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
               />
             </div>
 
-            {/* Current Company */}
+            {/* State */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t('profile_company')}
-              </label>
-              <div className="relative">
-                <Building2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
-                />
-              </div>
-            </div>
-
-            {/* Current Position */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                {t('profile_position')}
+                {t('profile_state')}
               </label>
               <input
                 type="text"
-                value={position}
-                onChange={(e) => setPosition(e.target.value)}
+                value={userState}
+                onChange={(e) => setUserState(e.target.value)}
+                placeholder={t('profile_state_placeholder')}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+              />
+            </div>
+
+            {/* Pincode */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t('profile_pincode')}
+              </label>
+              <input
+                type="text"
+                maxLength={10}
+                value={pincode}
+                onChange={(e) => setPincode(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder={t('profile_pincode_placeholder')}
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
               />
             </div>
           </div>
+        </div>
 
+        {/* Section 3: Educational Background */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <div className="h-7 w-7 rounded-lg bg-blue-50 flex items-center justify-center text-[#0B2545]">
+              <GraduationCap className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                {t('profile_education_details')}
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Your degrees, certifications, and educational credentials
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Qualification / Degree */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t('profile_education_degree')}
+              </label>
+              <input
+                type="text"
+                value={educationDegree}
+                onChange={(e) => setEducationDegree(e.target.value)}
+                placeholder={t('profile_education_degree_placeholder')}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+              />
+            </div>
+
+            {/* College / University */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t('profile_education_college')}
+              </label>
+              <input
+                type="text"
+                value={educationCollege}
+                onChange={(e) => setEducationCollege(e.target.value)}
+                placeholder={t('profile_education_college_placeholder')}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+              />
+            </div>
+
+            {/* Year of Passing */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                {t('profile_education_year')}
+              </label>
+              <input
+                type="text"
+                value={educationYear}
+                onChange={(e) => setEducationYear(e.target.value)}
+                placeholder={t('profile_education_year_placeholder')}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Optional addition for existing fresher profile to add experience */}
+        {!isFirstTimeUser && experienceLevel === 'fresher' && (
+          <div className="flex justify-end pr-1">
+            <button
+              type="button"
+              onClick={() => setExperienceLevel('experienced')}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B2545] hover:underline cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Work Experience</span>
+            </button>
+          </div>
+        )}
+
+        {/* Section 4: Work Experience (ONLY SHOWN FOR EXPERIENCED, COMPLETELY HIDDEN FOR FRESHER) */}
+        {experienceLevel === 'experienced' && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-blue-50 flex items-center justify-center text-[#0B2545]">
+                  <Briefcase className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Professional Experience
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Your current or previous company and years of industry experience
+                  </p>
+                </div>
+              </div>
+
+              {!isFirstTimeUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExperienceLevel('fresher')
+                    setCompany('')
+                    setPosition('')
+                    setExperienceYears('')
+                  }}
+                  className="text-[11px] font-medium text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                >
+                  Clear & Switch to Fresher
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Current / Previous Company */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {t('profile_company')}
+                </label>
+                <div className="relative">
+                  <Building2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    placeholder={t('profile_company_placeholder')}
+                    className="w-full rounded-xl border border-slate-200 pl-9 pr-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Current Position / Designation */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {t('profile_position')}
+                </label>
+                <input
+                  type="text"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder={t('profile_position_placeholder')}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                />
+              </div>
+
+              {/* Total Experience Years */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {t('profile_experience_years')}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="60"
+                  step="1"
+                  value={experienceYears}
+                  onChange={(e) => setExperienceYears(e.target.value)}
+                  placeholder={t('profile_experience_years_placeholder')}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section 5: Skills & About */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
           {/* Key Skills - Apple iOS Options Style */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -1330,12 +1878,17 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           {/* Bio / Summary */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {t('profile_bio')}
+              {experienceLevel === 'fresher' ? 'Career Objective & Academic Highlights' : t('profile_bio')}
             </label>
             <textarea
               rows={3}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
+              placeholder={
+                experienceLevel === 'fresher'
+                  ? 'Briefly describe your career aspirations, academic achievements, projects, and key interests...'
+                  : t('profile_bio_placeholder')
+              }
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none focus:ring-1 focus:ring-[#0B2545] shadow-2xs leading-relaxed"
             />
           </div>
@@ -1357,73 +1910,47 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
             </div>
           </div>
 
-          {/* Active Uploading / Analyzing Progress Card */}
-          {(isUploadingResume || isExtractingAi) && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#0B2545] shrink-0" />
-                  <span className="font-semibold text-slate-800 truncate">
-                    {uploadFileName || 'Processing document...'}
-                  </span>
+          {/* Clean Human Upload State (Apple iOS Aesthetic) */}
+          {isUploadingResume ? (
+            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/40 p-5 sm:p-6 space-y-3.5 animate-in fade-in duration-150">
+              <div className="flex items-center gap-3.5">
+                <div className="relative h-12 w-12 rounded-xl bg-white border border-blue-200 text-[#0B2545] flex items-center justify-center shrink-0 shadow-2xs">
+                  <FileText className="h-6 w-6 text-[#0B2545]" />
+                  <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-white border border-slate-200 flex items-center justify-center shadow-2xs">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin text-[#0B2545]" />
+                  </div>
                 </div>
-                <span className="font-semibold text-slate-600">{uploadProgress}%</span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+                      {uploadFileName || 'Uploading resume...'}
+                    </p>
+                    <span className="text-xs font-bold text-[#0B2545] shrink-0">
+                      {uploadProgress}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
+                    {uploadFileSize && <span>{uploadFileSize}</span>}
+                    {uploadFileSize && <span className="text-slate-300">•</span>}
+                    <span className="text-slate-600 font-medium">
+                      {uploadProgress >= 100
+                        ? (language === 'ta' ? 'சேமிக்கப்படுகிறது...' : language === 'hi' ? 'सहेजा जा रहा है...' : 'Finishing upload...')
+                        : (language === 'ta' ? 'பாதுகாப்பாகப் பதிவேற்றப்படுகிறது...' : language === 'hi' ? 'अपलोड हो रहा है...' : 'Uploading document...')}
+                    </span>
+                  </div>
+                </div>
               </div>
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+
+              {/* Smooth Progress Bar */}
+              <div className="w-full bg-blue-100/70 rounded-full h-1.5 overflow-hidden">
                 <div
                   className="bg-[#0B2545] h-1.5 rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${uploadProgress}%` }}
+                  style={{ width: `${Math.max(8, uploadProgress)}%` }}
                 />
               </div>
-              <p className="text-[11px] text-slate-500">
-                {uploadStepText || 'Processing resume document...'}
-              </p>
             </div>
-          )}
-
-          {/* Post-Upload Extraction Reaction Feedback */}
-          {extractedSkillsFeedback.length > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 sm:p-4 space-y-2 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-                    <Check className="h-3.5 w-3.5 text-slate-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">
-                      Resume Analyzed & Verified
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      {extractedSkillsFeedback.length} skills identified and linked to your candidate profile
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setExtractedSkillsFeedback([])}
-                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition"
-                  title="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {extractedSkillsFeedback.map((skill) => (
-                  <span
-                    key={skill}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200 text-[11px] font-medium"
-                  >
-                    <Check className="h-3 w-3 text-slate-400" />
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Active Attached Resume Card */}
-          {resumeUrl ? (() => {
+          ) : resumeUrl ? (() => {
             const displayFileName = resumeMeta?.fileName || cleanResumeFileName(resumeUrl)
             const displayExt = displayFileName.split('.').pop()?.toUpperCase() || 'PDF'
             const displaySize = resumeMeta?.fileSize || 'Document'
@@ -1472,12 +1999,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                   </a>
 
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B2545] hover:bg-[#133966] text-xs font-medium text-white transition cursor-pointer">
-                    {isUploadingResume ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <UploadCloud className="h-3.5 w-3.5" />
-                    )}
-                    <span>{isUploadingResume ? 'Updating...' : 'Replace'}</span>
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    <span>Replace</span>
                     <input
                       type="file"
                       accept=".pdf,.docx,.doc,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1506,7 +2029,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                   <UploadCloud className="h-5 w-5" />
                 </div>
                 <span className="text-xs font-bold text-[#0B2545] group-hover:underline">
-                  {isUploadingResume ? t('profile_uploading_resume') : t('profile_upload_resume')}
+                  {t('profile_upload_resume')}
                 </span>
                 <span className="text-[11px] text-slate-400 mt-0.5">
                   PDF or Word document (up to 10MB)
@@ -1524,178 +2047,191 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         </div>
 
       </form>
+      )}
 
-      {/* Requirement 17: Interactive User Review Modal for Detected Resume Information */}
-      {reviewModalOpen && reviewData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-md p-4 overflow-y-auto">
-          <div className="bg-[#F2F2F7]/95 backdrop-blur-2xl rounded-[22px] border border-white/60 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-left my-8 animate-in fade-in zoom-in-95 duration-150">
+      {/* Create Thought Modal */}
+      {isCreateThoughtModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-[#0B2545]/10 text-[#0B2545] flex items-center justify-center">
-                  <FileText className="h-5 w-5" />
-                </div>
+                <Avatar
+                  src={avatarUrl || user?.avatar_url}
+                  name={fullName || user?.full_name || 'User'}
+                  className="w-8 h-8 text-xs"
+                />
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-                    Review Extracted Profile Information
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Review and adjust detected details before applying to your profile
-                  </p>
+                  <h3 className="text-sm font-bold text-slate-900">Share a Thought</h3>
+                  <p className="text-[11px] text-slate-400">Post to the community feed</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setReviewModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                onClick={() => setIsCreateThoughtModalOpen(false)}
+                className="h-8 w-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Fields to Review & Edit */}
-            <div className="space-y-3 text-xs max-h-[60vh] overflow-y-auto pr-1">
+            <form onSubmit={handleCreateThought} className="p-5 space-y-4">
+              {/* Title (Optional) */}
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Full Name
-                </label>
                 <input
                   type="text"
-                  value={reviewData.fullName}
-                  onChange={(e) => setReviewData({ ...reviewData, fullName: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                  value={thoughtTitle}
+                  onChange={(e) => setThoughtTitle(e.target.value)}
+                  placeholder="Title (optional)"
+                  maxLength={120}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0B2545]/20 focus:border-[#0B2545]"
                 />
               </div>
 
+              {/* Content Textarea */}
               <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Current Job Title / Role
-                </label>
-                <input
-                  type="text"
-                  value={reviewData.position}
-                  onChange={(e) => setReviewData({ ...reviewData, position: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+                <textarea
+                  value={thoughtContent}
+                  onChange={(e) => setThoughtContent(e.target.value)}
+                  placeholder="What's on your mind? Share your tech insights, projects, or questions..."
+                  rows={4}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0B2545]/20 focus:border-[#0B2545] resize-none leading-relaxed"
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Professional Headline
-                </label>
-                <input
-                  type="text"
-                  value={reviewData.headline}
-                  onChange={(e) => setReviewData({ ...reviewData, headline: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Company / Employer
-                  </label>
-                  <input
-                    type="text"
-                    value={reviewData.company}
-                    onChange={(e) => setReviewData({ ...reviewData, company: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Location
-                  </label>
-                  <input
-                    type="text"
-                    value={reviewData.location}
-                    onChange={(e) => setReviewData({ ...reviewData, location: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Skills Review */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Detected Skills ({reviewData.skills.length})
-                </label>
-                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-slate-50 border border-slate-200 min-h-[44px]">
-                  {reviewData.skills.map((skill, idx) => (
-                    <span
-                      key={skill}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-slate-800 border border-slate-200 text-[11px] font-medium shadow-2xs"
-                    >
-                      <span>{skill}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveReviewSkill(idx)}
-                        className="text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                        title="Remove skill"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    type="text"
-                    value={reviewSkillInput}
-                    onChange={(e) => setReviewSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleAddReviewSkill()
-                      }
-                    }}
-                    className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none"
+              {/* Photo Preview if attached */}
+              {thoughtMediaUrl && (
+                <div className="relative rounded-xl overflow-hidden border border-slate-200 max-h-48 group">
+                  <img
+                    src={thoughtMediaUrl}
+                    alt="Attached preview"
+                    className="w-full h-full object-cover"
                   />
                   <button
                     type="button"
-                    onClick={handleAddReviewSkill}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer"
+                    onClick={() => setThoughtMediaUrl(null)}
+                    className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition cursor-pointer"
                   >
-                    Add
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Footer: Attach Image + Submit */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer transition">
+                  {isUploadingThoughtMedia ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#0B2545]" />
+                  ) : (
+                    <ImageIcon className="w-4 h-4 text-emerald-600" />
+                  )}
+                  <span>{isUploadingThoughtMedia ? 'Uploading...' : 'Add Photo'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleThoughtMediaUpload}
+                    disabled={isUploadingThoughtMedia}
+                    className="hidden"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateThoughtModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={(!thoughtContent.trim() && !thoughtTitle.trim()) || isSubmittingThought}
+                    className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#0B2545] hover:bg-[#071A31] text-xs font-bold text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingThought ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isSubmittingThought ? 'Posting...' : 'Post Thought'}</span>
                   </button>
                 </div>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Professional Summary
-                </label>
-                <textarea
-                  rows={3}
-                  value={reviewData.bio}
-                  onChange={(e) => setReviewData({ ...reviewData, bio: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs text-slate-900 focus:border-[#0B2545] focus:outline-none leading-relaxed"
-                />
-              </div>
-            </div>
-
-            {/* Actions: Cancel vs Confirm & Apply */}
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+      {/* Instagram-Style Comments Modal / Sheet */}
+      {commentPostId && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="w-6" />
+              <h3 className="text-sm font-bold text-slate-900">Comments</h3>
               <button
                 type="button"
-                onClick={() => setReviewModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                onClick={() => setCommentPostId(null)}
+                className="h-8 w-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmReview}
-                className="px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-[#133966] text-xs font-semibold text-white transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Check className="h-3.5 w-3.5" />
-                <span>Confirm & Apply to Profile</span>
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Comments List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3.5 divide-y divide-slate-100">
+              {loadingComments ? (
+                <div className="flex items-center justify-center py-12 text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+              ) : comments.length === 0 ? (
+                <div className="py-12 text-center space-y-1">
+                  <p className="text-sm font-semibold text-slate-800">No comments yet</p>
+                  <p className="text-xs text-slate-400">Be the first to comment on this thought.</p>
+                </div>
+              ) : (
+                comments.map((c) => (
+                  <div key={c.id} className="pt-3 first:pt-0 flex items-start gap-3">
+                    <Avatar src={c.author_avatar} name={c.author_name} className="w-8 h-8 text-xs shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs font-bold text-slate-900">{c.author_name}</span>
+                        <span className="text-[10px] text-slate-400">{formatInstagramTime(c.created_at)}</span>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed mt-0.5 whitespace-pre-wrap">{c.content}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Post Comment Input */}
+            <form onSubmit={handlePostComment} className="p-3 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2">
+              <Avatar
+                src={avatarUrl || user?.avatar_url}
+                name={fullName || user?.full_name || 'User'}
+                className="w-8 h-8 text-xs shrink-0"
+              />
+              <input
+                type="text"
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                placeholder="Add a comment..."
+                className="flex-1 px-3.5 py-2 text-xs rounded-full border border-slate-200 bg-white focus:outline-none focus:border-[#0B2545]"
+              />
+              <button
+                type="submit"
+                disabled={!commentInput.trim() || isPostingComment}
+                className="px-4 py-2 rounded-full bg-[#0B2545] hover:bg-[#071A31] text-xs font-bold text-white transition disabled:opacity-40 cursor-pointer shrink-0"
+              >
+                {isPostingComment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Post'}
+              </button>
+            </form>
           </div>
         </div>
       )}
     </div>
   )
 }
+

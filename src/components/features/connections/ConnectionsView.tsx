@@ -295,11 +295,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
             {visibleUsers.map((targetUser, index) => {
               const isFollowing = Boolean(targetUser.is_following)
               const bgGradient = bannerGradients[index % bannerGradients.length]
-              const isOpenToWork = Boolean(
-                targetUser.role === 'employee' ||
-                targetUser.headline?.toLowerCase().includes('open to work') ||
-                (targetUser as any).is_open_to_work
-              )
 
               return (
                 <div
@@ -330,24 +325,16 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({
                           <img
                             src={targetUser.avatar_url}
                             alt={targetUser.full_name}
-                            className={`h-18 w-18 sm:h-20 sm:w-20 rounded-full border-[3px] object-cover shadow-sm bg-white ${
-                              isOpenToWork ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white'
-                            }`}
+                            className="h-18 w-18 sm:h-20 sm:w-20 rounded-full border-[3px] border-white object-cover shadow-sm bg-white"
                           />
                         ) : (
                           <div
-                            className={`h-18 w-18 sm:h-20 sm:w-20 rounded-full border-[3px] bg-[#0B2545] text-white flex items-center justify-center font-bold text-lg sm:text-xl shadow-sm ${
-                              isOpenToWork ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white'
-                            }`}
+                            className="h-18 w-18 sm:h-20 sm:w-20 rounded-full border-[3px] border-white bg-[#0B2545] text-white flex items-center justify-center font-bold text-lg sm:text-xl shadow-sm"
                           >
                             {targetUser.full_name ? targetUser.full_name.charAt(0).toUpperCase() : 'U'}
                           </div>
                         )}
-                        {isOpenToWork ? (
-                          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-tight shadow-xs whitespace-nowrap">
-                            #OpenToWork
-                          </span>
-                        ) : (
+                        {targetUser.is_active && (
                           <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-2xs" />
                         )}
                       </div>

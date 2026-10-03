@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   title TEXT NOT NULL,
   company_name TEXT NOT NULL,
   company_logo TEXT DEFAULT '',
+  image_url TEXT DEFAULT '',
   location TEXT NOT NULL,
   workplace_type TEXT CHECK(workplace_type IN ('Remote', 'Hybrid', 'On-site')) DEFAULT 'Remote',
   employment_type TEXT CHECK(employment_type IN ('Full-time', 'Part-time', 'Contract', 'Internship')) DEFAULT 'Full-time',

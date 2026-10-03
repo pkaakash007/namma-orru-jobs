@@ -16,8 +16,15 @@ export interface User {
   bio?: string
   headline?: string
   location?: string
+  state?: string
+  pincode?: string
   company?: string
   position?: string
+  experience_years?: number
+  experience_level?: 'fresher' | 'experienced' | string
+  education_degree?: string
+  education_college?: string
+  education_year?: string
   skills?: string[]
   phone?: string
   date_of_birth?: string
@@ -65,6 +72,7 @@ export interface Job {
   title: string
   company_name: string
   company_logo?: string
+  image_url?: string
   location: string
   workplace_type: 'Remote' | 'Hybrid' | 'On-site'
   employment_type: 'Full-time' | 'Part-time' | 'Contract' | 'Internship'
@@ -81,6 +89,9 @@ export interface Post {
   author_headline?: string
   author_avatar?: string
   author_role: UserRole
+  author_location?: string
+  title?: string
+  topic?: string
   content: string
   media_urls?: string[]
   likes_count: number
@@ -88,6 +99,7 @@ export interface Post {
   shares_count?: number
   created_at: string
   liked_by_me?: boolean
+  is_liked?: boolean
 }
 
 export interface AdminStats {
@@ -167,8 +179,15 @@ export interface PublicProfile {
   banner_url?: string
   bio?: string
   location?: string
+  state?: string
+  pincode?: string
   company?: string
   position?: string
+  experience_level?: string
+  experience_years?: number
+  education_degree?: string
+  education_college?: string
+  education_year?: string
   skills?: string[]
   followers_count: number
   following_count: number
@@ -176,6 +195,8 @@ export interface PublicProfile {
   is_self: boolean
   is_active: boolean
   created_at?: string
+  thoughts?: Post[]
+  posts?: Post[]
 }
 
 export interface ConversationParticipant {

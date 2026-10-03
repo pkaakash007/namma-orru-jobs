@@ -204,6 +204,7 @@ export const jobsService = {
     title: string
     company_name: string
     company_logo?: string
+    image_url?: string
     location: string
     workplace_type: string
     employment_type: string
@@ -325,23 +326,64 @@ export const adminService = {
 
 export const feedService = {
   async getPosts() {
-    return apiClient.request<{ posts: Post[] }>('/api/posts')
+    try {
+      const res = await apiClient.request<{ posts?: Post[]; thoughts?: Post[] }>('/api/thoughts')
+      return { posts: res.thoughts || res.posts || [] }
+    } catch (err: any) {
+      if (err.message?.includes('404')) {
+        return apiClient.request<{ posts: Post[] }>('/api/posts')
+      }
+      throw err
+    }
   },
 
-  async createPost(content: string, media_urls: string[] = []) {
-    return apiClient.request<{ success: boolean; post_id: string }>('/api/posts', {
-      method: 'POST',
-      body: JSON.stringify({ content, media_urls }),
-    })
+  async createPost(
+    contentOrPayload: string | { title?: string; topic?: string; content: string; media_urls?: string[] },
+    media_urls: string[] = [],
+    title?: string,
+    topic?: string
+  ) {
+    let body: any = {}
+    if (typeof contentOrPayload === 'object' && contentOrPayload !== null) {
+      body = contentOrPayload
+    } else {
+      body = { content: contentOrPayload, media_urls, title, topic }
+    }
+    try {
+      return await apiClient.request<{ success: boolean; post_id: string; thought_id?: string }>('/api/thoughts', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+    } catch (err: any) {
+      if (err.message?.includes('404')) {
+        return apiClient.request<{ success: boolean; post_id: string }>('/api/posts', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        })
+      }
+      throw err
+    }
   },
 
   async likePost(postId: string) {
-    return apiClient.request<{ success: boolean; likes_count: number }>(
-      `/api/posts/${postId}/like`,
-      {
-        method: 'POST',
+    try {
+      return await apiClient.request<{ success: boolean; likes_count: number; liked?: boolean }>(
+        `/api/thoughts/${postId}/like`,
+        {
+          method: 'POST',
+        }
+      )
+    } catch (err: any) {
+      if (err.message?.includes('404')) {
+        return apiClient.request<{ success: boolean; likes_count: number; liked?: boolean }>(
+          `/api/posts/${postId}/like`,
+          {
+            method: 'POST',
+          }
+        )
       }
-    )
+      throw err
+    }
   },
 }
 
@@ -418,9 +460,13 @@ export const uploadService = {
 }
 
 export const userService = {
+  async getMyProfile() {
+    return apiClient.request<{ profile: PublicProfile }>('/api/user/profile')
+  },
+
   async updateProfile(profileData: Partial<User>) {
     return apiClient.request<{ success: boolean; message: string; user: User }>(
-      '/api/users/profile',
+      '/api/user/profile',
       {
         method: 'PATCH',
         body: JSON.stringify(profileData),
@@ -603,7 +649,7 @@ export const socialService = {
       return await apiClient.request<{
         users: User[]
         pagination: { page: number; limit: number; total: number; has_more: boolean }
-      }>(`/api/users/discover?${queryParts.join('&')}`)
+      }>(`/api/network?${queryParts.join('&')}`)
     } catch {
       return {
         users: [],
@@ -614,6 +660,12 @@ export const socialService = {
 
   async getUserProfile(userId: string): Promise<{ profile: PublicProfile }> {
     return await apiClient.request<{ profile: PublicProfile }>(`/api/users/${userId}/profile`)
+  },
+
+  async getFollowStatus(userId: string): Promise<{ success: boolean; is_following: boolean; followers_count: number; following_count: number }> {
+    return await apiClient.request<{ success: boolean; is_following: boolean; followers_count: number; following_count: number }>(
+      `/api/users/${userId}/follow-status`
+    )
   },
 
   async followUser(userId: string): Promise<{ success: boolean; is_following: boolean; followers_count: number }> {
@@ -866,42 +918,31 @@ export const savedJobService = {
 
   async getSavedJobIds(): Promise<string[]> {
     try {
-      const res = await apiClient.request<{ saved_ids: string[] }>('/api/saved-jobs/ids')
-      const ids = res.saved_ids || []
+      const res = await apiClient.request<{ saved_jobs?: Job[]; saved_ids?: string[] }>('/api/user/saved')
+      const ids = res.saved_ids || (res.saved_jobs || []).map((j: any) => j.id || j.job_id)
       localStorage.setItem('namma_saved_job_ids', JSON.stringify(ids))
       return ids
     } catch {
-      try {
-        const raw = localStorage.getItem('namma_saved_job_ids')
-        return raw ? JSON.parse(raw) : []
-      } catch {
-        return []
-      }
+      return []
     }
   },
 
   async getSavedJobs(): Promise<Job[]> {
     try {
-      const res = await apiClient.request<{ saved_jobs: Job[] }>('/api/saved-jobs')
+      const res = await apiClient.request<{ saved_jobs: Job[] }>('/api/user/saved')
       const jobs = res.saved_jobs || []
       const ids = jobs.map((j) => j.id)
       localStorage.setItem('namma_saved_job_ids', JSON.stringify(ids))
-      localStorage.setItem('namma_saved_jobs_cache', JSON.stringify(jobs))
       return jobs
     } catch {
-      try {
-        const raw = localStorage.getItem('namma_saved_jobs_cache')
-        return raw ? JSON.parse(raw) : []
-      } catch {
-        return []
-      }
+      return []
     }
   },
 
   async saveJob(jobId: string): Promise<{ success: boolean; saved: boolean }> {
     this.addLocalSavedId(jobId)
     try {
-      const res = await apiClient.request<{ success: boolean; saved: boolean }>(`/api/saved-jobs/${jobId}`, {
+      const res = await apiClient.request<{ success: boolean; saved: boolean }>(`/api/user/saved/${jobId}`, {
         method: 'POST',
       })
       window.dispatchEvent(new CustomEvent('saved_jobs_updated', { detail: { jobId, saved: true } }))
@@ -915,7 +956,7 @@ export const savedJobService = {
   async unsaveJob(jobId: string): Promise<{ success: boolean; saved: boolean }> {
     this.removeLocalSavedId(jobId)
     try {
-      const res = await apiClient.request<{ success: boolean; saved: boolean }>(`/api/saved-jobs/${jobId}`, {
+      const res = await apiClient.request<{ success: boolean; saved: boolean }>(`/api/user/saved/${jobId}`, {
         method: 'DELETE',
       })
       window.dispatchEvent(new CustomEvent('saved_jobs_updated', { detail: { jobId, saved: false } }))
@@ -958,4 +999,36 @@ export const savedJobService = {
   },
 }
 
+// --------------------------------------------------------------------------
+// COMMENTS SERVICE
+// --------------------------------------------------------------------------
 
+export interface PostComment {
+  id: string
+  post_id: string
+  author_id: string
+  author_name: string
+  author_avatar: string | null
+  content: string
+  created_at: string
+}
+
+export const commentService = {
+  async getComments(postId: string): Promise<{ comments: PostComment[] }> {
+    try {
+      return await apiClient.request<{ comments: PostComment[] }>(`/api/thoughts/${postId}/comments`)
+    } catch {
+      return { comments: [] }
+    }
+  },
+
+  async postComment(postId: string, content: string): Promise<{ success: boolean; comment: PostComment }> {
+    return await apiClient.request<{ success: boolean; comment: PostComment }>(
+      `/api/thoughts/${postId}/comments`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      }
+    )
+  },
+}

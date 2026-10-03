@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { Search, Bookmark, MapPin, X, ChevronDown } from 'lucide-react'
-import { WORKPLACE_TYPES } from '../../../constants'
 import { useLanguage } from '../../../context/LanguageContext'
 import { ALL_38_TN_DISTRICTS } from '../../../constants/clusters'
 import { translateLocationSync } from '../../../services/googleAiTranslate'
@@ -9,8 +8,8 @@ import { GoogleLocationSearchInput } from '../../ui/GoogleLocationSearchInput'
 interface JobSearchFiltersProps {
   searchQuery: string
   onSearchChange: (q: string) => void
-  selectedType: string
-  onTypeChange: (type: any) => void
+  selectedType?: string
+  onTypeChange?: (type: any) => void
   selectedDistrict?: string
   onDistrictChange?: (district: string) => void
   onViewSavedJobs?: () => void
@@ -31,29 +30,12 @@ const TOP_INDUSTRIAL_HUBS = [
 export const JobSearchFilters: React.FC<JobSearchFiltersProps> = ({
   searchQuery,
   onSearchChange,
-  selectedType,
-  onTypeChange,
   selectedDistrict = '',
   onDistrictChange,
   onViewSavedJobs,
 }) => {
   const { t, language } = useLanguage()
   const [isLocationOpen, setIsLocationOpen] = useState(false)
-
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'All':
-        return t('filter_all') || 'All'
-      case 'Remote':
-        return t('filter_remote') || 'Remote'
-      case 'Hybrid':
-        return t('filter_hybrid') || 'Hybrid'
-      case 'On-site':
-        return t('filter_onsite') || 'On-site'
-      default:
-        return type
-    }
-  }
 
   const isLocationFiltered = Boolean(selectedDistrict && selectedDistrict.trim().length > 0)
 
@@ -81,26 +63,7 @@ export const JobSearchFilters: React.FC<JobSearchFiltersProps> = ({
         )}
       </div>
 
-      {/* 2. Apple iOS Segmented Control (Workplace Type: All / Remote / Hybrid / On-site) */}
-      <div className="grid grid-cols-4 rounded-xl bg-slate-100/90 p-1 text-center select-none gap-0.5">
-        {WORKPLACE_TYPES.map((type) => {
-          const isSelected = selectedType === type
-          return (
-            <button
-              key={type}
-              type="button"
-              onClick={() => onTypeChange(type)}
-              className={`rounded-lg py-1.5 text-xs font-semibold transition-all duration-150 cursor-pointer ${
-                isSelected
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {getTypeLabel(type)}
-            </button>
-          )
-        })}
-      </div>
+      {/* 2. iOS Filter Action Row: Location Chip + Saved Jobs (No overflow, fits any screen) */}
 
       {/* 3. iOS Filter Action Row: Location Chip + Saved Jobs (No overflow, fits any screen) */}
       <div className="flex items-center justify-between gap-2 pt-0.5">

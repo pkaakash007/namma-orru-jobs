@@ -6,7 +6,6 @@ import { Navbar, type TabType } from './components/layout/Navbar'
 import { JobCard } from './components/features/jobs/JobCard'
 import { TrendingJobRow } from './components/features/jobs/TrendingJobRow'
 import { JobSearchFilters } from './components/features/jobs/JobSearchFilters'
-import { JobApplyModal } from './components/features/jobs/JobApplyModal'
 import { JobApplicationsModal } from './components/features/jobs/JobApplicationsModal'
 import { GuestJobsLanding } from './components/features/jobs/GuestJobsLanding'
 import { PostJobForm } from './components/features/hr/PostJobForm'
@@ -21,7 +20,7 @@ import { NotificationSection } from './components/features/notifications/Notific
 import { ConnectionsView } from './components/features/connections/ConnectionsView'
 import { PublicUserProfileView } from './components/features/profile/PublicUserProfileView'
 import { MessagesView } from './components/features/messages/MessagesView'
-import { adminService, feedService, chatService, notificationService, savedJobService } from './services/api'
+import { adminService, feedService, chatService, notificationService, savedJobService, jobsService } from './services/api'
 import { initPushNotifications } from './services/notifications'
 import { ApkReleasePage } from './components/features/releases/ApkReleasePage'
 import { LoginPage } from './components/features/auth/LoginPage'
@@ -32,10 +31,10 @@ import { CandidateSearchView } from './components/features/hr/CandidateSearchVie
 import { HrProfileSetupModal } from './components/features/hr/HrProfileSetupModal'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
 import { PullToRefresh } from './components/ui/PullToRefresh'
-import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus, Bell, MessageSquare } from 'lucide-react'
+import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus, Bell, MessageSquare, X } from 'lucide-react'
 import type { Job } from './types'
 import { useAppDispatch, useAppSelector } from './store/hooks'
-import { fetchJobs } from './store/jobsSlice'
+import { fetchJobs, jobApplied } from './store/jobsSlice'
 import { fetchPosts, postAdded, postLiked } from './store/postsSlice'
 import { fetchAdminData, userRoleUpdated } from './store/adminSlice'
 import { translateLocationSync, translateJobTitleSync, translateCompanySync } from './services/googleAiTranslate'
@@ -161,6 +160,7 @@ function MainContent() {
     try {
       sessionStorage.setItem('namma_active_tab', activeTab)
     } catch {}
+    window.scrollTo(0, 0)
   }, [activeTab])
 
   const [savedJobsCount, setSavedJobsCount] = useState<number>(0)
@@ -217,7 +217,7 @@ function MainContent() {
   const [selectedDistrict, setSelectedDistrict] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedType, setSelectedType] = useState('All')
-  const [applyingJob, setApplyingJob] = useState<Job | null>(null)
+  const [profilePromptJob, setProfilePromptJob] = useState<Job | null>(null)
   const [viewingApplicationsJob, setViewingApplicationsJob] = useState<Job | null>(null)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('')
@@ -252,23 +252,22 @@ function MainContent() {
   }, [user])
 
   useEffect(() => {
+    if (!user) return
     loadUnreadMessages()
     const handleMessagesUpdate = () => {
       loadUnreadMessages()
     }
     window.addEventListener('namma_messages_updated', handleMessagesUpdate)
-
-    // Only poll when actively on the 'messages' tab, at a 1-minute interval
-    let interval: any = null
-    if (activeTab === 'messages') {
-      interval = setInterval(loadUnreadMessages, 60000)
-    }
-
     return () => {
       window.removeEventListener('namma_messages_updated', handleMessagesUpdate)
-      if (interval) clearInterval(interval)
     }
-  }, [loadUnreadMessages, activeTab])
+  }, [loadUnreadMessages, user?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'messages' || !user) return
+    const interval = setInterval(loadUnreadMessages, 60000)
+    return () => clearInterval(interval)
+  }, [loadUnreadMessages, activeTab, user])
 
   // Dynamic Unread Notifications State
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0)
@@ -287,23 +286,22 @@ function MainContent() {
   }, [user])
 
   useEffect(() => {
+    if (!user) return
     loadUnreadNotifs()
     const handleNotifsUpdate = () => {
       loadUnreadNotifs()
     }
     window.addEventListener('namma_notifications_updated', handleNotifsUpdate)
-
-    // Relaxed 1-minute interval strictly while on notifications tab
-    let interval: any = null
-    if (activeTab === 'notifications') {
-      interval = setInterval(loadUnreadNotifs, 60000)
-    }
-
     return () => {
       window.removeEventListener('namma_notifications_updated', handleNotifsUpdate)
-      if (interval) clearInterval(interval)
     }
-  }, [loadUnreadNotifs, activeTab])
+  }, [loadUnreadNotifs, user?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'notifications' || !user) return
+    const interval = setInterval(loadUnreadNotifs, 60000)
+    return () => clearInterval(interval)
+  }, [loadUnreadNotifs, activeTab, user])
 
   const { showToast } = useToast()
   const { t, language } = useLanguage()
@@ -358,6 +356,108 @@ function MainContent() {
       dispatch(fetchJobs(forceRefresh))
     },
     [dispatch]
+  )
+
+  // Auto-apply using profile details, or prompt user to complete profile if resume/name is missing
+  const handleApplyJob = useCallback(
+    async (job: Job) => {
+      if (!user) {
+        showToast(
+          language === 'ta'
+            ? 'வேலைக்கு விண்ணப்பிக்க உள்நுழையவும்'
+            : language === 'hi'
+            ? 'आवेदन करने के लिए कृपया लॉगिन करें'
+            : 'Please log in to apply for jobs',
+          'error'
+        )
+        navigateToLogin()
+        return
+      }
+
+      if (user.role === 'manager' || user.role === 'admin') {
+        showToast(
+          language === 'ta'
+            ? 'மனிதவள மேலாளர்கள் வேலைக்கு விண்ணப்பிக்க முடியாது'
+            : language === 'hi'
+            ? 'एचआर और प्रबंधक नौकरी के लिए आवेदन नहीं कर सकते'
+            : 'HR recruiters and managers cannot submit job applications.',
+          'error'
+        )
+        return
+      }
+
+      const hasResume = Boolean(user.resume_url && user.resume_url.trim().length > 0)
+      const hasName = Boolean(user.full_name && user.full_name.trim().length >= 2)
+
+      if (!hasResume || !hasName) {
+        setProfilePromptJob(job)
+        showToast(
+          language === 'ta'
+            ? 'எளிதாக விண்ணப்பிக்க உங்கள் சுயவிவரத்தில் ரெஸ்யூமைப் பதிவேற்றவும்'
+            : language === 'hi'
+            ? '1-क्लिक आवेदन के लिए कृपया अपनी प्रोफ़ाइल में रिज्यूमे अपलोड करें'
+            : 'Please complete your profile and upload your resume to apply.',
+          'info'
+        )
+        return
+      }
+
+      try {
+        await jobsService.applyJob(job.id, {
+          candidate_name: user.full_name.trim(),
+          candidate_email: (user.email || '').trim(),
+          candidate_phone: (user.phone || '').trim(),
+          resume_url: (user.resume_url || '').trim(),
+        })
+
+        showToast(
+          language === 'ta'
+            ? `${job.company_name} நிறுவனத்திற்கு உங்கள் விண்ணப்பம் வெற்றிகரமாக அனுப்பப்பட்டது!`
+            : language === 'hi'
+            ? `${job.company_name} के लिए आपका आवेदन सफलतापूर्वक भेजा गया!`
+            : `Application successfully sent to ${job.company_name} using your profile resume!`,
+          'success'
+        )
+
+        dispatch(jobApplied(job.id))
+
+        try {
+          const cached = sessionStorage.getItem('applied_job_ids')
+          const ids: string[] = cached ? JSON.parse(cached) : []
+          if (!ids.includes(job.id)) ids.push(job.id)
+          sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+        } catch {}
+
+        window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId: job.id } }))
+        loadJobs()
+      } catch (err: any) {
+        const isDuplicate =
+          err?.status === 409 ||
+          err?.code === 'DUPLICATE_APPLICATION' ||
+          err?.message?.toLowerCase().includes('already')
+
+        if (isDuplicate) {
+          try {
+            const cached = sessionStorage.getItem('applied_job_ids')
+            const ids: string[] = cached ? JSON.parse(cached) : []
+            if (!ids.includes(job.id)) ids.push(job.id)
+            sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+          } catch {}
+          window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId: job.id } }))
+          showToast(
+            language === 'ta'
+              ? 'இந்த வேலைக்கு நீங்கள் ஏற்கனவே விண்ணப்பித்துவிட்டீர்கள்.'
+              : language === 'hi'
+              ? 'आप इस नौकरी के लिए पहले ही आवेदन कर चुके हैं।'
+              : 'You have already applied for this job opening.',
+            'info'
+          )
+        } else {
+          showToast(err.message || 'Failed to submit application', 'error')
+        }
+      }
+    },
+    [user, language, showToast, navigateToLogin, dispatch, loadJobs]
   )
 
   // Load feed posts from Redux store with 3-minute cache TTL
@@ -437,11 +537,18 @@ function MainContent() {
     }
   }
 
-  // Publish new dynamic post to D1 (Optimistic update in Redux store)
-  const handleCreatePost = async (content: string) => {
+  // Publish new dynamic thought/post to D1 (Optimistic update in Redux store)
+  const handleCreatePost = async (
+    contentOrData: string | { title?: string; topic?: string; content: string; media_urls?: string[] }
+  ) => {
     try {
-      const res = await feedService.createPost(content)
-      showToast('Post published to professional network!', 'success')
+      const res = await feedService.createPost(contentOrData)
+      showToast('Thought published to network!', 'success')
+      const title = typeof contentOrData === 'object' ? contentOrData.title : undefined
+      const topic = typeof contentOrData === 'object' ? contentOrData.topic : undefined
+      const content = typeof contentOrData === 'object' ? contentOrData.content : contentOrData
+      const media_urls = typeof contentOrData === 'object' ? contentOrData.media_urls : []
+
       if (user && res.post_id) {
         dispatch(
           postAdded({
@@ -449,27 +556,33 @@ function MainContent() {
             author_id: user.id,
             author_name: user.full_name,
             author_avatar: user.avatar_url,
-            author_headline: user.headline,
+            author_headline: user.headline || user.position || '',
             author_role: user.role,
+            author_location: user.location || '',
+            title,
+            topic: topic || undefined,
             content,
+            media_urls,
             likes_count: 0,
             comments_count: 0,
             created_at: new Date().toISOString(),
+            is_liked: false,
+            liked_by_me: false,
           })
         )
       } else {
         dispatch(fetchPosts(true))
       }
     } catch (err: any) {
-      showToast(err.message || 'Failed to publish post', 'error')
+      showToast(err.message || 'Failed to publish thought', 'error')
     }
   }
 
-  // Like dynamic post in D1 (Optimistic reaction increment in Redux store)
+  // Like dynamic thought in D1 (Optimistic reaction update in Redux store)
   const handleLikePost = async (postId: string) => {
     try {
       const res = await feedService.likePost(postId)
-      dispatch(postLiked({ id: postId, likes_count: res.likes_count }))
+      dispatch(postLiked({ id: postId, likes_count: res.likes_count, liked: res.liked }))
     } catch {
       // Quiet
     }
@@ -489,7 +602,6 @@ function MainContent() {
     }
 
     loadJobs()
-    loadPosts()
     initPushNotifications(() => {
       // Push notifications are delivered silently — no in-app popup
     })
@@ -501,6 +613,18 @@ function MainContent() {
       loadAdminData()
     }
   }, [activeTab, user?.role, loadAdminData])
+
+  useEffect(() => {
+    if (activeTab === 'feed' && user && user.role !== 'employee') {
+      setActiveTab('jobs')
+    }
+  }, [activeTab, user])
+
+  useEffect(() => {
+    if (activeTab === 'feed' && user?.role === 'employee' && posts.length === 0) {
+      loadPosts(true)
+    }
+  }, [activeTab, user?.role, posts.length, loadPosts])
 
   useEffect(() => {
     const handleRouteChange = () => {
@@ -565,43 +689,38 @@ function MainContent() {
       if (activeTab === 'home') {
         setActiveTab(user.role === 'admin' ? 'admin-panel' : 'jobs')
       }
-      // Instantly load fresh authenticated jobs and posts without requiring a browser refresh
-      loadJobs(true)
-      loadPosts(true)
-      if (user.role === 'admin') {
-        loadAdminData(true)
-      }
-      // Pre-load applied job IDs into sessionStorage so JobCards show Applied state immediately
-      if (user.role === 'employee') {
-        const token = localStorage.getItem('namma_token')
-        if (token) {
-          fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://namma-ooru-jobs-api.apkavin483.workers.dev'}/api/employee/my-applications`, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-            .then((r) => r.json())
-            .then((data: any) => {
-              if (data?.applications) {
-                const ids = (data.applications as { job_id: string }[]).map((a) => a.job_id)
-                sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
-                // Notify all mounted JobCards to re-check
-                ids.forEach((jobId) => {
-                  window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId } }))
-                })
-              }
-            })
-            .catch(() => {})
-        }
-      }
     } else {
       // When unauthenticated, ensure protected tabs safely fall back to home landing page
       if (activeTab === 'admin-panel' || activeTab === 'notifications' || activeTab === 'profile' || activeTab === 'messages' || activeTab === 'connections') {
         setActiveTab('home')
         setIsLoginRoute(false)
       }
-      // Clear applied cache on logout
       sessionStorage.removeItem('applied_job_ids')
     }
-  }, [user?.id, user?.role, loadJobs, loadPosts, loadAdminData, activeTab])
+  }, [user, activeTab])
+
+  // Pre-load applied job IDs once on user login session (avoids repeated network calls on tab change)
+  useEffect(() => {
+    if (user?.role === 'employee') {
+      const token = localStorage.getItem('namma_token')
+      if (token && !sessionStorage.getItem('applied_job_ids')) {
+        fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://namma-ooru-jobs-api.apkavin483.workers.dev'}/api/employee/my-applications`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => r.json())
+          .then((data: any) => {
+            if (data?.applications) {
+              const ids = (data.applications as { job_id: string }[]).map((a) => a.job_id)
+              sessionStorage.setItem('applied_job_ids', JSON.stringify(ids))
+              ids.forEach((jobId) => {
+                window.dispatchEvent(new CustomEvent('job_applied', { detail: { jobId } }))
+              })
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  }, [user?.id, user?.role])
 
   // Guard notifications: only available for authenticated members, safely redirect to home if unauthenticated
   useEffect(() => {
@@ -822,7 +941,7 @@ function MainContent() {
       <PullToRefresh onRefresh={handleRefresh} isRefreshing={isRefreshing}>
         <main
           key={pageRefreshKey}
-          className={`mx-auto ${activeTab === 'messages' ? 'max-w-6xl px-0 md:px-6 py-0 md:py-4 pb-14 md:pb-8' : 'max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8'}`}
+          className={`mx-auto ${activeTab === 'messages' ? 'max-w-6xl px-0 md:px-4 py-1.5 md:py-3 pb-16 md:pb-3' : 'max-w-6xl px-3 sm:px-6 py-4 sm:py-5 pb-20 md:pb-8'}`}
         >
         {/* Unverified HR Recruiter Alert Notice on Platform */}
         {isHrUnverified && activeTab !== 'post-job' && activeTab !== 'candidates' && !viewingPublicProfileId && (
@@ -899,7 +1018,7 @@ function MainContent() {
         ) : activeTab === 'saved-jobs' ? (
           <div className="max-w-4xl mx-auto w-full animate-in fade-in duration-150">
             <SavedJobsView
-              onApply={(job: Job) => setApplyingJob(job)}
+              onApply={handleApplyJob}
               onViewApplications={(job: Job) => setViewingApplicationsJob(job)}
               onMatchCandidates={(job: Job) => {
                 setCandidateSearchQuery(job.title)
@@ -949,7 +1068,7 @@ function MainContent() {
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
             {/* LEFT SIDEBAR: Mini Profile Card & Regional Hubs */}
-            <aside className="hidden lg:block lg:col-span-3 space-y-4">
+            <aside className="hidden lg:block lg:col-span-3 space-y-4 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto">
             {/* User Profile Card (Human Apple iOS Design) */}
             <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
               {/* Cover Banner */}
@@ -1075,20 +1194,22 @@ function MainContent() {
                     </button>
                   )}
 
-                  {/* Community Discussions */}
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('feed')}
-                    className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <MessageSquare className="h-4 w-4 text-slate-400" />
-                      <span>{t('sidebar_discussions')}</span>
-                    </span>
-                    <span className="text-slate-500 font-medium">
-                      {posts.length} {t('sidebar_posts_count')}
-                    </span>
-                  </button>
+                  {/* Community Discussions (Employee role only) */}
+                  {user?.role === 'employee' && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('feed')}
+                      className="w-full flex items-center justify-between py-2 px-2 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <MessageSquare className="h-4 w-4 text-slate-400" />
+                        <span>{t('sidebar_discussions')}</span>
+                      </span>
+                      <span className="text-slate-500 font-medium">
+                        {posts.length} {t('sidebar_posts_count')}
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Explore All Jobs Link */}
@@ -1234,6 +1355,41 @@ function MainContent() {
 
           {/* CENTER COLUMN: Main Content */}
           <section className={`${activeTab === 'candidates' ? 'lg:col-span-9' : 'lg:col-span-6'} space-y-4`}>
+            {/* Top Sub-Tab Switcher: Jobs / Share Thoughts (Strictly role-based: Employee only) */}
+            {user?.role === 'employee' && (activeTab === 'jobs' || activeTab === 'feed' || (activeTab === 'home' && user)) && (
+              <div className="sticky top-16 z-20 flex items-center gap-6 border-b border-slate-200/90 bg-white/95 backdrop-blur-md px-4 pt-2 -mx-3 sm:mx-0 rounded-2xl shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('jobs')}
+                  className={`flex items-center gap-2 pb-2.5 text-sm font-semibold transition border-b-2 cursor-pointer ${
+                    activeTab === 'jobs' || activeTab === 'home'
+                      ? 'border-[#0B2545] text-[#0B2545] font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Briefcase className="h-4 w-4" />
+                  <span>{t('nav_jobs') || 'Jobs'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('feed')
+                    if (posts.length === 0) {
+                      loadPosts(true)
+                    }
+                  }}
+                  className={`flex items-center gap-2 pb-2.5 text-sm font-semibold transition border-b-2 cursor-pointer ${
+                    activeTab === 'feed'
+                      ? 'border-[#0B2545] text-[#0B2545] font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <span>{language === 'ta' ? 'கருத்துகளைப் பகிர்க' : language === 'hi' ? 'विचार साझा करें' : 'Share Thoughts'}</span>
+                </button>
+              </div>
+            )}
+
             {/* TAB 1: Jobs Board (LinkedIn business logic: Gated for unregistered visitors) */}
             {(activeTab === 'jobs' || (activeTab === 'home' && user)) && (
               <>
@@ -1351,7 +1507,7 @@ function MainContent() {
                           <JobCard
                             key={job.id}
                             job={job}
-                            onApply={(j) => setApplyingJob(j)}
+                            onApply={handleApplyJob}
                             onViewApplications={(j) => setViewingApplicationsJob(j)}
                             onMatchCandidates={(j) => {
                               setCandidateSearchQuery(j.title)
@@ -1363,16 +1519,77 @@ function MainContent() {
                       )}
                     </div>
 
-                    {/* Resume Upload Apply Modal with Cloudflare R2 */}
-                    {applyingJob && (
-                      <JobApplyModal
-                        job={applyingJob}
-                        onClose={() => setApplyingJob(null)}
-                        onSuccess={() => {
-                          setApplyingJob(null)
-                          loadJobs()
-                        }}
-                      />
+                    {/* Prompt to Complete Profile / Upload Resume Modal */}
+                    {profilePromptJob && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+                        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+                          <div className="flex items-start justify-between">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-[#EA580C]">
+                              <FileText className="h-6 w-6" />
+                            </div>
+                            <button
+                              onClick={() => setProfilePromptJob(null)}
+                              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                              title="Close"
+                            >
+                              <X className="h-5 w-5" />
+                            </button>
+                          </div>
+
+                          <div className="mt-4">
+                            <h3 className="text-base font-bold text-slate-900">
+                              {language === 'ta'
+                                ? 'விண்ணப்பிக்க சுயவிவரத்தை முழுமைப்படுத்தவும்'
+                                : language === 'hi'
+                                ? 'आवेदन करने के लिए अपनी प्रोफ़ाइल पूरी करें'
+                                : 'Complete Your Profile to Apply'}
+                            </h3>
+                            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+                              {language === 'ta'
+                                ? `1-தட்டல் மூலம் "${profilePromptJob.title}" வேலைக்கு விண்ணப்பிக்க, உங்கள் சுயவிவரத்தில் ரெஸ்யூமை (CV) பதிவேற்ற வேண்டும்.`
+                                : language === 'hi'
+                                ? `"${profilePromptJob.title}" के लिए 1-क्लिक में आवेदन करने हेतु कृपया अपनी प्रोफ़ाइल में रिज्यूमे अपलोड करें।`
+                                : `To apply for "${profilePromptJob.title}" at ${profilePromptJob.company_name} with 1-Tap Easy Apply, please upload your resume on your profile page.`}
+                            </p>
+
+                            <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50/60 p-3 text-xs text-slate-700 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-800">Resume / CV Document:</span>
+                                <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[10px] font-bold">
+                                  Missing
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500">
+                                Once uploaded, your resume is safely stored on your profile and reused automatically for all job applications.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-6 flex items-center justify-end gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setProfilePromptJob(null)}
+                              className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                            >
+                              {language === 'ta' ? 'ரத்து' : language === 'hi' ? 'रद्द करें' : 'Cancel'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfilePromptJob(null)
+                                setActiveTab('profile')
+                              }}
+                              className="rounded-xl bg-[#0B2545] hover:bg-[#081a31] text-white px-5 py-2.5 text-xs font-bold transition shadow-xs cursor-pointer active:scale-98"
+                            >
+                              {language === 'ta'
+                                ? 'சுயவிவரம் & ரெஸ்யூமைப் புதுப்பிக்க'
+                                : language === 'hi'
+                                ? 'प्रोफ़ाइल अपडेट करें'
+                                : 'Update Profile & Resume'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     {/* Recruiter View Applications Modal */}
@@ -1461,8 +1678,8 @@ function MainContent() {
             )}
 
 
-            {/* TAB 4: Network Feed */}
-            {activeTab === 'feed' && (
+            {/* TAB 4: Network Feed (Employee only) */}
+            {activeTab === 'feed' && user?.role === 'employee' && (
               <FeedView
                 posts={posts}
                 onCreatePost={handleCreatePost}
@@ -1518,7 +1735,7 @@ function MainContent() {
           </section>
 
           {/* RIGHT SIDEBAR: Production Opportunities & Mobile App */}
-          <aside className={`hidden ${activeTab === 'candidates' ? 'hidden' : 'lg:block lg:col-span-3'} space-y-4`}>
+          <aside className={`hidden ${activeTab === 'candidates' ? 'hidden' : 'lg:block lg:col-span-3'} space-y-4 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto`}>
             {/* Recent Live Opportunities / Recruiter Operations */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
               <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">

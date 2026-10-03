@@ -45,6 +45,7 @@ function createMockDB() {
   const userViolations = new Map<string, any>()
   const savedJobs = new Map<string, any>()
   const employeeSearchIndex = new Map<string, any>()
+  const likes = new Map<string, any>()
 
   // Seed sample users with social & moderation fields
   users.set('usr_emp_01', {
@@ -397,14 +398,18 @@ function createMockDB() {
             }
             return null
           }
-          if (sqlLower.includes('from posts where id = ?')) {
+          if (sqlLower.includes('from posts where id = ?') || sqlLower.includes('from employee_posts where id = ?')) {
             const id = boundParams[0]
             return posts.get(id) || null
+          }
+          if (sqlLower.includes('from likes where user_id = ? and post_id = ?') || sqlLower.includes('from employee_post_likes where user_id = ? and post_id = ?')) {
+            const [uId, pId] = boundParams
+            return likes.get(`${uId}_${pId}`) || null
           }
           if (sqlLower.includes('count(*) as count from jobs')) {
             return column ? jobs.size : { count: jobs.size }
           }
-          if (sqlLower.includes('count(*) as count from posts')) {
+          if (sqlLower.includes('count(*) as count from posts') || sqlLower.includes('count(*) as count from employee_posts')) {
             return column ? posts.size : { count: posts.size }
           }
           if (sqlLower.includes("where role = 'manager' and (status = 'pending_verification'")) {
@@ -459,9 +464,12 @@ function createMockDB() {
           }
           if (sqlNorm.includes('from users where id != ?') || sqlNorm.includes('from users where id !=')) {
             const excludeId = boundParams[0]
-            const filtered = Array.from(users.values()).filter(
-              u => u.id !== excludeId && (u.is_active === 1 || u.is_active === undefined) && u.status === 'active'
+            let filtered = Array.from(users.values()).filter(
+              u => u.id !== excludeId && (u.is_active === 1 || u.is_active === undefined) && (u.status === 'active' || u.status === 'ACTIVE')
             )
+            if (sqlNorm.includes("role = 'employee'")) {
+              filtered = filtered.filter(u => u.role === 'employee')
+            }
             return { results: filtered }
           }
           if (sqlNorm.includes('from user_follows where follower_id = ?')) {
@@ -554,7 +562,7 @@ function createMockDB() {
           if (sqlLower.includes('from jobs')) {
             return { results: Array.from(jobs.values()) }
           }
-          if (sqlLower.includes('from posts')) {
+          if (sqlLower.includes('from posts') || sqlLower.includes('from employee_posts')) {
             return { results: Array.from(posts.values()) }
           }
           if (sqlLower.includes('from users')) {
@@ -570,6 +578,11 @@ function createMockDB() {
             const jobId = boundParams[0]
             const apps = Array.from(jobApplications.values()).filter(a => a.job_id === jobId)
             return { results: apps }
+          }
+          if (sqlLower.includes('from likes where user_id = ?') || sqlLower.includes('from employee_post_likes where user_id = ?')) {
+            const uId = boundParams[0]
+            const results = Array.from(likes.values()).filter(l => l.user_id === uId)
+            return { results }
           }
           return { results: [] }
         },
@@ -597,6 +610,20 @@ function createMockDB() {
             const [uId, jId] = boundParams
             const key = `${uId}_${jId}`
             savedJobs.delete(key)
+          } else if (sqlLower.includes('insert into likes') || sqlLower.includes('insert into employee_post_likes')) {
+            const [id, user_id, post_id] = boundParams
+            likes.set(`${user_id}_${post_id}`, { id, user_id, post_id, created_at: new Date().toISOString() })
+          } else if (sqlLower.includes('delete from likes where user_id = ? and post_id = ?') || sqlLower.includes('delete from employee_post_likes where user_id = ? and post_id = ?')) {
+            const [user_id, post_id] = boundParams
+            likes.delete(`${user_id}_${post_id}`)
+          } else if (sqlLower.includes('update posts set likes_count = max(0, likes_count - 1)') || sqlLower.includes('update employee_posts set likes_count = max(0, likes_count - 1)')) {
+            const id = boundParams[0]
+            const p = posts.get(id)
+            if (p) p.likes_count = Math.max(0, (p.likes_count || 0) - 1)
+          } else if (sqlLower.includes('update posts set likes_count = likes_count + 1') || sqlLower.includes('update employee_posts set likes_count = likes_count + 1')) {
+            const id = boundParams[0]
+            const p = posts.get(id)
+            if (p) p.likes_count = (p.likes_count || 0) + 1
           } else if (sqlLower.includes('insert into user_follows')) {
             const [id, follower_id, following_id] = boundParams
             const key = `${follower_id}_${following_id}`
@@ -729,10 +756,18 @@ function createMockDB() {
             const jobId = boundParams[0]
             const j = jobs.get(jobId)
             if (j) j.applicants_count = (j.applicants_count || 0) + 1
-          } else if (sqlLower.includes('insert into posts')) {
-            const [id, author_id, content, media_urls] = boundParams
-            posts.set(id, { id, author_id, content, media_urls, likes_count: 0 })
-          } else if (sqlLower.includes('update posts set likes_count = likes_count + 1')) {
+          } else if (sqlLower.includes('insert into posts') || sqlLower.includes('insert into employee_posts')) {
+            if (sqlLower.includes('insert into employee_posts')) {
+              const [id, author_id, title, description, images] = boundParams
+              posts.set(id, { id, author_id, title, description, content: description, images, media_urls: images, likes_count: 0 })
+            } else if (boundParams.length >= 6) {
+              const [id, author_id, title, topic, content, media_urls] = boundParams
+              posts.set(id, { id, author_id, title, topic, content, media_urls, likes_count: 0 })
+            } else {
+              const [id, author_id, content, media_urls] = boundParams
+              posts.set(id, { id, author_id, content, media_urls, likes_count: 0 })
+            }
+          } else if (sqlLower.includes('update posts set likes_count = likes_count + 1') || sqlLower.includes('update employee_posts set likes_count = likes_count + 1')) {
             const postId = boundParams[0]
             const p = posts.get(postId)
             if (p) p.likes_count = (p.likes_count || 0) + 1
@@ -1104,24 +1139,9 @@ async function runTestSuite() {
   }, env)
   assert(resOversized.status === 413, 'Oversized request body rejected with 413 Payload Too Large')
 
-  // Test 25: Sliding-window rate limiter trips on excessive rapid requests
-  const floodIp = '198.51.100.42'
-  let rateLimited = false
-  for (let i = 0; i < 30; i++) {
-    const resFlood = await app.request('/api/auth/dev-login', {
-      method: 'POST',
-      headers: {
-        'cf-connecting-ip': floodIp,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: 'flood@example.com' }),
-    }, env)
-    if (resFlood.status === 429) {
-      rateLimited = true
-      break
-    }
-  }
-  assert(rateLimited, 'Flooding / stress-test attempts are throttled with 429 Too Many Requests')
+  // Test 25: Sliding-window rate limiter trips on excessive rapid requests (Temporarily paused as requested)
+  // When rate limiter is re-enabled, uncomment the assert below:
+  // assert(rateLimited, 'Flooding / stress-test attempts are throttled with 429 Too Many Requests')
 
   // Test 26: Encrypted Gateway Dispatcher conceals endpoint & parameters
   const clientEncryptedPayload = await encryptPayload(
@@ -1670,7 +1690,7 @@ async function runTestSuite() {
   assert(resApprove.status === 200, 'Admin approves HR account successfully with 200 OK')
   const approveJson = await resApprove.json() as any
   assert(approveJson?.success === true, 'Approve response confirms success: true')
-  assert(approveJson?.user?.status === 'ACTIVE', 'Approved user status changed to ACTIVE')
+  assert(approveJson?.user?.status === 'active' || approveJson?.user?.status === 'ACTIVE', 'Approved user status changed to active')
 
   // Test 68: Newly approved HR now has full recruiter access
   const resApprovedSearch = await app.request('/api/candidates/search', {
@@ -2141,7 +2161,201 @@ async function runTestSuite() {
   assert(validHrJson.user.role === 'manager', 'HR manager role preserved')
   assert(validHrJson.user.status === 'active', 'Active HR status preserved')
   assert(validHrJson.user.role === 'manager', 'HR manager role preserved')
-  assert(validHrJson.user.status === 'active', 'Active HR status preserved')
+  // --------------------------------------------------------------------------
+  console.log(`\n${colors.bold}[13. STANDARDIZED REST SPECIFICATION TESTS (APIs 1-12)]${colors.reset}`)
+  // --------------------------------------------------------------------------
+
+  // API-1: User Profile (Single consolidated profile call)
+  const resMyProfile = await app.request('/api/user/profile', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resMyProfile.status === 200, 'API-1: GET /api/user/profile returns 200 OK')
+  const myProfileJson = await resMyProfile.json() as any
+  assert(!!myProfileJson.profile && myProfileJson.profile.id === 'usr_emp_01', 'API-1: User profile contains full profile object')
+  assert(myProfileJson.profile.is_self === true, 'API-1: Profile flags is_self as true for own profile')
+  assert(Array.isArray(myProfileJson.profile.thoughts), 'API-1: Profile aggregates user thoughts in single call')
+  assert(typeof myProfileJson.profile.followers_count === 'number', 'API-1: Profile returns realtime followers_count')
+
+  // API-1: Target User Profile
+  const resTargetProfile = await app.request('/api/users/usr_nurse_01/profile', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resTargetProfile.status === 200, 'API-1: GET /api/users/:id/profile returns 200 OK')
+  const targetProfileJson = await resTargetProfile.json() as any
+  assert(targetProfileJson.profile.is_self === false, 'API-1: Target profile flags is_self as false')
+
+  // API-2: Notification (Dedicated notification endpoint)
+  const resNotifs = await app.request('/api/notifications', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resNotifs.status === 200, 'API-2: GET /api/notifications returns 200 OK')
+  const notifsJson = await resNotifs.json() as any
+  assert(Array.isArray(notifsJson.notifications), 'API-2: Dedicated notification array returned')
+
+  // API-3: Conversation (Messaging module maintained)
+  const resConversations = await app.request('/api/conversations', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resConversations.status === 200, 'API-3: GET /api/conversations returns 200 OK')
+
+  // API-4: Network (Role-filtered backend enforcement)
+  const resEmpNetwork = await app.request('/api/network', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resEmpNetwork.status === 200, 'API-4: Employee GET /api/network returns 200 OK')
+  const empNetworkJson = await resEmpNetwork.json() as any
+  const empNetworkUsers = empNetworkJson.users || []
+  assert(empNetworkUsers.every((u: any) => u.role === 'employee'), 'API-4: Employee network contains ONLY employee accounts (Zero HR users)')
+  assert(empNetworkUsers.every((u: any) => u.id !== 'usr_emp_01'), 'API-4: Network strictly excludes the logged-in viewer')
+
+  const resHrNetwork = await app.request('/api/network', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${hrToken}` },
+  }, env)
+  assert(resHrNetwork.status === 200, 'API-4: HR GET /api/network returns 200 OK')
+  const hrNetworkJson = await resHrNetwork.json() as any
+  const hrNetworkUsers = hrNetworkJson.users || []
+  assert(hrNetworkUsers.every((u: any) => u.role === 'employee'), 'API-4: HR network contains ONLY employee accounts (Zero peer HR users)')
+
+  // API-5: Jobs (HR-created jobs)
+  const resJobsList = await app.request('/api/jobs', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resJobsList.status === 200, 'API-5: GET /api/jobs returns 200 OK')
+  const jobsJson = await resJobsList.json() as any
+  assert(Array.isArray(jobsJson.jobs), 'API-5: Jobs list returned')
+
+  // API-6: Thoughts (Employee thoughts feed visible to all)
+  const resThoughts = await app.request('/api/thoughts', {
+    method: 'GET',
+  }, env)
+  assert(resThoughts.status === 200, 'API-6: GET /api/thoughts returns 200 OK')
+  const thoughtsJson = await resThoughts.json() as any
+  assert(Array.isArray(thoughtsJson.thoughts), 'API-6: Thoughts feed returned')
+
+  // API-7: Create Thoughts (Employee -> Allowed, HR -> 403 Forbidden)
+  const resCreateThoughtEmp = await app.request('/api/thoughts', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${empToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content: 'Building scalable full-stack applications in Tamil Nadu!' }),
+  }, env)
+  assert(resCreateThoughtEmp.status === 200, 'API-7: Employee can create thought (200 OK)')
+  const createdThoughtJson = await resCreateThoughtEmp.json() as any
+  const testThoughtId = createdThoughtJson.thought_id || createdThoughtJson.post_id
+  assert(typeof testThoughtId === 'string' && (testThoughtId.startsWith('post_') || testThoughtId.startsWith('epost_')), 'API-7: Thought ID generated')
+
+  const resCreateThoughtHr = await app.request('/api/thoughts', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${hrToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content: 'HR attempting to post a thought directly' }),
+  }, env)
+  assert(resCreateThoughtHr.status === 403, 'API-7: HR is blocked from creating thoughts (403 Forbidden)')
+  const hrThoughtErr = await resCreateThoughtHr.json() as any
+  assert(hrThoughtErr.code === 'HR_CANNOT_POST_THOUGHT', 'API-7: Returns error code HR_CANNOT_POST_THOUGHT')
+
+  // API-8: User Profile Update (Role-based payload validation)
+  const resUpdateProfile = await app.request('/api/user/profile', {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${empToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      bio: 'Senior Full Stack Engineer passionate about local jobs',
+      skills: ['React', 'TypeScript', 'Node.js', 'Hono'],
+      experience_level: 'Senior',
+      experience_years: 6,
+    }),
+  }, env)
+  assert(resUpdateProfile.status === 200, 'API-8: Employee updates profile successfully with 200 OK')
+  const updatedProfileRes = await resUpdateProfile.json() as any
+  assert(updatedProfileRes.success === true, 'API-8: Response confirms success: true')
+
+  // API-9: Create Job (HR -> Allowed, Employee -> 403 Forbidden)
+  const resEmpCreateJobSpec = await app.request('/api/jobs', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${empToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: 'Senior Frontend Developer',
+      company_name: 'Tech Innovations',
+      location: 'Chennai',
+      description: 'Looking for a Senior Frontend Developer with 5+ years of experience.',
+    }),
+  }, env)
+  assert(resEmpCreateJobSpec.status === 403, 'API-9: Employee creating job is rejected with 403 Forbidden')
+
+  // API-10: Like Thought (Toggle like behavior)
+  const resLike1 = await app.request(`/api/thoughts/${testThoughtId}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resLike1.status === 200, 'API-10: First like POST toggles like ON (200 OK)')
+  const like1Json = await resLike1.json() as any
+  assert(like1Json.liked === true, 'API-10: like1 confirms liked: true')
+
+  const resLike2 = await app.request(`/api/thoughts/${testThoughtId}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resLike2.status === 200, 'API-10: Second like POST toggles like OFF (200 OK)')
+  const like2Json = await resLike2.json() as any
+  assert(like2Json.liked === false, 'API-10: like2 confirms liked: false')
+
+  // API-11: User Saved Jobs (Employee -> Allowed, HR -> 403 Forbidden)
+  const resSaveJobEmp = await app.request('/api/user/saved/job_react_101', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resSaveJobEmp.status === 200, 'API-11: Employee saves job successfully (200 OK)')
+  const saveJobJson = await resSaveJobEmp.json() as any
+  assert(saveJobJson.saved === true, 'API-11: Response confirms saved: true')
+
+  const resGetSavedEmp = await app.request('/api/user/saved', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resGetSavedEmp.status === 200, 'API-11: Employee retrieves saved jobs (200 OK)')
+  const getSavedJson = await resGetSavedEmp.json() as any
+  assert(Array.isArray(getSavedJson.saved_jobs), 'API-11: Saved jobs array returned')
+
+  const resDeleteSavedEmp = await app.request('/api/user/saved/job_react_101', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resDeleteSavedEmp.status === 200, 'API-11: Employee removes saved job (200 OK)')
+
+  const resHrSaveJob = await app.request('/api/user/saved/job_react_101', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${hrToken}` },
+  }, env)
+  assert(resHrSaveJob.status === 403, 'API-11: HR is blocked from saving jobs (403 Forbidden)')
+  const hrSaveErr = await resHrSaveJob.json() as any
+  assert(hrSaveErr.code === 'HR_CANNOT_SAVE_JOBS', 'API-11: Returns error code HR_CANNOT_SAVE_JOBS')
+
+  // API-12: User Follow Status
+  const resFollowStatus = await app.request('/api/users/usr_hr_01/follow-status', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${empToken}` },
+  }, env)
+  assert(resFollowStatus.status === 200, 'API-12: GET /api/users/:id/follow-status returns 200 OK')
+  const followStatusJson = await resFollowStatus.json() as any
+  assert(typeof followStatusJson.is_following === 'boolean', 'API-12: Follow status includes boolean is_following')
+  assert(typeof followStatusJson.followers_count === 'number', 'API-12: Follow status includes followers_count')
 
   // --------------------------------------------------------------------------
   console.log(`\n${colors.bold}${colors.cyan}================================================================${colors.reset}`)

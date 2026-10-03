@@ -11,6 +11,7 @@ import {
   Briefcase,
   FileText,
   Users,
+  GraduationCap,
 } from 'lucide-react'
 import type { PublicProfile, Language } from '../../../types'
 import { socialService } from '../../../services/api'
@@ -346,18 +347,39 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             />
           )}
 
-          {/* Details Row (Location, Company, Joined) */}
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mb-5">
-            {profile.location && (
+          {/* Details Row (Location, Company, Education, Joined) */}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mb-5">
+            {profile.experience_level === 'fresher' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/70">
+                <GraduationCap className="w-3 h-3 text-blue-600" />
+                <span>Fresher</span>
+              </span>
+            )}
+            {(profile.location || profile.state || profile.pincode) && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-[#F97316]" />
-                <span>{translateLocationSync(profile.location, lang)}</span>
+                <span>
+                  {[
+                    profile.location ? translateLocationSync(profile.location, lang) : null,
+                    profile.state || null,
+                    profile.pincode ? `PIN: ${profile.pincode}` : null,
+                  ].filter(Boolean).join(', ')}
+                </span>
               </div>
             )}
             {profile.company && (
               <div className="flex items-center gap-1">
                 <Building className="w-3.5 h-3.5 text-slate-400" />
                 <span>{profile.company}</span>
+              </div>
+            )}
+            {profile.education_degree && (
+              <div className="flex items-center gap-1">
+                <GraduationCap className="w-3.5 h-3.5 text-slate-400" />
+                <span>
+                  {profile.education_degree}
+                  {profile.education_college ? ` • ${profile.education_college}` : ''}
+                </span>
               </div>
             )}
             {profile.created_at && (

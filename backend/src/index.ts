@@ -49,8 +49,15 @@ export interface UserRecord {
   banner_url?: string
   bio?: string
   location?: string
+  state?: string
+  pincode?: string
   company?: string
   position?: string
+  experience_years?: number
+  experience_level?: string
+  education_degree?: string
+  education_college?: string
+  education_year?: string
   skills?: string
   phone?: string
   date_of_birth?: string
@@ -182,6 +189,10 @@ interface RateRecord {
 const ipRateMap = new Map<string, RateRecord>()
 let cleanupCounter = 0
 
+// --------------------------------------------------------------------------
+// 2. SLIDING-WINDOW DDOS & RATE LIMITER (Temporarily disabled as requested)
+// --------------------------------------------------------------------------
+/*
 app.use('*', async (c, next) => {
   cleanupCounter++
   if (cleanupCounter % 250 === 0) {
@@ -239,7 +250,7 @@ app.use('*', async (c, next) => {
   // Define route-specific rate limits (requests per 60-second window)
   const isAuthRoute = path.startsWith('/api/auth/')
   const isWriteRoute = c.req.method === 'POST' || c.req.method === 'DELETE' || c.req.method === 'PATCH'
-  const maxAllowed = isAuthRoute ? 5 : isWriteRoute ? 30 : 120
+  const maxAllowed = isAuthRoute ? (path.includes('dev-login') ? 15 : 5) : isWriteRoute ? 100 : 120
 
   if (record.count > maxAllowed) {
     record.blockedUntil = now + 60000 // 60 seconds cooling block
@@ -261,6 +272,7 @@ app.use('*', async (c, next) => {
 
   await next()
 })
+*/
 
 // --------------------------------------------------------------------------
 // 3. PAYLOAD SIZE GUARD (Memory Exhaustion & Crash Protection)
@@ -330,19 +342,19 @@ export async function ensureProductionSchema(db: D1Database) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
-    `CREATE TABLE IF NOT EXISTS posts (
+    `CREATE TABLE IF NOT EXISTS employee_posts (
       id TEXT PRIMARY KEY,
       author_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      media_urls TEXT DEFAULT '[]',
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      images TEXT DEFAULT '[]',
       likes_count INTEGER DEFAULT 0,
       comments_count INTEGER DEFAULT 0,
-      shares_count INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
-    `CREATE TABLE IF NOT EXISTS likes (
+    `CREATE TABLE IF NOT EXISTS employee_post_likes (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       post_id TEXT NOT NULL,
@@ -358,12 +370,28 @@ export async function ensureProductionSchema(db: D1Database) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
 
+    `CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      author_id TEXT NOT NULL,
+      title TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      content TEXT DEFAULT '',
+      images TEXT DEFAULT '[]',
+      media_urls TEXT DEFAULT '[]',
+      likes_count INTEGER DEFAULT 0,
+      comments_count INTEGER DEFAULT 0,
+      shares_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+
     `CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
       poster_id TEXT NOT NULL,
       title TEXT NOT NULL,
       company_name TEXT NOT NULL,
       company_logo TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
       location TEXT NOT NULL,
       workplace_type TEXT CHECK(workplace_type IN ('Remote', 'Hybrid', 'On-site')) DEFAULT 'Remote',
       employment_type TEXT CHECK(employment_type IN ('Full-time', 'Part-time', 'Contract', 'Internship')) DEFAULT 'Full-time',
@@ -492,11 +520,19 @@ export async function ensureProductionSchema(db: D1Database) {
     'ALTER TABLE users ADD COLUMN verified_by TEXT DEFAULT NULL',
     // Missing migrations that caused production D1 errors
     'ALTER TABLE users ADD COLUMN pending_profile TEXT DEFAULT NULL',
+    'ALTER TABLE users ADD COLUMN experience_years INTEGER DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN experience_level TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN education_degree TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN education_college TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN education_year TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN state TEXT DEFAULT ""',
+    'ALTER TABLE users ADD COLUMN pincode TEXT DEFAULT ""',
     'ALTER TABLE job_applications ADD COLUMN applicant_user_id TEXT',
     'ALTER TABLE job_applications ADD COLUMN candidate_phone TEXT DEFAULT ""',
     'ALTER TABLE job_applications ADD COLUMN status TEXT DEFAULT "applied"',
     'ALTER TABLE chat_messages ADD COLUMN read_at DATETIME DEFAULT NULL',
     'ALTER TABLE chat_messages ADD COLUMN moderation_status TEXT DEFAULT "APPROVED"',
+
   ]
 
   for (const colSql of columnMigrations) {
@@ -509,9 +545,9 @@ export async function ensureProductionSchema(db: D1Database) {
 
   // Idempotent indexes
   const indexStatements = [
-    'CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)',
-    'CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)',
-    'CREATE INDEX IF NOT EXISTS idx_likes_post ON likes(post_id)',
+    'CREATE INDEX IF NOT EXISTS idx_employee_posts_created_at ON employee_posts(created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_employee_posts_author ON employee_posts(author_id)',
+    'CREATE INDEX IF NOT EXISTS idx_employee_post_likes_post ON employee_post_likes(post_id)',
     'CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id)',
     'CREATE INDEX IF NOT EXISTS idx_job_apps_job ON job_applications(job_id)',
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_job_apps_unique_user ON job_applications(job_id, applicant_user_id)',
@@ -531,6 +567,9 @@ export async function ensureProductionSchema(db: D1Database) {
     'CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_verifications(expires_at)',
     'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)',
     'CREATE INDEX IF NOT EXISTS idx_employee_search_updated ON employee_search_index(updated_at DESC)',
+    'CREATE TRIGGER IF NOT EXISTS trg_sync_posts_ins AFTER INSERT ON employee_posts BEGIN INSERT OR REPLACE INTO posts (id, author_id, title, description, content, images, media_urls, likes_count, comments_count, created_at, updated_at) VALUES (new.id, new.author_id, new.title, new.description, new.description, new.images, new.images, new.likes_count, new.comments_count, new.created_at, new.updated_at); END',
+    'CREATE TRIGGER IF NOT EXISTS trg_sync_posts_upd AFTER UPDATE ON employee_posts BEGIN UPDATE posts SET title = new.title, description = new.description, content = new.description, images = new.images, media_urls = new.images, likes_count = new.likes_count, comments_count = new.comments_count, updated_at = new.updated_at WHERE id = new.id; END',
+    'CREATE TRIGGER IF NOT EXISTS trg_sync_posts_del AFTER DELETE ON employee_posts BEGIN DELETE FROM posts WHERE id = old.id; END',
   ]
 
   for (const idxSql of indexStatements) {
@@ -569,7 +608,7 @@ const requireAuth = async (c: any, next: any) => {
 
     // Always fetch fresh user record from D1 to get real-time role, social stats, and account status
     const user = await c.env.DB.prepare(
-      'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, verification_notes, verified_at, verified_by, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, username, is_active, deactivated_until, followers_count, following_count, created_at, updated_at, pending_profile FROM users WHERE id = ?'
+      'SELECT id, email, full_name, role, assigned_by, status, rejection_reason, verification_notes, verified_at, verified_by, headline, avatar_url, banner_url, bio, location, state, pincode, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, username, is_active, deactivated_until, followers_count, following_count, experience_years, experience_level, education_degree, education_college, education_year, created_at, updated_at, pending_profile FROM users WHERE id = ?'
     )
       .bind(payload.id)
       .first() as UserRecord | null
@@ -675,8 +714,8 @@ app.get('/api/health', async (c) => {
 
   const tables = [
     'users',
-    'posts',
-    'likes',
+    'employee_posts',
+    'employee_post_likes',
     'comments',
     'jobs',
     'job_applications',
@@ -1557,8 +1596,8 @@ app.get('/api/auth/me', requireAuth, (c) => {
   return c.json({ user })
 })
 
-// 4. Update Current User Profile (LinkedIn-style rich details)
-app.patch('/api/users/profile', requireAuth, async (c) => {
+// API-8: Update Current User Profile (Role-guarded: Employee vs HR)
+async function handleProfileUpdate(c: any) {
   try {
     const authUser = c.get('user') as UserRecord
     const body = await c.req.json().catch(() => ({}))
@@ -1567,6 +1606,8 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
       headline,
       bio,
       location,
+      state,
+      pincode,
       company,
       position,
       skills,
@@ -1577,6 +1618,11 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
       language,
       avatar_url,
       banner_url,
+      experience_years,
+      experience_level,
+      education_degree,
+      education_college,
+      education_year,
     } = body
 
     // Validation boundaries
@@ -1597,6 +1643,12 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
     }
     if (location !== undefined && location !== null && (typeof location !== 'string' || location.length > 150)) {
       return c.json({ error: 'Location cannot exceed 150 characters' }, 400)
+    }
+    if (state !== undefined && state !== null && (typeof state !== 'string' || state.length > 100)) {
+      return c.json({ error: 'State cannot exceed 100 characters' }, 400)
+    }
+    if (pincode !== undefined && pincode !== null && (typeof pincode !== 'string' || pincode.length > 20)) {
+      return c.json({ error: 'Pincode cannot exceed 20 characters' }, 400)
     }
     if (company !== undefined && company !== null && (typeof company !== 'string' || company.length > 150)) {
       return c.json({ error: 'Company cannot exceed 150 characters' }, 400)
@@ -1623,6 +1675,15 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
       return c.json({ error: 'Banner URL cannot exceed 1000 characters' }, 400)
     }
 
+    // Role-specific field filtering
+    const isHr = authUser.role === 'manager'
+    const safeResume = isHr ? null : (resume_url !== undefined ? resume_url : null)
+    const safeExpYears = isHr ? null : (experience_years !== undefined ? Number(experience_years) || 0 : null)
+    const safeExpLevel = isHr ? null : (experience_level !== undefined ? String(experience_level).slice(0, 50) : null)
+    const safeEduDegree = isHr ? null : (education_degree !== undefined ? String(education_degree).slice(0, 100) : null)
+    const safeEduCollege = isHr ? null : (education_college !== undefined ? String(education_college).slice(0, 150) : null)
+    const safeEduYear = isHr ? null : (education_year !== undefined ? String(education_year).slice(0, 20) : null)
+
     let serializedSkills: string | null = null
     if (skills !== undefined) {
       if (Array.isArray(skills)) {
@@ -1638,6 +1699,8 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
            headline = COALESCE(?, headline),
            bio = COALESCE(?, bio),
            location = COALESCE(?, location),
+           state = COALESCE(?, state),
+           pincode = COALESCE(?, pincode),
            company = COALESCE(?, company),
            position = COALESCE(?, position),
            skills = COALESCE(?, skills),
@@ -1648,6 +1711,11 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
            language = COALESCE(?, language),
            avatar_url = COALESCE(?, avatar_url),
            banner_url = COALESCE(?, banner_url),
+           experience_years = COALESCE(?, experience_years),
+           experience_level = COALESCE(?, experience_level),
+           education_degree = COALESCE(?, education_degree),
+           education_college = COALESCE(?, education_college),
+           education_year = COALESCE(?, education_year),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`
     )
@@ -1656,16 +1724,23 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
         headline !== undefined ? headline : null,
         bio !== undefined ? bio : null,
         location !== undefined ? location : null,
+        state !== undefined ? (state ? state.trim() : '') : null,
+        pincode !== undefined ? (pincode ? pincode.trim() : '') : null,
         company !== undefined ? company : null,
         position !== undefined ? position : null,
         serializedSkills !== null ? serializedSkills : null,
         phone !== undefined ? phone : null,
         date_of_birth !== undefined ? date_of_birth : null,
         age !== undefined ? (age ? Number(age) : null) : null,
-        resume_url !== undefined ? resume_url : null,
+        safeResume,
         language !== undefined ? language : null,
         avatar_url !== undefined ? avatar_url : null,
         banner_url !== undefined ? banner_url : null,
+        safeExpYears,
+        safeExpLevel,
+        safeEduDegree,
+        safeEduCollege,
+        safeEduYear,
         authUser.id
       )
       .run()
@@ -1675,7 +1750,7 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
     invalidateEdgeCache(`user:status:${authUser.id}`)
 
     const updatedUser = (await c.env.DB.prepare(
-      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, email, full_name, role, assigned_by, status, headline, avatar_url, banner_url, bio, location, state, pincode, company, position, skills, phone, date_of_birth, age, resume_url, language, connections_count, experience_years, experience_level, education_degree, education_college, education_year, created_at, updated_at FROM users WHERE id = ?'
     )
       .bind(authUser.id)
       .first()) as UserRecord
@@ -1716,7 +1791,11 @@ app.patch('/api/users/profile', requireAuth, async (c) => {
   } catch (err: any) {
     return c.json({ error: 'Failed to update profile: ' + err.message }, 500)
   }
-})
+}
+
+app.patch('/api/user/profile', requireAuth, handleProfileUpdate)
+app.put('/api/user/profile', requireAuth, handleProfileUpdate)
+app.patch('/api/users/profile', requireAuth, handleProfileUpdate)
 
 // --------------------------------------------------------------------------
 // ADMIN ONLY ROUTES
@@ -1779,8 +1858,8 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireRole(['admin']), asyn
       return c.json({ error: 'Cannot modify another admin role via API' }, 403)
     }
 
-    // If promoting to manager, automatically mark account ACTIVE & verified by admin
-    const newStatus = role === 'manager' ? 'ACTIVE' : 'active'
+    // If promoting to manager, automatically mark account active & verified by admin
+    const newStatus = 'active'
 
     await c.env.DB.prepare(
       `UPDATE users 
@@ -2230,7 +2309,7 @@ app.post('/api/admin/hr-verifications/:id/approve', requireAuth, requireRole(['a
 
     await c.env.DB.prepare(
       `UPDATE users 
-       SET status = 'ACTIVE',
+       SET status = 'active',
            assigned_by = ?,
            verified_at = CURRENT_TIMESTAMP,
            verified_by = ?,
@@ -3224,6 +3303,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
       title,
       company_name,
       company_logo,
+      image_url,
       location,
       workplace_type,
       employment_type,
@@ -3234,8 +3314,9 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
     const titleClean = (title || '').trim()
     const companyClean = (company_name || '').trim()
     const logoClean = (company_logo || '').trim()
+    const imageClean = (image_url || '').trim()
     const locationClean = (location || '').trim()
-    const descClean = (description || '').trim()
+    let descClean = (description || '').trim()
     const salaryClean = (salary_range || '').trim().slice(0, 100)
 
     if (!titleClean || titleClean.length < 3 || titleClean.length > 150) {
@@ -3247,7 +3328,10 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
     if (!locationClean || locationClean.length < 2 || locationClean.length > 150) {
       return c.json({ error: 'Location must be between 2 and 150 characters' }, 400)
     }
-    if (!descClean || descClean.length < 10 || descClean.length > 15000) {
+    // If HR uploads a job flyer/poster, allow description to default cleanly if empty
+    if (!descClean && imageClean) {
+      descClean = 'Please refer to the attached hiring flyer for complete job specifications, qualifications, and walk-in details.'
+    } else if (!descClean || descClean.length < 10 || descClean.length > 15000) {
       return c.json({ error: 'Job description must be between 10 and 15,000 characters' }, 400)
     }
 
@@ -3260,8 +3344,8 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
     const jobId = 'job_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 
     await c.env.DB.prepare(
-      `INSERT INTO jobs (id, poster_id, title, company_name, company_logo, location, workplace_type, employment_type, description, salary_range)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO jobs (id, poster_id, title, company_name, company_logo, image_url, location, workplace_type, employment_type, description, salary_range)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         jobId,
@@ -3269,6 +3353,7 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
         titleClean,
         companyClean,
         logoClean,
+        imageClean,
         locationClean,
         safeWorkplace,
         safeEmployment,
@@ -3482,6 +3567,8 @@ app.patch('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requi
 
     const titleClean = typeof body.title === 'string' ? body.title.trim() : null
     const companyClean = typeof body.company_name === 'string' ? body.company_name.trim() : null
+    const logoClean = typeof body.company_logo === 'string' ? body.company_logo.trim() : null
+    const imageClean = typeof body.image_url === 'string' ? body.image_url.trim() : null
     const descClean = typeof body.description === 'string' ? body.description.trim() : null
     const locationClean = typeof body.location === 'string' ? body.location.trim() : null
     const workplaceClean = typeof body.workplace_type === 'string' ? body.workplace_type.trim() : null
@@ -3492,6 +3579,8 @@ app.patch('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requi
       `UPDATE jobs
        SET title = COALESCE(?, title),
            company_name = COALESCE(?, company_name),
+           company_logo = COALESCE(?, company_logo),
+           image_url = COALESCE(?, image_url),
            description = COALESCE(?, description),
            location = COALESCE(?, location),
            workplace_type = COALESCE(?, workplace_type),
@@ -3499,7 +3588,7 @@ app.patch('/api/jobs/:id', requireAuth, requireRole(['admin', 'manager']), requi
            salary_range = COALESCE(?, salary_range)
        WHERE id = ?`
     )
-      .bind(titleClean, companyClean, descClean, locationClean, workplaceClean, employmentClean, salaryClean, jobId)
+      .bind(titleClean, companyClean, logoClean, imageClean, descClean, locationClean, workplaceClean, employmentClean, salaryClean, jobId)
       .run()
 
     invalidateEdgeCache('jobs:')
@@ -3780,161 +3869,368 @@ app.get('/api/employee/my-applications', requireAuth, async (c) => {
 // SOCIAL / NETWORKING FEED (LinkedIn Features)
 // --------------------------------------------------------------------------
 
-// 1. Get Feed Posts (cached 60s)
-app.get('/api/posts', async (c) => {
+// API-6: Thoughts — Fetch Employee Thoughts (Visible to all, Employee-created only)
+async function handleGetThoughts(c: any) {
   try {
-    const cached = getEdgeCache<{ posts: any[] }>('posts:feed')
-    if (cached) {
-      return c.json(cached)
+    const authHeader = c.req.header('Authorization')
+    let currentUserId: string | null = null
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7)
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      try {
+        currentUserId = await extractUserIdFromToken(token, secret)
+      } catch {}
     }
 
     const { results } = await c.env.DB.prepare(
-      `SELECT p.*, u.full_name as author_name, u.avatar_url as author_avatar, 
-              u.headline as author_headline, u.role as author_role
-       FROM posts p
-       JOIN users u ON p.author_id = u.id
-       ORDER BY p.created_at DESC
-       LIMIT 30`
+      `SELECT ep.id, ep.author_id, ep.title, ep.description as content, ep.images as media_urls,
+              ep.likes_count, ep.comments_count, 0 as shares_count, ep.created_at, ep.updated_at,
+              u.full_name as author_name, u.avatar_url as author_avatar, 
+              u.headline as author_headline, u.role as author_role, u.location as author_location
+       FROM employee_posts ep
+       JOIN users u ON ep.author_id = u.id
+       WHERE (u.is_active = 1 OR u.is_active IS NULL) AND (u.status = 'active' OR u.status = 'ACTIVE' OR u.status IS NULL)
+       ORDER BY ep.created_at DESC
+       LIMIT 50`
     ).all()
 
-    const payload = { posts: results || [] }
-    setEdgeCache('posts:feed', payload, 60)
-    return c.json(payload)
+    const rawPosts = results || []
+    let likedPostIds = new Set<string>()
+    if (rawPosts.length > 0 && currentUserId) {
+      const pIds = rawPosts.map((r: any) => r.id)
+      const placeholders = pIds.map(() => '?').join(',')
+      try {
+        const likesRes = await c.env.DB.prepare(
+          `SELECT post_id FROM employee_post_likes WHERE user_id = ? AND post_id IN (${placeholders})`
+        ).bind(currentUserId, ...pIds).all()
+        likedPostIds = new Set((likesRes?.results || []).map((l: any) => l.post_id))
+      } catch {}
+    }
+
+    const formattedThoughts = rawPosts.map((p: any) => ({
+      ...p,
+      title: p.title || '',
+      author_location: p.author_location || '',
+      media_urls: typeof p.media_urls === 'string' ? JSON.parse(p.media_urls || '[]') : (p.media_urls || []),
+      is_liked: likedPostIds.has(p.id),
+    }))
+
+    return c.json({
+      thoughts: formattedThoughts,
+      posts: formattedThoughts, // Backwards compatibility alias
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
-})
+}
 
-// 2. Create Post (Any authenticated user: Employee, Manager, or Admin)
-app.post('/api/posts', requireAuth, async (c) => {
+app.get('/api/thoughts', handleGetThoughts)
+app.get('/api/posts', handleGetThoughts)
+
+// API-7: Create Thoughts (Employee only — HR blocked with 403)
+async function handleCreateThought(c: any) {
   try {
     const user = c.get('user') as UserRecord
+
+    // Role-based authorization: HR is strictly not allowed to post thoughts
+    if (user.role === 'manager') {
+      return c.json(
+        {
+          error: 'Forbidden: HR recruiter accounts cannot create thoughts. Thoughts are exclusive to Job Seeker / Employee accounts.',
+          code: 'HR_CANNOT_POST_THOUGHT',
+        },
+        403
+      )
+    }
+
     const body = await c.req.json().catch(() => ({}))
-    const content = (body.content || '').trim()
+    const title = (body.title || '').trim()
+    const content = (body.content || body.description || '').trim()
 
     if (!content || content.length === 0) {
-      return c.json({ error: 'Post content cannot be empty' }, 400)
+      return c.json({ error: 'Thought content cannot be empty' }, 400)
     }
     if (content.length > 5000) {
-      return c.json({ error: 'Post content cannot exceed 5000 characters' }, 400)
+      return c.json({ error: 'Thought content cannot exceed 5000 characters' }, 400)
     }
 
     const safeMedia = Array.isArray(body.media_urls)
       ? body.media_urls
           .slice(0, 10)
           .filter((url: any) => typeof url === 'string' && url.length <= 1000)
-      : []
+      : (Array.isArray(body.images) ? body.images.slice(0, 10) : [])
 
-    const postId = 'post_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    const thoughtId = 'epost_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 
     await c.env.DB.prepare(
-      `INSERT INTO posts (id, author_id, content, media_urls)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO employee_posts (id, author_id, title, description, images)
+       VALUES (?, ?, ?, ?, ?)`
     )
-      .bind(postId, user.id, content, JSON.stringify(safeMedia))
+      .bind(thoughtId, user.id, title || 'My Thought', content, JSON.stringify(safeMedia))
       .run()
 
     invalidateEdgeCache('posts:')
     invalidateEdgeCache('platform:')
 
-    return c.json({ success: true, post_id: postId })
+    return c.json({ success: true, post_id: thoughtId, thought_id: thoughtId })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
-})
+}
 
-// 3. Dynamic Post Reaction (Like)
-app.post('/api/posts/:id/like', async (c) => {
+app.post('/api/thoughts', requireAuth, handleCreateThought)
+app.post('/api/posts', requireAuth, handleCreateThought)
+
+// API-10: Like / Unlike Thought (Toggle behavior associated with authenticatedUserId + thoughtId)
+async function handleLikeThought(c: any) {
   try {
-    const postId = c.req.param('id')
+    const thoughtId = c.req.param('id')
+    const authHeader = c.req.header('Authorization')
+    let likerId: string | null = null
+    let likerName = 'Someone'
+    let likerAvatar: string | null = null
 
-    const existingPost = await c.env.DB.prepare('SELECT id, author_id, likes_count FROM posts WHERE id = ?')
-      .bind(postId)
+    if (authHeader?.startsWith('Bearer ')) {
+      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
+      try {
+        likerId = await extractUserIdFromToken(authHeader.substring(7), secret)
+      } catch {}
+    }
+
+    if (!likerId) {
+      const ctxUser = c.get('user') as UserRecord | undefined
+      if (ctxUser?.id) likerId = ctxUser.id
+    }
+
+    const existingPost = await c.env.DB.prepare('SELECT id, author_id, likes_count FROM employee_posts WHERE id = ?')
+      .bind(thoughtId)
       .first() as { id: string; author_id: string; likes_count: number } | null
 
     if (!existingPost) {
       return c.json({ error: 'Post not found' }, 404)
     }
 
-    await c.env.DB.prepare('UPDATE posts SET likes_count = likes_count + 1 WHERE id = ?')
-      .bind(postId)
-      .run()
+    let isLiked = false
+    let newLikesCount = existingPost.likes_count || 0
 
-    invalidateEdgeCache('posts:')
+    if (likerId) {
+      // Check if user already liked this thought
+      const existingLike = await c.env.DB.prepare(
+        'SELECT id FROM employee_post_likes WHERE user_id = ? AND post_id = ?'
+      )
+        .bind(likerId, thoughtId)
+        .first()
 
-    // Resolve liking user from Authorization header
-    let likerName = 'Someone'
-    let likerAvatar: string | null = null
-    let likerId: string | null = null
-    const authHeader = c.req.header('Authorization')
-    if (authHeader?.startsWith('Bearer ')) {
-      const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET
-      likerId = await extractUserIdFromToken(authHeader.substring(7), secret)
-      if (likerId) {
+      if (existingLike) {
+        // Toggle OFF: Remove like
+        await c.env.DB.prepare('DELETE FROM employee_post_likes WHERE user_id = ? AND post_id = ?')
+          .bind(likerId, thoughtId)
+          .run()
+
+        await c.env.DB.prepare('UPDATE employee_posts SET likes_count = MAX(0, likes_count - 1) WHERE id = ?')
+          .bind(thoughtId)
+          .run()
+
+        newLikesCount = Math.max(0, newLikesCount - 1)
+        isLiked = false
+      } else {
+        // Toggle ON: Add like
+        const likeId = 'epl_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+        await c.env.DB.prepare(
+          'INSERT INTO employee_post_likes (id, user_id, post_id, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)'
+        )
+          .bind(likeId, likerId, thoughtId)
+          .run()
+
+        await c.env.DB.prepare('UPDATE employee_posts SET likes_count = likes_count + 1 WHERE id = ?')
+          .bind(thoughtId)
+          .run()
+
+        newLikesCount = newLikesCount + 1
+        isLiked = true
+
+        // Fetch liker profile for notification
         const user = (await c.env.DB.prepare('SELECT full_name, avatar_url FROM users WHERE id = ?').bind(likerId).first()) as any
         if (user?.full_name) likerName = user.full_name
         likerAvatar = user?.avatar_url || null
-      }
-    }
 
-    // Dispatch in-app and native push notification to post author
-    if (existingPost.author_id && existingPost.author_id !== likerId) {
-      try {
-        const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-        const notifTitle = 'New Reaction'
-        const notifMessage = `${likerName} liked your post on Namma Ooru Jobs`
-        const notifData = JSON.stringify({
-          type: 'post_like',
-          post_id: postId,
-          liker_id: likerId,
-          liker_name: likerName,
-          liker_avatar: likerAvatar,
-        })
+        // Dispatch in-app and native push notification to post author
+        if (existingPost.author_id && existingPost.author_id !== likerId) {
+          try {
+            const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+            const notifTitle = 'New Reaction'
+            const notifMessage = `${likerName} liked your thought on Namma Ooru Jobs`
+            const notifData = JSON.stringify({
+              type: 'post_like',
+              post_id: thoughtId,
+              liker_id: likerId,
+              liker_name: likerName,
+              liker_avatar: likerAvatar,
+            })
 
-        // 1. In-app notification
-        await c.env.DB.prepare(
-          `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
-           VALUES (?, ?, 'post_like', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
-        )
-          .bind(notifId, existingPost.author_id, notifTitle, notifMessage, notifData)
-          .run()
-
-        // 2. Native push notification via FCM
-        const { results: authorTokens } = await c.env.DB.prepare(
-          'SELECT token FROM device_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10'
-        )
-          .bind(existingPost.author_id)
-          .all()
-
-        const tokens = (authorTokens || []).map((r: any) => r.token as string)
-        if (tokens.length > 0) {
-          c.executionCtx.waitUntil(
-            Promise.allSettled(
-              tokens.map((token) =>
-                sendFcmNotification(serviceAccount, token, {
-                  title: notifTitle,
-                  body: notifMessage,
-                  data: {
-                    type: 'post_like',
-                    post_id: postId,
-                  },
-                })
-              )
+            await c.env.DB.prepare(
+              `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+               VALUES (?, ?, 'post_like', ?, ?, ?, 0, CURRENT_TIMESTAMP)`
             )
-          )
+              .bind(notifId, existingPost.author_id, notifTitle, notifMessage, notifData)
+              .run()
+          } catch (notifErr) {
+            console.warn('Like notification dispatch failed:', notifErr)
+          }
         }
-      } catch (likeNotifErr) {
-        console.warn('Failed to send post reaction notification:', likeNotifErr)
       }
+    } else {
+      // Unauthenticated fallback: increment like
+      await c.env.DB.prepare('UPDATE employee_posts SET likes_count = likes_count + 1 WHERE id = ?')
+        .bind(thoughtId)
+        .run()
+      newLikesCount = newLikesCount + 1
+      isLiked = true
     }
+
+    invalidateEdgeCache('posts:')
 
     return c.json({
       success: true,
-      likes_count: (existingPost.likes_count || 0) + 1,
+      liked: isLiked,
+      likes_count: newLikesCount,
+      thought_id: thoughtId,
+      post_id: thoughtId,
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
+}
+
+app.post('/api/thoughts/:id/like', handleLikeThought)
+app.post('/api/posts/:id/like', handleLikeThought)
+
+// --------------------------------------------------------------------------
+// COMMENTS — GET & POST
+// --------------------------------------------------------------------------
+
+// GET /api/thoughts/:id/comments — fetch all comments for a post
+app.get('/api/thoughts/:id/comments', async (c: any) => {
+  try {
+    const postId = c.req.param('id')
+
+    const { results } = await c.env.DB.prepare(
+      `SELECT c.id, c.post_id, c.author_id, c.content, c.created_at,
+              u.full_name as author_name, u.avatar_url as author_avatar
+       FROM comments c
+       JOIN users u ON c.author_id = u.id
+       WHERE c.post_id = ?
+       ORDER BY c.created_at ASC
+       LIMIT 200`
+    ).bind(postId).all()
+
+    return c.json({ comments: results || [] })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+app.get('/api/posts/:id/comments', async (c: any) => {
+  const postId = c.req.param('id')
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.post_id, c.author_id, c.content, c.created_at,
+            u.full_name as author_name, u.avatar_url as author_avatar
+     FROM comments c
+     JOIN users u ON c.author_id = u.id
+     WHERE c.post_id = ?
+     ORDER BY c.created_at ASC
+     LIMIT 200`
+  ).bind(postId).all()
+  return c.json({ comments: results || [] })
+})
+
+// POST /api/thoughts/:id/comments — add a comment
+app.post('/api/thoughts/:id/comments', requireAuth, async (c: any) => {
+  try {
+    const postId = c.req.param('id')
+    const author = c.get('user') as UserRecord
+
+    const body = await c.req.json().catch(() => ({}))
+    const content = (body.content || '').trim()
+
+    if (!content || content.length === 0) {
+      return c.json({ error: 'Comment cannot be empty' }, 400)
+    }
+    if (content.length > 1000) {
+      return c.json({ error: 'Comment cannot exceed 1000 characters' }, 400)
+    }
+
+    // Verify post exists
+    const post = await c.env.DB.prepare('SELECT id, author_id FROM employee_posts WHERE id = ?')
+      .bind(postId).first() as { id: string; author_id: string } | null
+
+    if (!post) {
+      return c.json({ error: 'Post not found' }, 404)
+    }
+
+    const commentId = 'cmt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+
+    await c.env.DB.prepare(
+      `INSERT INTO comments (id, post_id, author_id, content, created_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    ).bind(commentId, postId, author.id, content).run()
+
+    // Increment comments_count
+    await c.env.DB.prepare(
+      'UPDATE employee_posts SET comments_count = comments_count + 1 WHERE id = ?'
+    ).bind(postId).run()
+
+    // Send notification to post author (not to self)
+    if (post.author_id && post.author_id !== author.id) {
+      try {
+        const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+        await c.env.DB.prepare(
+          `INSERT INTO notifications (id, user_id, type, title, message, data, is_read, created_at)
+           VALUES (?, ?, 'post_comment', 'New Comment', ?, ?, 0, CURRENT_TIMESTAMP)`
+        ).bind(
+          notifId,
+          post.author_id,
+          `${author.full_name} commented on your post`,
+          JSON.stringify({ type: 'post_comment', post_id: postId, commenter_id: author.id, commenter_name: author.full_name })
+        ).run()
+      } catch {}
+    }
+
+    invalidateEdgeCache('posts:')
+
+    return c.json({
+      success: true,
+      comment: {
+        id: commentId,
+        post_id: postId,
+        author_id: author.id,
+        content,
+        created_at: new Date().toISOString(),
+        author_name: author.full_name,
+        author_avatar: author.avatar_url || null,
+      },
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+app.post('/api/posts/:id/comments', requireAuth, async (c: any) => {
+  // Alias to thoughts route handler
+  c.req.param = Object.assign(c.req.param, { id: c.req.param('id') })
+  const postId = c.req.param('id')
+  const author = c.get('user') as UserRecord
+  const body = await c.req.json().catch(() => ({}))
+  const content = (body.content || '').trim()
+  if (!content) return c.json({ error: 'Comment cannot be empty' }, 400)
+  if (content.length > 1000) return c.json({ error: 'Comment too long' }, 400)
+  const post = await c.env.DB.prepare('SELECT id, author_id FROM employee_posts WHERE id = ?').bind(postId).first() as any
+  if (!post) return c.json({ error: 'Post not found' }, 404)
+  const commentId = 'cmt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+  await c.env.DB.prepare(`INSERT INTO comments (id, post_id, author_id, content, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).bind(commentId, postId, author.id, content).run()
+  await c.env.DB.prepare('UPDATE employee_posts SET comments_count = comments_count + 1 WHERE id = ?').bind(postId).run()
+  invalidateEdgeCache('posts:')
+  return c.json({ success: true, comment: { id: commentId, post_id: postId, author_id: author.id, content, created_at: new Date().toISOString(), author_name: author.full_name, author_avatar: author.avatar_url || null } })
 })
 
 // --------------------------------------------------------------------------
@@ -3948,7 +4244,7 @@ app.get('/api/platform/overview', async (c) => {
     }
 
     const totalJobs = (await c.env.DB.prepare('SELECT COUNT(*) as count FROM jobs').first('count')) || 0
-    const totalPosts = (await c.env.DB.prepare('SELECT COUNT(*) as count FROM posts').first('count')) || 0
+    const totalPosts = (await c.env.DB.prepare('SELECT COUNT(*) as count FROM employee_posts').first('count')) || 0
     const totalUsers = (await c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first('count')) || 0
     const { results: recentJobs } = await c.env.DB.prepare(
       'SELECT id, title, company_name, location, workplace_type, created_at FROM jobs ORDER BY created_at DESC LIMIT 4'
@@ -4293,8 +4589,8 @@ app.get('/api/notifications/devices', requireAuth, requireRole(['admin']), async
 // SOCIAL NETWORKING, FOLLOW/UNFOLLOW & MODERATED MESSAGING MODULE
 // --------------------------------------------------------------------------
 
-// 1. Discover People / Connections Feed
-app.get('/api/users/discover', requireAuth, async (c) => {
+// API-4: Network — Professional Network Feed (Role-filtered backend enforcement)
+async function handleNetworkDiscovery(c: any) {
   try {
     const currentUser = c.get('user') as UserRecord
 
@@ -4323,61 +4619,15 @@ app.get('/api/users/discover', requireAuth, async (c) => {
     const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20', 10)))
     const offset = (page - 1) * limit
 
-    // ── For EMPLOYEE users: only show other employees.
-    //    Exception: show HR/managers who have already followed THIS employee
-    //    OR who have an existing conversation with them.
-    let allowedManagerIds: string[] = []
-    if (currentUser.role === 'employee') {
-      // Managers who follow this employee
-      const followRows = await c.env.DB.prepare(
-        `SELECT follower_id FROM user_follows
-         JOIN users ON users.id = user_follows.follower_id
-         WHERE user_follows.following_id = ? AND users.role = 'manager' AND (users.is_active = 1 OR users.is_active IS NULL) AND users.status = 'ACTIVE'`
-      ).bind(currentUser.id).all()
-      const followingMeIds = (followRows?.results || []).map((r: any) => r.follower_id)
-
-      // Managers with whom this employee has a conversation
-      const convRows = await c.env.DB.prepare(
-        `SELECT DISTINCT CASE
-           WHEN c.participant1_id = ? THEN c.participant2_id
-           ELSE c.participant1_id
-         END as other_id
-         FROM conversations c
-         JOIN users ON users.id = CASE WHEN c.participant1_id = ? THEN c.participant2_id ELSE c.participant1_id END
-         WHERE (c.participant1_id = ? OR c.participant2_id = ?)
-           AND users.role = 'manager'
-           AND (users.is_active = 1 OR users.is_active IS NULL)
-           AND users.status = 'ACTIVE'`
-      ).bind(currentUser.id, currentUser.id, currentUser.id, currentUser.id).all()
-      const conversationPartnerIds = (convRows?.results || []).map((r: any) => r.other_id)
-
-      // Union of both sets
-      const allAllowedIds = new Set([...followingMeIds, ...conversationPartnerIds])
-      allowedManagerIds = Array.from(allAllowedIds)
-    }
-
-    // Build the main query
+    // Strict Backend Role-Based Filtering Rule:
+    // Both Employee and HR accounts only see Employee users.
+    // Zero HR profiles are returned in the network response.
     let query = `
-      SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, role, skills, followers_count, following_count, created_at
+      SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, role, skills, followers_count, following_count, experience_level, experience_years, created_at
       FROM users
-      WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'
+      WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND (status = 'active' OR status = 'ACTIVE') AND role = 'employee'
     `
     const params: any[] = [currentUser.id]
-
-    if (currentUser.role === 'manager') {
-      // HR recruiters see only employees
-      query += ` AND role = 'employee'`
-    } else if (currentUser.role === 'employee') {
-      // Employees see other employees + whitelisted HR managers
-      if (allowedManagerIds.length > 0) {
-        const placeholders = allowedManagerIds.map(() => '?').join(', ')
-        query += ` AND (role = 'employee' OR (role = 'manager' AND id IN (${placeholders})))`
-        params.push(...allowedManagerIds)
-      } else {
-        query += ` AND role = 'employee'`
-      }
-    }
-    // Admins see everyone
 
     if (search) {
       query += ` AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(headline) LIKE ? OR LOWER(bio) LIKE ? OR LOWER(skills) LIKE ?)`
@@ -4413,20 +4663,8 @@ app.get('/api/users/discover', requireAuth, async (c) => {
     }))
 
     // Count total for pagination (same filters)
-    let countQuery = `SELECT count(*) as total FROM users WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND status = 'active'`
+    let countQuery = `SELECT count(*) as total FROM users WHERE id != ? AND (is_active = 1 OR is_active IS NULL) AND (status = 'active' OR status = 'ACTIVE') AND role = 'employee'`
     const countParams: any[] = [currentUser.id]
-
-    if (currentUser.role === 'manager') {
-      countQuery += ` AND role = 'employee'`
-    } else if (currentUser.role === 'employee') {
-      if (allowedManagerIds.length > 0) {
-        const placeholders = allowedManagerIds.map(() => '?').join(', ')
-        countQuery += ` AND (role = 'employee' OR (role = 'manager' AND id IN (${placeholders})))`
-        countParams.push(...allowedManagerIds)
-      } else {
-        countQuery += ` AND role = 'employee'`
-      }
-    }
 
     if (search) {
       countQuery += ` AND (LOWER(full_name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(headline) LIKE ? OR LOWER(bio) LIKE ? OR LOWER(skills) LIKE ?)`
@@ -4451,115 +4689,212 @@ app.get('/api/users/discover', requireAuth, async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
+}
+
+app.get('/api/network', requireAuth, handleNetworkDiscovery)
+app.get('/api/users/discover', requireAuth, handleNetworkDiscovery)
+
+// --------------------------------------------------------------------------
+// API-1: USER PROFILE AGGREGATION (Single consolidated call)
+// --------------------------------------------------------------------------
+
+async function fetchFullProfileData(c: any, targetId: string, currentUser: UserRecord) {
+  // Unverified HR accounts cannot access candidate profiles
+  if (currentUser.role === 'manager' && currentUser.id !== targetId) {
+    const s = (currentUser.status || '').toUpperCase()
+    if (s !== 'ACTIVE') {
+      const isRejected = s === 'REJECTED'
+      return {
+        errorStatus: 403,
+        errorPayload: {
+          error: isRejected
+            ? `Forbidden: Your HR account verification was rejected.${currentUser.rejection_reason ? ' Reason: ' + currentUser.rejection_reason : ''}`
+            : 'Identity Verification Required: Your HR account is currently pending verification. Our admin team will contact you shortly to verify your identity. You will receive access to recruiter features once your account has been approved.',
+          code: isRejected ? 'HR_VERIFICATION_REJECTED' : 'HR_PENDING_VERIFICATION',
+          status: currentUser.status || 'PENDING_VERIFICATION',
+          rejection_reason: currentUser.rejection_reason || null,
+        }
+      }
+    }
+  }
+
+  const targetUser = await c.env.DB.prepare(
+    `SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, state, pincode, company, position, skills, phone, role, language, followers_count, following_count, connections_count, is_active, status, deactivated_until, resume_url, date_of_birth, age, experience_years, experience_level, education_degree, education_college, education_year, created_at, updated_at 
+     FROM users WHERE id = ?`
+  )
+    .bind(targetId)
+    .first() as any
+
+  if (!targetUser) {
+    return { errorStatus: 404, errorPayload: { error: 'User not found' } }
+  }
+
+  // For recruiters/managers, do not allow viewing other recruiters/managers
+  if (
+    (currentUser.role === 'manager' || currentUser.role === 'admin') &&
+    targetUser.role !== 'employee' &&
+    currentUser.id !== targetId
+  ) {
+    return {
+      errorStatus: 403,
+      errorPayload: { error: 'Recruiters can only view candidate and employee profiles', is_recruiter_restricted: true }
+    }
+  }
+
+  // Exclude deactivated accounts for non-admin viewers
+  if (
+    (targetUser.is_active === 0 || targetUser.status === 'deactivated' || targetUser.status === 'suspended') &&
+    currentUser.role !== 'admin' &&
+    currentUser.id !== targetId
+  ) {
+    return {
+      errorStatus: 404,
+      errorPayload: { error: 'This user account is currently deactivated or unavailable' }
+    }
+  }
+
+  // Check if currentUser follows targetUser
+  const followCheck = await c.env.DB.prepare(
+    'SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?'
+  )
+    .bind(currentUser.id, targetId)
+    .first()
+
+  // Real-time counts
+  const followersCountRow = await c.env.DB.prepare(
+    'SELECT count(*) as count FROM user_follows WHERE following_id = ?'
+  )
+    .bind(targetId)
+    .first() as any
+
+  const followingCountRow = await c.env.DB.prepare(
+    'SELECT count(*) as count FROM user_follows WHERE follower_id = ?'
+  )
+    .bind(targetId)
+    .first() as any
+
+  // Fetch thoughts/posts created by this target user
+  let thoughts: any[] = []
+  try {
+    const postRows = await c.env.DB.prepare(
+      `SELECT ep.id, ep.title, ep.description as content, ep.images as media_urls, ep.likes_count, ep.comments_count, 0 as shares_count, ep.created_at, ep.updated_at
+       FROM employee_posts ep
+       WHERE ep.author_id = ?
+       ORDER BY ep.created_at DESC
+       LIMIT 30`
+    ).bind(targetId).all()
+
+    const rawPosts = postRows?.results || []
+    let userLikedPostIds = new Set<string>()
+    if (rawPosts.length > 0 && currentUser?.id) {
+      const pIds = rawPosts.map((rp: any) => rp.id)
+      const placeholders = pIds.map(() => '?').join(',')
+      const likesRes = await c.env.DB.prepare(
+        `SELECT post_id FROM employee_post_likes WHERE user_id = ? AND post_id IN (${placeholders})`
+      ).bind(currentUser.id, ...pIds).all()
+      userLikedPostIds = new Set((likesRes?.results || []).map((l: any) => l.post_id))
+    }
+
+    thoughts = rawPosts.map((p: any) => ({
+      id: p.id,
+      title: p.title || '',
+      content: p.content,
+      media_urls: typeof p.media_urls === 'string' ? JSON.parse(p.media_urls || '[]') : (p.media_urls || []),
+      likes_count: p.likes_count || 0,
+      comments_count: p.comments_count || 0,
+      shares_count: 0,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      is_liked: userLikedPostIds.has(p.id),
+    }))
+  } catch {}
+
+  const parsedSkills = (() => {
+    if (!targetUser.skills) return []
+    if (Array.isArray(targetUser.skills)) return targetUser.skills
+    if (typeof targetUser.skills === 'string') {
+      try {
+        const parsed = JSON.parse(targetUser.skills)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+      return targetUser.skills.replace(/[\[\]"'{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean)
+    }
+    return []
+  })()
+
+  const profileData = {
+    id: targetUser.id,
+    full_name: targetUser.full_name,
+    role: targetUser.role,
+    username: targetUser.username || targetUser.email.split('@')[0],
+    email: (currentUser.id === targetId || currentUser.role === 'admin' || currentUser.role === 'manager') ? targetUser.email : undefined,
+    phone: (currentUser.id === targetId || currentUser.role === 'admin' || currentUser.role === 'manager') ? (targetUser.phone || '') : undefined,
+    headline: targetUser.headline || '',
+    avatar_url: targetUser.avatar_url || '',
+    banner_url: targetUser.banner_url || '',
+    bio: targetUser.bio || '',
+    location: targetUser.location || '',
+    state: targetUser.state || '',
+    pincode: targetUser.pincode || '',
+    company: targetUser.company || '',
+    position: targetUser.position || '',
+    skills: parsedSkills,
+    resume_url: targetUser.resume_url || '',
+    experience_level: targetUser.experience_level || '',
+    experience_years: targetUser.experience_years || 0,
+    education_degree: targetUser.education_degree || '',
+    education_college: targetUser.education_college || '',
+    education_year: targetUser.education_year || '',
+    experience: {
+      level: targetUser.experience_level || '',
+      years: targetUser.experience_years || 0,
+      company: targetUser.company || '',
+      position: targetUser.position || '',
+    },
+    education: {
+      degree: targetUser.education_degree || '',
+      college: targetUser.education_college || '',
+      year: targetUser.education_year || '',
+    },
+    followers_count: followersCountRow?.count ?? (targetUser.followers_count || 0),
+    following_count: followingCountRow?.count ?? (targetUser.following_count || 0),
+    connections_count: targetUser.connections_count || 0,
+    is_following: Boolean(followCheck),
+    is_self: currentUser.id === targetId,
+    is_active: targetUser.is_active !== 0 && (targetUser.status === 'active' || targetUser.status === 'ACTIVE'),
+    status: targetUser.status || 'active',
+    created_at: targetUser.created_at,
+    thoughts,
+    posts: thoughts,
+  }
+
+  return { profile: profileData, user: targetUser }
+}
+
+// API-1: User Profile (Current Authenticated User)
+app.get('/api/user/profile', requireAuth, async (c) => {
+  try {
+    const currentUser = c.get('user') as UserRecord
+    const result = await fetchFullProfileData(c, currentUser.id, currentUser)
+    if (result.errorStatus) {
+      return c.json(result.errorPayload, result.errorStatus as any)
+    }
+    return c.json({ profile: result.profile, user: result.user })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
 })
 
-// 2. Individual Public Profile
+// API-1: Target User Public / Candidate Profile
 app.get('/api/users/:id/profile', requireAuth, async (c) => {
   try {
     const currentUser = c.get('user') as UserRecord
     const targetId = c.req.param('id')
-
-    // Unverified HR accounts cannot access candidate profiles
-    if (currentUser.role === 'manager' && currentUser.id !== targetId) {
-      const s = (currentUser.status || '').toUpperCase()
-      if (s !== 'ACTIVE') {
-        const isRejected = s === 'REJECTED'
-        return c.json(
-          {
-            error: isRejected
-              ? `Forbidden: Your HR account verification was rejected.${currentUser.rejection_reason ? ' Reason: ' + currentUser.rejection_reason : ''}`
-              : 'Identity Verification Required: Your HR account is currently pending verification. Our admin team will contact you shortly to verify your identity. You will receive access to recruiter features once your account has been approved.',
-            code: isRejected ? 'HR_VERIFICATION_REJECTED' : 'HR_PENDING_VERIFICATION',
-            status: currentUser.status || 'PENDING_VERIFICATION',
-            rejection_reason: currentUser.rejection_reason || null,
-          },
-          403
-        )
-      }
+    const result = await fetchFullProfileData(c, targetId, currentUser)
+    if (result.errorStatus) {
+      return c.json(result.errorPayload, result.errorStatus as any)
     }
-
-    const targetUser = await c.env.DB.prepare(
-      `SELECT id, email, full_name, username, headline, avatar_url, banner_url, bio, location, company, position, skills, phone, role, language, followers_count, following_count, connections_count, is_active, status, deactivated_until, created_at 
-       FROM users WHERE id = ?`
-    )
-      .bind(targetId)
-      .first() as any
-
-    if (!targetUser) {
-      return c.json({ error: 'User not found' }, 404)
-    }
-
-    // For recruiters/managers, do not allow viewing other recruiters/managers
-    if (
-      (currentUser.role === 'manager' || currentUser.role === 'admin') &&
-      targetUser.role !== 'employee' &&
-      currentUser.id !== targetId
-    ) {
-      return c.json({ error: 'Recruiters can only view candidate and employee profiles', is_recruiter_restricted: true }, 403)
-    }
-
-    // Exclude deactivated accounts for non-admin viewers
-    if (
-      (targetUser.is_active === 0 || targetUser.status === 'deactivated' || targetUser.status === 'suspended') &&
-      currentUser.role !== 'admin' &&
-      currentUser.id !== targetId
-    ) {
-      return c.json({ error: 'This user account is currently deactivated or unavailable' }, 404)
-    }
-
-    // Check if currentUser follows targetUser
-    const followCheck = await c.env.DB.prepare(
-      'SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?'
-    )
-      .bind(currentUser.id, targetId)
-      .first()
-
-    // Real-time counts
-    const followersCountRow = await c.env.DB.prepare(
-      'SELECT count(*) as count FROM user_follows WHERE following_id = ?'
-    )
-      .bind(targetId)
-      .first() as any
-
-    const followingCountRow = await c.env.DB.prepare(
-      'SELECT count(*) as count FROM user_follows WHERE follower_id = ?'
-    )
-      .bind(targetId)
-      .first() as any
-
-    return c.json({
-      profile: {
-        id: targetUser.id,
-        full_name: targetUser.full_name,
-        role: targetUser.role,
-        username: targetUser.username || targetUser.email.split('@')[0],
-        headline: targetUser.headline || '',
-        avatar_url: targetUser.avatar_url || '',
-        banner_url: targetUser.banner_url || '',
-        bio: targetUser.bio || '',
-        location: targetUser.location || '',
-        company: targetUser.company || '',
-        position: targetUser.position || '',
-        skills: (() => {
-          if (!targetUser.skills) return []
-          if (Array.isArray(targetUser.skills)) return targetUser.skills
-          if (typeof targetUser.skills === 'string') {
-            try {
-              const parsed = JSON.parse(targetUser.skills)
-              if (Array.isArray(parsed)) return parsed
-            } catch {}
-            return targetUser.skills.replace(/[\[\]"'{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean)
-          }
-          return []
-        })(),
-        followers_count: followersCountRow?.count ?? (targetUser.followers_count || 0),
-        following_count: followingCountRow?.count ?? (targetUser.following_count || 0),
-        is_following: Boolean(followCheck),
-        is_self: currentUser.id === targetId,
-        is_active: targetUser.is_active !== 0 && targetUser.status === 'active',
-        created_at: targetUser.created_at,
-      },
-    })
+    return c.json({ profile: result.profile, user: result.user })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -5347,12 +5682,29 @@ app.post('/api/admin/users/:id/suspend', requireAuth, requireRole(['admin']), as
 })
 
 // --------------------------------------------------------------------------
-// SAVED JOBS (BOOKMARK) MODULE
+// API-11: USER SAVED JOBS (BOOKMARK) MODULE (Employee only — HR blocked)
 // --------------------------------------------------------------------------
 
-// 1. Get All Saved Jobs for Current User
-app.get('/api/saved-jobs', requireAuth, async (c) => {
+const checkEmployeeSavedJobsAccess = (c: any) => {
+  const user = c.get('user') as UserRecord
+  if (user && user.role === 'manager') {
+    return c.json(
+      {
+        error: 'Forbidden: Only Employee / Job Seeker accounts can bookmark and save jobs',
+        code: 'HR_CANNOT_SAVE_JOBS',
+      },
+      403
+    )
+  }
+  return null
+}
+
+// 1. Get All Saved Jobs for Current Employee
+async function handleGetSavedJobs(c: any) {
   try {
+    const roleCheck = checkEmployeeSavedJobsAccess(c)
+    if (roleCheck) return roleCheck
+
     const currentUser = c.get('user') as UserRecord
 
     const { results } = await c.env.DB.prepare(
@@ -5374,11 +5726,17 @@ app.get('/api/saved-jobs', requireAuth, async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
-})
+}
+
+app.get('/api/user/saved', requireAuth, handleGetSavedJobs)
+app.get('/api/saved-jobs', requireAuth, handleGetSavedJobs)
 
 // 2. Get Set of Saved Job IDs (for instant UI state badges)
-app.get('/api/saved-jobs/ids', requireAuth, async (c) => {
+async function handleGetSavedJobIds(c: any) {
   try {
+    const roleCheck = checkEmployeeSavedJobsAccess(c)
+    if (roleCheck) return roleCheck
+
     const currentUser = c.get('user') as UserRecord
 
     const { results } = await c.env.DB.prepare(
@@ -5392,11 +5750,17 @@ app.get('/api/saved-jobs/ids', requireAuth, async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
-})
+}
+
+app.get('/api/user/saved/ids', requireAuth, handleGetSavedJobIds)
+app.get('/api/saved-jobs/ids', requireAuth, handleGetSavedJobIds)
 
 // 3. Save / Bookmark a Job
-app.post('/api/saved-jobs/:id', requireAuth, async (c) => {
+async function handleSaveJob(c: any) {
   try {
+    const roleCheck = checkEmployeeSavedJobsAccess(c)
+    if (roleCheck) return roleCheck
+
     const currentUser = c.get('user') as UserRecord
     const jobId = c.req.param('id')
 
@@ -5426,11 +5790,17 @@ app.post('/api/saved-jobs/:id', requireAuth, async (c) => {
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
-})
+}
+
+app.post('/api/user/saved/:id', requireAuth, handleSaveJob)
+app.post('/api/saved-jobs/:id', requireAuth, handleSaveJob)
 
 // 4. Remove / Un-bookmark a Job
-app.delete('/api/saved-jobs/:id', requireAuth, async (c) => {
+async function handleDeleteSavedJob(c: any) {
   try {
+    const roleCheck = checkEmployeeSavedJobsAccess(c)
+    if (roleCheck) return roleCheck
+
     const currentUser = c.get('user') as UserRecord
     const jobId = c.req.param('id')
 
@@ -5445,6 +5815,46 @@ app.delete('/api/saved-jobs/:id', requireAuth, async (c) => {
       saved: false,
       job_id: jobId,
       message: 'Job removed from saved bookmarks',
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+}
+
+app.delete('/api/user/saved/:id', requireAuth, handleDeleteSavedJob)
+app.delete('/api/saved-jobs/:id', requireAuth, handleDeleteSavedJob)
+
+// --------------------------------------------------------------------------
+// API-12: USER FOLLOW STATUS
+// --------------------------------------------------------------------------
+app.get('/api/users/:id/follow-status', requireAuth, async (c) => {
+  try {
+    const currentUser = c.get('user') as UserRecord
+    const targetId = c.req.param('id')
+
+    const followCheck = await c.env.DB.prepare(
+      'SELECT id FROM user_follows WHERE follower_id = ? AND following_id = ?'
+    )
+      .bind(currentUser.id, targetId)
+      .first()
+
+    const followersCountRow = await c.env.DB.prepare(
+      'SELECT count(*) as count FROM user_follows WHERE following_id = ?'
+    )
+      .bind(targetId)
+      .first() as any
+
+    const followingCountRow = await c.env.DB.prepare(
+      'SELECT count(*) as count FROM user_follows WHERE follower_id = ?'
+    )
+      .bind(targetId)
+      .first() as any
+
+    return c.json({
+      is_following: Boolean(followCheck),
+      followers_count: followersCountRow?.count || 0,
+      following_count: followingCountRow?.count || 0,
+      target_id: targetId,
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

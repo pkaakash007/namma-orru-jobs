@@ -40,6 +40,8 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
   const [description, setDescription] = useState('')
   const [companyLogo, setCompanyLogo] = useState('')
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
+  const [jobImage, setJobImage] = useState('')
+  const [isUploadingJobImage, setIsUploadingJobImage] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const isHrUnverified =
@@ -87,6 +89,45 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
     }
   }
 
+  const handleJobImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size <= 0) {
+      showToast('Selected image file is empty (0 bytes)', 'error')
+      return
+    }
+
+    const MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_SIZE) {
+      showToast('Job flyer image exceeds 10MB limit (maximum 10MB allowed)', 'error')
+      return
+    }
+
+    const cleanFileName = file.name.toLowerCase()
+    const lastDot = cleanFileName.lastIndexOf('.')
+    const ext = lastDot !== -1 ? cleanFileName.slice(lastDot) : ''
+    const validImgExts = ['.jpg', '.jpeg', '.png', '.webp', '.svg', '.gif']
+    if (!validImgExts.includes(ext) && !file.type.startsWith('image/')) {
+      showToast('Please upload a valid image file (PNG, JPG, WebP, or SVG)', 'error')
+      return
+    }
+
+    setIsUploadingJobImage(true)
+    try {
+      const data = await uploadService.uploadFile(file, 'jobs')
+      setJobImage(data.url)
+      showToast('Job flyer uploaded successfully!', 'success')
+      if (!description.trim()) {
+        setDescription('Please refer to the attached hiring flyer for complete job specifications, qualifications, and walk-in details.')
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Job flyer upload failed', 'error')
+    } finally {
+      setIsUploadingJobImage(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -102,7 +143,8 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
       showToast('Please enter a job location or district', 'error')
       return
     }
-    if (!description.trim() || description.trim().length < 10) {
+    const finalDesc = description.trim() || (jobImage.trim() ? 'Please refer to the attached hiring flyer for complete job specifications, qualifications, and walk-in details.' : '')
+    if (!finalDesc || finalDesc.length < 10) {
       showToast('Please provide a job description (at least 10 characters)', 'error')
       return
     }
@@ -113,11 +155,12 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
         title: title.trim(),
         company_name: companyName.trim(),
         company_logo: companyLogo.trim() || undefined,
+        image_url: jobImage.trim() || undefined,
         location: location.trim(),
         workplace_type: workplaceType,
         employment_type: employmentType,
         salary_range: salaryRange.trim(),
-        description: description.trim(),
+        description: finalDesc,
       })
 
       showToast('Job opportunity published successfully!', 'success')
@@ -131,11 +174,12 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
           title: title.trim(),
           company_name: companyName.trim(),
           company_logo: companyLogo.trim() || undefined,
+          image_url: jobImage.trim() || undefined,
           location: location.trim(),
           workplace_type: workplaceType as 'Remote' | 'Hybrid' | 'On-site',
           employment_type: employmentType as 'Full-time' | 'Part-time' | 'Contract' | 'Internship',
           salary_range: salaryRange.trim(),
-          description: description.trim(),
+          description: finalDesc,
           applicants_count: 0,
           created_at: new Date().toISOString(),
         })
@@ -239,14 +283,84 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
             </div>
           </div>
 
-          {/* 3. Company Logo / Job Image Upload (Apple iOS clean style) */}
+          {/* 3. Job Flyer / Hiring Poster (Image Post) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-[#0F172A]">
+                Job Poster / Hiring Flyer (Image Post)
+              </label>
+              <span className="text-[11px] font-medium text-slate-500">
+                Optional • Candidates see full flyer
+              </span>
+            </div>
+
+            {jobImage ? (
+              <div className="relative rounded-2xl border border-slate-200 bg-slate-50/80 p-3 overflow-hidden">
+                <div className="relative max-h-80 w-full overflow-hidden rounded-xl border border-slate-200 bg-white flex items-center justify-center">
+                  <img
+                    src={jobImage}
+                    alt="Job Poster Preview"
+                    className="max-h-72 w-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setJobImage('')}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/70 text-white hover:bg-red-600 transition cursor-pointer shadow-md"
+                    title="Remove job poster"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-2.5 flex items-center justify-between px-1">
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
+                    <Check className="h-4 w-4" />
+                    <span>Job flyer ready to display on post</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setJobImage('')}
+                    className="text-xs font-semibold text-red-600 hover:underline cursor-pointer"
+                  >
+                    Remove Flyer
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-50 hover:border-[#0B2545]/50 cursor-pointer transition text-center group">
+                <div className="h-11 w-11 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-[#0B2545] shadow-xs group-hover:scale-105 transition shrink-0">
+                  {isUploadingJobImage ? (
+                    <div className="h-5 w-5 rounded-full border-2 border-[#0B2545] border-t-transparent animate-spin" />
+                  ) : (
+                    <ImageIcon className="h-5 w-5 text-[#0B2545]" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#0B2545] block">
+                    {isUploadingJobImage ? 'Uploading flyer to cloud...' : 'Click to upload Job Poster / Hiring Flyer'}
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Recruitment poster, vacancy banner, WhatsApp flyer • PNG, JPG, WebP, SVG (Max 10MB)
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleJobImageUpload}
+                  className="hidden"
+                  disabled={isUploadingJobImage}
+                />
+              </label>
+            )}
+          </div>
+
+          {/* 3b. Company Logo (Optional Avatar Icon) */}
           <div>
             <label className="mb-1.5 block text-xs font-bold text-[#0F172A]">
-              Company Logo / Job Image
+              Company Logo (Optional)
             </label>
             {companyLogo ? (
               <div className="flex items-center gap-3.5 p-3 rounded-2xl border border-slate-200 bg-slate-50/70">
-                <div className="h-14 w-14 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xs flex items-center justify-center overflow-hidden shrink-0">
+                <div className="h-12 w-12 rounded-xl border border-slate-200 bg-white p-1 shadow-2xs flex items-center justify-center overflow-hidden shrink-0">
                   <img
                     src={companyLogo}
                     alt="Company Logo Preview"
@@ -256,7 +370,7 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
                     <Check className="h-4 w-4" />
-                    <span>Image uploaded successfully</span>
+                    <span>Logo uploaded</span>
                   </div>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">{companyLogo}</p>
                 </div>
@@ -264,27 +378,25 @@ export const PostJobForm: React.FC<PostJobFormProps> = ({ onSuccess, onCancel })
                   type="button"
                   onClick={() => setCompanyLogo('')}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition cursor-pointer"
-                  title="Remove image"
+                  title="Remove logo"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col sm:flex-row items-center gap-3 p-3.5 rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400 cursor-pointer transition">
-                <div className="h-10 w-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#0B2545] shadow-2xs shrink-0">
+              <label className="flex items-center gap-3 p-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400 cursor-pointer transition">
+                <div className="h-9 w-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#0B2545] shadow-2xs shrink-0">
                   {isUploadingLogo ? (
-                    <div className="h-4 w-4 rounded-full border-2 border-[#0B2545] border-t-transparent animate-spin" />
+                    <div className="h-3.5 w-3.5 rounded-full border-2 border-[#0B2545] border-t-transparent animate-spin" />
                   ) : (
-                    <ImageIcon className="h-5 w-5 text-slate-500" />
+                    <Building2 className="h-4 w-4 text-slate-500" />
                   )}
                 </div>
-                <div className="flex-1 text-center sm:text-left">
-                  <span className="text-xs font-semibold text-[#0B2545]">
-                    {isUploadingLogo ? 'Uploading logo to cloud...' : 'Click to upload company logo or recruitment poster'}
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold text-[#0B2545] block">
+                    {isUploadingLogo ? 'Uploading logo...' : 'Upload company square logo'}
                   </span>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    PNG, JPG, WebP, SVG • Maximum 10MB
-                  </p>
+                  <p className="text-[10px] text-slate-500">Square PNG or SVG for company avatar</p>
                 </div>
                 <input
                   type="file"

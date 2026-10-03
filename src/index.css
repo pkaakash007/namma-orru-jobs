@@ -13,3 +13,29 @@ body {
   padding: 0;
 }
 
+/* Instagram / Facebook Style Card Feed Scroll Container */
+.feed-scroll-container {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.feed-scroll-container::-webkit-scrollbar {
+  width: 5px;
+}
+
+.feed-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.feed-scroll-container::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.feed-scroll-container::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+

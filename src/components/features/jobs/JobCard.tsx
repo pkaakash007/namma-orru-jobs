@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { Job } from '../../../types'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
-import { Building2, MapPin, Clock, Bookmark, Users, Languages, Check, FileText } from 'lucide-react'
+import { Building2, MapPin, Clock, Bookmark, Users, Languages, Check, FileText, Maximize2, X } from 'lucide-react'
 import { useLanguage } from '../../../context/LanguageContext'
 import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
@@ -39,6 +39,7 @@ export const JobCard: React.FC<JobCardProps> = ({
 
   const [isSaved, setIsSaved] = useState<boolean>(() => savedJobService.isSavedSync(job.id))
   const [isSaving, setIsSaving] = useState(false)
+  const [showImageModal, setShowImageModal] = useState(false)
 
   // Applied state — check sessionStorage cache populated after apply or on load
   const [isApplied, setIsApplied] = useState<boolean>(() => {
@@ -316,6 +317,32 @@ export const JobCard: React.FC<JobCardProps> = ({
             )}
           </div>
 
+          {/* Job Flyer / Announcement Poster (Image Post) */}
+          {job.image_url && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50/80 shadow-2xs group/poster">
+              <div
+                className="relative max-h-80 w-full overflow-hidden flex items-center justify-center bg-slate-900/5 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowImageModal(true)
+                }}
+              >
+                <img
+                  src={job.image_url}
+                  alt={displayTitle || 'Hiring Flyer'}
+                  className="max-h-72 w-full object-contain hover:scale-[1.01] transition-transform duration-200"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover/poster:bg-black/10 transition-colors flex items-end justify-end p-2.5 pointer-events-none">
+                  <span className="rounded-lg bg-black/60 backdrop-blur-md px-2 py-1 text-[10px] font-semibold text-white shadow-xs flex items-center gap-1 opacity-90 group-hover/poster:opacity-100 transition-opacity">
+                    <Maximize2 className="h-3 w-3" />
+                    <span>View Flyer</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-3 flex items-center gap-2 text-[11px] text-[#94A3B8]">
             <Clock className="h-3 w-3" />
             <span>
@@ -380,6 +407,47 @@ export const JobCard: React.FC<JobCardProps> = ({
             </Button>
         )}
       </div>
+
+      {/* Full-Screen Poster Modal / Lightbox */}
+      {showImageModal && job.image_url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-6 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowImageModal(false)
+          }}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header / close bar */}
+            <div className="w-full flex items-center justify-between pb-3 text-white">
+              <div className="min-w-0 pr-4">
+                <h3 className="font-bold text-sm sm:text-base text-white truncate">{displayTitle}</h3>
+                <p className="text-xs text-white/70 truncate">{displayCompany} · {displayLocation}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImageModal(false)}
+                className="rounded-full bg-white/20 hover:bg-white/30 text-white p-2 transition cursor-pointer shrink-0"
+                title="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Image display */}
+            <div className="relative overflow-hidden rounded-2xl bg-black/40 border border-white/10 shadow-2xl flex items-center justify-center max-h-[80vh] w-full">
+              <img
+                src={job.image_url}
+                alt={displayTitle || 'Hiring Flyer Full View'}
+                className="max-h-[78vh] w-auto max-w-full object-contain select-none"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

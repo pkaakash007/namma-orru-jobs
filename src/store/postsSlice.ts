@@ -60,11 +60,18 @@ export const postsSlice = createSlice({
       // Optimistic insert: Avoids refetching all posts from D1
       state.items.unshift(action.payload)
     },
-    postLiked: (state, action: PayloadAction<{ id: string; likes_count: number }>) => {
+    postLiked: (state, action: PayloadAction<{ id: string; likes_count: number; liked?: boolean }>) => {
       // Optimistic reaction update
       const post = state.items.find((p) => p.id === action.payload.id)
       if (post) {
         post.likes_count = action.payload.likes_count
+        if (action.payload.liked !== undefined) {
+          post.is_liked = action.payload.liked
+          post.liked_by_me = action.payload.liked
+        } else {
+          post.is_liked = !post.is_liked
+          post.liked_by_me = post.is_liked
+        }
       }
     },
     clearPostsCache: (state) => {
