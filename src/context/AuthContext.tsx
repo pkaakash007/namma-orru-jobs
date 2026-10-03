@@ -425,7 +425,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (savedAcc) setLastLoginAccount(savedAcc)
             }
           })
-          .catch(() => {})
+          .catch((err: any) => {
+            if (
+              err?.message?.includes('User not found') ||
+              err?.message?.includes('deactivated') ||
+              err?.message?.includes('401')
+            ) {
+              try {
+                localStorage.removeItem('namma_user')
+                localStorage.removeItem('namma_token')
+                sessionStorage.removeItem('namma_active_tab')
+                sessionStorage.removeItem('applied_job_ids')
+              } catch {}
+              setUser(null)
+              setToken(null)
+              apiClient.setToken(null)
+            }
+          })
       }
     } catch (e) {
       console.warn('Failed to restore session', e)

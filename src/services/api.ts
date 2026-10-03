@@ -95,6 +95,15 @@ class ApiClient {
     const data = await res.json().catch(() => ({}))
 
     if (!res.ok) {
+      if (res.status === 401 && (data.error?.includes('User not found') || data.error?.includes('deactivated') || data.error?.includes('Unauthorized'))) {
+        try {
+          localStorage.removeItem('namma_user')
+          localStorage.removeItem('namma_token')
+          sessionStorage.removeItem('namma_active_tab')
+          sessionStorage.removeItem('applied_job_ids')
+        } catch {}
+        this.setToken(null)
+      }
       throw new Error(data.error || `HTTP ${res.status}: Failed request to ${endpoint}`)
     }
 
