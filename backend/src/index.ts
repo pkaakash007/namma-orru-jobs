@@ -707,6 +707,30 @@ const requireVerifiedHr = async (c: any, next: any) => {
 // --------------------------------------------------------------------------
 // Public / Health Routes & Production Database Table Readiness Checker
 // --------------------------------------------------------------------------
+app.get('/', (c) => {
+  return c.json({
+    name: 'Namma Ooru Jobs API',
+    status: 'operational',
+    region: 'Cloudflare Edge',
+    app_url: 'https://namma-ooru-jobs.pages.dev',
+    message: 'Namma Ooru Jobs API is running. Access the web application at https://namma-ooru-jobs.pages.dev',
+  })
+})
+
+app.get('/api', (c) => {
+  return c.json({
+    name: 'Namma Ooru Jobs API',
+    status: 'operational',
+    endpoints: {
+      health: '/api/health',
+      jobs: '/api/jobs',
+      thoughts: '/api/thoughts',
+      employee_posts: '/api/employee-posts',
+      overview: '/api/platform/overview',
+    },
+  })
+})
+
 app.get('/api/health', async (c) => {
   if (c.env?.DB) {
     await ensureProductionSchema(c.env.DB)
