@@ -82,7 +82,7 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
     user.status !== 'active'
 
   const dispatch = useAppDispatch()
-  const { currentResults: candidates, isLoading } = useAppSelector((state) => state.candidates)
+  const { currentResults: candidates, isLoading, correctedQuery } = useAppSelector((state) => state.candidates)
   const employeeCandidates = candidates.filter((cand) => !cand.role || cand.role === 'employee')
   const [searchMode, setSearchMode] = useState<SearchMode>(initialJd ? 'jd' : 'skills')
 
@@ -471,6 +471,29 @@ export const CandidateSearchView: React.FC<CandidateSearchViewProps> = ({
           )}
         </div>
       </Card>
+
+      {/* 2b. AI Spell Correction & Query Expansion Notification */}
+      {correctedQuery && searchQuery.trim() && correctedQuery.toLowerCase() !== searchQuery.trim().toLowerCase() && (
+        <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/90 border border-blue-200/80 text-xs text-blue-950 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
+            <span>
+              Showing results for <strong className="font-bold text-blue-900">"{correctedQuery}"</strong>
+              <span className="text-blue-700 ml-1">(auto-corrected from <em>"{searchQuery.trim()}"</em>)</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery(correctedQuery)
+              loadCandidates({ q: correctedQuery }, true)
+            }}
+            className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer shrink-0 ml-2"
+          >
+            Apply "{correctedQuery}"
+          </button>
+        </div>
+      )}
 
       {/* 3. Results Header */}
       <div className="flex items-center justify-between px-1">

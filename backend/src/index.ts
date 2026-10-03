@@ -709,8 +709,8 @@ const requireVerifiedHr = async (c: any, next: any) => {
     return c.json({ error: 'Unauthorized' }, 401)
   }
 
-  // Admin accounts always bypass HR verification
-  if (user.role === 'admin') {
+  // Admin and Staff accounts always bypass HR verification
+  if (user.role === 'admin' || user.role === 'staff') {
     await next()
     return
   }
@@ -3032,10 +3032,14 @@ async function executeCandidateSearch(c: any, searchParams: {
     params.push(`%${location}%`)
   }
 
-  // If simple keyword query in English (1-2 words), apply SQL filter
-  if (q && !jd && parsedQuery.language === 'en' && parsedQuery.detectedKeywords.length > 0 && parsedQuery.detectedKeywords.length <= 2) {
+  // Apply SQL keyword filters based on detected keywords and expanded role synonyms
+  if (q && !jd && parsedQuery.language === 'en' && parsedQuery.detectedKeywords.length > 0) {
     const kwConditions: string[] = []
-    for (const kw of parsedQuery.detectedKeywords) {
+    const combinedSearchTerms = Array.from(
+      new Set([...parsedQuery.detectedKeywords, ...parsedQuery.expandedKeywords])
+    ).slice(0, 10)
+
+    for (const kw of combinedSearchTerms) {
       kwConditions.push(`(
         LOWER(skills) LIKE ? OR 
         LOWER(full_name) LIKE ? OR 
@@ -3063,9 +3067,9 @@ async function executeCandidateSearch(c: any, searchParams: {
   const { results } = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all()
   let candidateRows = results || []
 
-  // If zero rows matched via rigid SQL filter, but query was entered in Tamil, Hindi, or natural language sentence:
-  // Perform broad fetch so semantic vector engine can evaluate and rank candidates!
-  if (candidateRows.length === 0 && q && !jd) {
+  // If fewer than 10 rows matched via SQL filter, or query has typo-correction:
+  // Fetch active candidate pool and merge so intelligent semantic & fuzzy engine scores all potential matches!
+  if (q && !jd && candidateRows.length < 10) {
     try {
       let broadQuery = `
         SELECT id, email, full_name, role, status, headline, avatar_url, bio,
@@ -3088,7 +3092,14 @@ async function executeCandidateSearch(c: any, searchParams: {
       broadQuery += ' ORDER BY CASE WHEN resume_url IS NOT NULL AND resume_url != "" THEN 0 ELSE 1 END, created_at DESC LIMIT 100'
       const broadStmt = c.env.DB.prepare(broadQuery)
       const broadRes = broadParams.length > 0 ? await broadStmt.bind(...broadParams).all() : await broadStmt.all()
-      candidateRows = broadRes.results || []
+      
+      const existingIds = new Set(candidateRows.map((r: any) => r.id))
+      for (const row of broadRes.results || []) {
+        if (!existingIds.has(row.id)) {
+          candidateRows.push(row)
+          existingIds.add(row.id)
+        }
+      }
     } catch {}
   }
 
@@ -3211,8 +3222,10 @@ async function executeCandidateSearch(c: any, searchParams: {
   if (q && !jd) {
     candidates.sort((a: any, b: any) => (b.match_score || 0) - (a.match_score || 0))
     const maxScore = candidates.length > 0 ? (candidates[0].match_score || 0) : 0
-    if (maxScore >= 40) {
-      candidates = candidates.filter((c: any) => (c.match_score || 0) >= 20)
+    if (maxScore >= 35) {
+      candidates = candidates.filter((c: any) => (c.match_score || 0) >= 15)
+    } else if (maxScore > 0) {
+      candidates = candidates.filter((c: any) => (c.match_score || 0) > 0)
     }
   } else if (jdExtractedSkills.length > 0) {
     candidates.sort((a: any, b: any) => (b.match_score || 0) - (a.match_score || 0))
@@ -3222,14 +3235,16 @@ async function executeCandidateSearch(c: any, searchParams: {
     candidates,
     total_count: candidates.length,
     jd_extracted_skills: jdExtractedSkills,
+    corrected_query: parsedQuery.isTypoCorrected ? parsedQuery.correctedQuery : undefined,
+    original_query: q,
     query: { q, skill, location, category, jd },
   }
   setEdgeCache(cacheKey, responsePayload, 60)
   return c.json(responsePayload)
 }
 
-// 2. HR Candidate Search by Skill, Role, Category, and Job Description (GET & POST)
-app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
+// 2. HR & Staff Candidate Search by Skill, Role, Category, and Job Description (GET & POST)
+app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager', 'staff']), requireVerifiedHr, async (c) => {
   try {
     const q = c.req.query('q')
     const skill = c.req.query('skill')
@@ -3251,7 +3266,7 @@ app.get('/api/candidates/search', requireAuth, requireRole(['admin', 'manager'])
   }
 })
 
-app.post('/api/candidates/search', requireAuth, requireRole(['admin', 'manager']), requireVerifiedHr, async (c) => {
+app.post('/api/candidates/search', requireAuth, requireRole(['admin', 'manager', 'staff']), requireVerifiedHr, async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}))
     return await executeCandidateSearch(c, {

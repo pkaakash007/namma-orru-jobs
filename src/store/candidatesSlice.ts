@@ -6,6 +6,8 @@ interface CandidateCacheEntry {
   candidates: User[]
   totalCount: number
   jdExtractedSkills?: string[]
+  correctedQuery?: string
+  originalQuery?: string
   timestamp: number
 }
 
@@ -14,6 +16,8 @@ interface CandidatesState {
   currentResults: User[]
   totalCount: number
   jdExtractedSkills: string[]
+  correctedQuery?: string
+  originalQuery?: string
   isLoading: boolean
   error: string | null
 }
@@ -48,6 +52,8 @@ export const searchCandidatesCached = createAsyncThunk(
         candidates: cached.candidates,
         totalCount: cached.totalCount,
         jdExtractedSkills: cached.jdExtractedSkills || [],
+        correctedQuery: cached.correctedQuery,
+        originalQuery: cached.originalQuery,
         key,
         fromCache: true,
       }
@@ -59,6 +65,8 @@ export const searchCandidatesCached = createAsyncThunk(
         candidates: res.candidates || [],
         totalCount: res.total_count ?? (res.candidates ? res.candidates.length : 0),
         jdExtractedSkills: res.jd_extracted_skills || [],
+        correctedQuery: res.corrected_query,
+        originalQuery: res.original_query,
         key,
         fromCache: false,
       }
@@ -73,6 +81,8 @@ const initialState: CandidatesState = {
   currentResults: [],
   totalCount: 0,
   jdExtractedSkills: [],
+  correctedQuery: undefined,
+  originalQuery: undefined,
   isLoading: false,
   error: null,
 }
@@ -96,11 +106,15 @@ export const candidatesSlice = createSlice({
         state.currentResults = action.payload.candidates
         state.totalCount = action.payload.totalCount
         state.jdExtractedSkills = action.payload.jdExtractedSkills
+        state.correctedQuery = action.payload.correctedQuery
+        state.originalQuery = action.payload.originalQuery
         if (!action.payload.fromCache) {
           state.cacheByQuery[action.payload.key] = {
             candidates: action.payload.candidates,
             totalCount: action.payload.totalCount,
             jdExtractedSkills: action.payload.jdExtractedSkills,
+            correctedQuery: action.payload.correctedQuery,
+            originalQuery: action.payload.originalQuery,
             timestamp: Date.now(),
           }
         }

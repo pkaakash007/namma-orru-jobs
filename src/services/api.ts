@@ -593,6 +593,8 @@ export const candidateService = {
         candidates: User[]
         total_count: number
         jd_extracted_skills?: string[]
+        corrected_query?: string
+        original_query?: string
       }
 
       if (params.jd && params.jd.trim().length > 0) {
@@ -600,6 +602,8 @@ export const candidateService = {
           candidates: User[]
           total_count: number
           jd_extracted_skills?: string[]
+          corrected_query?: string
+          original_query?: string
         }>('/api/candidates/search', {
           method: 'POST',
           body: JSON.stringify(params),
@@ -617,6 +621,8 @@ export const candidateService = {
           candidates: User[]
           total_count: number
           jd_extracted_skills?: string[]
+          corrected_query?: string
+          original_query?: string
         }>(`/api/candidates/search${qs}`)
       }
 
@@ -624,6 +630,8 @@ export const candidateService = {
         candidates: res.candidates || [],
         total_count: res.total_count ?? (res.candidates ? res.candidates.length : 0),
         jd_extracted_skills: res.jd_extracted_skills || [],
+        corrected_query: res.corrected_query,
+        original_query: res.original_query,
       }
     } catch {
       return {
