@@ -1955,11 +1955,11 @@ app.patch('/api/admin/users/:id/role', requireAuth, requireRole(['admin']), asyn
     const { role } = await c.req.json()
 
     // Strict validation: Admins cannot be created via API (must be manual DB assignment)
-    if (!['manager', 'employee'].includes(role)) {
+    if (!['manager', 'employee', 'staff'].includes(role)) {
       return c.json(
         {
           error:
-            "Invalid role assignment. Admin can only assign 'manager' (HR) or revert to 'employee'. Admin role can only be assigned directly in the database.",
+            "Invalid role assignment. Admin can assign 'manager' (HR), 'staff' (Company Staff), or revert to 'employee'. Admin role can only be assigned directly in the database.",
         },
         400
       )

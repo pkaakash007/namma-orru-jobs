@@ -686,6 +686,16 @@ function MainContent() {
     }
   }
 
+  const handleChangeRole = async (userId: string, newRole: 'manager' | 'employee' | 'staff') => {
+    try {
+      const res = await adminService.updateUserRole(userId, newRole)
+      showToast(res.message || `User role updated to ${newRole}`, 'success')
+      dispatch(userRoleUpdated({ userId, newRole }))
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    }
+  }
+
   // Publish new dynamic thought/post to D1 (Optimistic update in Redux store)
   const handleCreatePost = async (
     contentOrData: string | { title?: string; topic?: string; content: string; media_urls?: string[] }
@@ -1241,6 +1251,7 @@ function MainContent() {
                 usersList={usersList}
                 onPromoteUser={handlePromote}
                 onDemoteUser={handleDemote}
+                onChangeRole={handleChangeRole}
                 onRefreshAll={() => loadAdminData(true)}
                 lang={language}
                 initialSection={adminSection}

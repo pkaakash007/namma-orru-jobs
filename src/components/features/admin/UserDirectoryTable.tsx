@@ -10,6 +10,7 @@ interface UserDirectoryTableProps {
   users: User[]
   onPromote: (userId: string) => void
   onDemote: (userId: string) => void
+  onChangeRole?: (userId: string, newRole: 'manager' | 'employee' | 'staff') => void
   onRefresh: () => void
 }
 
@@ -17,15 +18,16 @@ export const UserDirectoryTable: React.FC<UserDirectoryTableProps> = ({
   users,
   onPromote,
   onDemote,
+  onChangeRole,
   onRefresh,
 }) => {
   return (
     <Card className="overflow-hidden shadow-sm">
       <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-5 bg-white">
         <div>
-          <h3 className="text-base font-bold text-[#0B2545]">User Directory & Role Promotion</h3>
+          <h3 className="text-base font-bold text-[#0B2545]">User Directory & Role Assignment</h3>
           <p className="text-xs text-slate-500">
-            Promote verified employees to HR / Manager or demote back to candidate role.
+            Assign user roles: Member (Job Seeker), HR / Recruiter, or Company Staff.
           </p>
         </div>
         <Button
@@ -46,7 +48,7 @@ export const UserDirectoryTable: React.FC<UserDirectoryTableProps> = ({
               <th className="px-5 py-3">Email</th>
               <th className="px-5 py-3">Current Role</th>
               <th className="px-5 py-3">Assigned By</th>
-              <th className="px-5 py-3 text-right">Action</th>
+              <th className="px-5 py-3 text-right">Assign Role</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
@@ -81,20 +83,25 @@ export const UserDirectoryTable: React.FC<UserDirectoryTableProps> = ({
                   <td className="px-5 py-3.5 text-right">
                     {u.role === 'admin' ? (
                       <span className="text-xs text-slate-400 italic">Protected Admin</span>
-                    ) : u.role === 'employee' ? (
-                      <button
-                        onClick={() => onPromote(u.id)}
-                        className="rounded-full border border-[#F97316] bg-orange-50 px-3 py-1 text-xs font-bold text-[#EA580C] hover:bg-[#F97316] hover:text-white transition"
-                      >
-                        Promote to HR
-                      </button>
                     ) : (
-                      <button
-                        onClick={() => onDemote(u.id)}
-                        className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-gray-100 transition"
+                      <select
+                        value={u.role}
+                        onChange={(e) => {
+                          const newRole = e.target.value as 'manager' | 'employee' | 'staff'
+                          if (onChangeRole) {
+                            onChangeRole(u.id, newRole)
+                          } else if (newRole === 'manager') {
+                            onPromote(u.id)
+                          } else {
+                            onDemote(u.id)
+                          }
+                        }}
+                        className="rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs transition"
                       >
-                        Demote to Candidate
-                      </button>
+                        <option value="employee">Member</option>
+                        <option value="manager">HR / Recruiter</option>
+                        <option value="staff">Company Staff</option>
+                      </select>
                     )}
                   </td>
                 </tr>

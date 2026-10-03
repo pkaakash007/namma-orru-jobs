@@ -299,7 +299,7 @@ export const adminService = {
     return apiClient.request<{ users: User[] }>('/api/admin/users')
   },
 
-  async updateUserRole(userId: string, role: 'manager' | 'employee') {
+  async updateUserRole(userId: string, role: 'manager' | 'employee' | 'staff') {
     return apiClient.request<{ success: boolean; message: string; new_role: UserRole }>(
       `/api/admin/users/${userId}/role`,
       {

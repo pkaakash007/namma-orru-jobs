@@ -21,6 +21,7 @@ interface AdminDashboardViewProps {
   usersList: User[]
   onPromoteUser: (userId: string) => void
   onDemoteUser: (userId: string) => void
+  onChangeRole?: (userId: string, newRole: 'manager' | 'employee' | 'staff') => void
   onRefreshAll: () => Promise<void> | void
   lang: Language
   initialSection?: AdminSectionTab
@@ -33,6 +34,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   usersList,
   onPromoteUser,
   onDemoteUser,
+  onChangeRole,
   onRefreshAll,
   lang,
   initialSection = 'hr-verifications',
@@ -171,6 +173,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             users={usersList}
             onPromote={onPromoteUser}
             onDemote={onDemoteUser}
+            onChangeRole={onChangeRole}
             onRefresh={handleRefresh}
           />
         )}
