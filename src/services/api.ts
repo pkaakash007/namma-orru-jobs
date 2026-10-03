@@ -200,13 +200,14 @@ export const authService = {
 }
 
 export const jobsService = {
-  async getJobs() {
+  async getJobs(forceRefresh?: boolean) {
+    const url = forceRefresh ? '/api/jobs?refresh=true' : '/api/jobs'
     return apiClient.request<{
       jobs: Job[]
       total_count?: number
       registered_only?: boolean
       message?: string
-    }>('/api/jobs')
+    }>(url)
   },
 
   async postJob(payload: {

@@ -3388,6 +3388,8 @@ app.post('/api/jobs', requireAuth, requireRole(['admin', 'manager']), requireVer
       .run()
 
     invalidateEdgeCache('jobs')
+    invalidateEdgeCache('jobs:')
+    invalidateEdgeCache('platform:')
 
     // 1. Create In-App Notification record
     const notifId = 'notif_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -3533,7 +3535,10 @@ app.get('/api/jobs', async (c) => {
       return c.json(unregPayload)
     }
 
-    const cachedRegistered = getEdgeCache<{ jobs: any[]; total_count: number }>('jobs:registered_list')
+    const forceRefresh = c.req.query('refresh') === 'true'
+    const cachedRegistered = !forceRefresh
+      ? getEdgeCache<{ jobs: any[]; total_count: number }>('jobs:registered_list')
+      : null
     if (cachedRegistered) {
       return c.json(cachedRegistered)
     }
@@ -3542,13 +3547,13 @@ app.get('/api/jobs', async (c) => {
     const { results } = await c.env.DB.prepare(
       `SELECT j.*, u.full_name as poster_name, u.avatar_url as poster_avatar
        FROM jobs j
-       JOIN users u ON j.poster_id = u.id
+       LEFT JOIN users u ON j.poster_id = u.id
        ORDER BY j.created_at DESC
        LIMIT 50`
     ).all()
 
     const regPayload = { jobs: results || [], total_count: totalCount || (results?.length || 0) }
-    setEdgeCache('jobs:registered_list', regPayload, 60)
+    setEdgeCache('jobs:registered_list', regPayload, 10)
     return c.json(regPayload)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

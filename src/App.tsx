@@ -740,6 +740,11 @@ function MainContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Re-fetch jobs whenever user identity or role changes to prevent stale role-cached data
+  useEffect(() => {
+    loadJobs(true)
+  }, [user?.id, user?.role, loadJobs])
+
   useEffect(() => {
     if (activeTab === 'admin-panel' || (user?.role === 'admin' && activeTab === 'home')) {
       loadAdminData()

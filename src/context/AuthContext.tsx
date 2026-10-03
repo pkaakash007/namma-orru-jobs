@@ -370,6 +370,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       localStorage.removeItem('namma_user')
       localStorage.removeItem('namma_token')
+      localStorage.removeItem('namma_redux_cache_v1')
     } catch {}
     apiClient.setToken(null)
     setToken(null)

@@ -11,7 +11,7 @@ interface JobsState {
   error: string | null
 }
 
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes cache TTL
+const CACHE_TTL_MS = 10 * 1000 // 10 seconds cache TTL for high freshness
 
 export const fetchJobs = createAsyncThunk(
   'jobs/fetchJobs',
@@ -19,7 +19,7 @@ export const fetchJobs = createAsyncThunk(
     const state = (getState() as any).jobs as JobsState
     const now = Date.now()
     if (!forceRefresh && !state.registeredOnly && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
-      // One-Time Fetch: Return existing memory cache to save Cloudflare D1 queries
+      // Return existing memory cache if within short TTL
       return {
         jobs: state.items,
         total_count: state.totalCount,
@@ -29,7 +29,7 @@ export const fetchJobs = createAsyncThunk(
     }
 
     try {
-      const data = await jobsService.getJobs()
+      const data = await jobsService.getJobs(forceRefresh)
       return {
         jobs: data.jobs || [],
         total_count: data.total_count ?? (data.jobs ? data.jobs.length : 0),
@@ -47,9 +47,12 @@ export const fetchJobs = createAsyncThunk(
       if (state.isLoading) {
         return false
       }
+      if (forceRefresh) {
+        return true
+      }
       const now = Date.now()
       // Skip if fresh cache exists, not registeredOnly, and not a force-refresh
-      if (!forceRefresh && !state.registeredOnly && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
+      if (!state.registeredOnly && state.lastFetched && now - state.lastFetched < CACHE_TTL_MS && state.items.length > 0) {
         return false
       }
       return true
