@@ -158,7 +158,7 @@ export const authService = {
   async googleAuth(id_token: string, picture?: string, selected_role?: 'employee' | 'manager') {
     return apiClient.request<{ token: string; user: User }>('/api/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ id_token, picture, selected_role }),
+      body: JSON.stringify({ id_token, picture, selected_role, role: selected_role }),
     })
   },
 

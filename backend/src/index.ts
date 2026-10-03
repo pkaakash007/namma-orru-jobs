@@ -925,7 +925,8 @@ app.post('/api/auth/google', async (c) => {
 
     // Role selection: User can choose 'employee' (job seeker) or 'manager' (HR recruiter).
     // Admin role can NEVER be self-assigned; it can ONLY be manually assigned in the database.
-    const requestedRole: UserRole = selected_role === 'manager' ? 'manager' : 'employee'
+    const requestedRole: UserRole =
+      (selected_role === 'manager' || body.role === 'manager') ? 'manager' : 'employee'
 
     // Verify token with Google's public tokeninfo API
     const googleRes = await fetch(

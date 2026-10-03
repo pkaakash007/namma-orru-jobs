@@ -33,6 +33,12 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   const initializedRef = useRef(false)
   const isNative = Capacitor.isNativePlatform()
 
+  // Track latest role in a ref so Google Identity Services callback never has a stale role closure
+  const roleRef = useRef<SelectableRole>(roleOverride || selectedRole)
+  useEffect(() => {
+    roleRef.current = roleOverride || selectedRole
+  }, [roleOverride, selectedRole])
+
   // Common redirect / state completion logic
   const handleAuthSuccess = () => {
     if (onSuccess) {
@@ -69,7 +75,15 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         }
       } catch {}
 
-      await loginWithGoogle(response.credential, googlePicture, roleOverride || selectedRole)
+      // Always resolve the active selected role dynamically (ref -> prop -> state -> localStorage)
+      const targetRole: SelectableRole =
+        roleRef.current ||
+        roleOverride ||
+        selectedRole ||
+        (typeof window !== 'undefined' ? (localStorage.getItem('namma_selected_role') as SelectableRole) : null) ||
+        'employee'
+
+      await loginWithGoogle(response.credential, googlePicture, targetRole)
       handleAuthSuccess()
     } catch {
       // Error toast handled by AuthContext
@@ -77,6 +91,12 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       setIsAuthenticating(false)
     }
   }
+
+  // Ref to always call latest handler from Google Identity Services callback
+  const handleCredentialRef = useRef(handleCredential)
+  useEffect(() => {
+    handleCredentialRef.current = handleCredential
+  })
 
   useEffect(() => {
     if (isNative) {
@@ -91,15 +111,23 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     }
 
     // On Web, use Google Identity Services (GSI) script
-    window.handleGoogleCredential = handleCredential
+    window.handleGoogleCredential = (response: any) => {
+      if (handleCredentialRef.current) {
+        handleCredentialRef.current(response)
+      }
+    }
 
     const initGSI = () => {
-      if (!window.google?.accounts?.id || initializedRef.current) return
+      if (!window.google?.accounts?.id) return
       initializedRef.current = true
 
       window.google.accounts.id.initialize({
         client_id: GOOGLE_WEB_CLIENT_ID,
-        callback: handleCredential,
+        callback: (response: any) => {
+          if (handleCredentialRef.current) {
+            handleCredentialRef.current(response)
+          }
+        },
         ux_mode: 'popup',
         auto_select: false,
         cancel_on_tap_outside: true,
@@ -122,6 +150,26 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     }
   }, [isNative])
 
+  // Re-initialize GSI if role changes so Google internal state is also refreshed
+  useEffect(() => {
+    if (!isNative && window.google?.accounts?.id && initializedRef.current) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_WEB_CLIENT_ID,
+          callback: (response: any) => {
+            if (handleCredentialRef.current) {
+              handleCredentialRef.current(response)
+            }
+          },
+          ux_mode: 'popup',
+          auto_select: false,
+          cancel_on_tap_outside: true,
+          itp_support: true,
+        })
+      } catch {}
+    }
+  }, [roleOverride, selectedRole, isNative])
+
   const handleButtonClick = async () => {
     if (disabled || isAuthenticating) return
     if (onBeforeSignIn && !onBeforeSignIn()) {
@@ -138,7 +186,13 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         const result = await GoogleSignIn.signIn()
         if (result?.idToken) {
           const picture = result.imageUrl || undefined
-          await loginWithGoogle(result.idToken, picture, roleOverride || selectedRole)
+          const activeRole: SelectableRole =
+            roleRef.current ||
+            roleOverride ||
+            selectedRole ||
+            (typeof window !== 'undefined' ? (localStorage.getItem('namma_selected_role') as SelectableRole) : null) ||
+            'employee'
+          await loginWithGoogle(result.idToken, picture, activeRole)
           handleAuthSuccess()
         } else {
           showToast('Google Sign-In did not return an ID token', 'error')
