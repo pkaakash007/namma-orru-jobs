@@ -1329,7 +1329,7 @@ function MainContent() {
                   </button>
 
                   {/* Saved Jobs */}
-                  {user && (
+                  {user && !isRecruiter && (
                     <button
                       type="button"
                       onClick={() => setActiveTab('saved-jobs')}
@@ -1611,8 +1611,8 @@ function MainContent() {
                       onTypeChange={setSelectedType}
                       selectedDistrict={selectedDistrict}
                       onDistrictChange={setSelectedDistrict}
-                      onViewSavedJobs={() => setActiveTab('saved-jobs')}
-                      savedJobsCount={savedJobsCount}
+                      onViewSavedJobs={!isRecruiter ? () => setActiveTab('saved-jobs') : undefined}
+                      savedJobsCount={!isRecruiter ? savedJobsCount : 0}
                     />
 
                     <div className="flex items-center justify-between px-1 text-xs text-slate-500 font-medium">
