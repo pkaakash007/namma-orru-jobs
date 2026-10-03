@@ -170,6 +170,18 @@ export const JobCard: React.FC<JobCardProps> = ({
       return
     }
 
+    if (isHR) {
+      showToast(
+        language === 'ta'
+          ? 'வேலைகளைச் சேமிப்பது வேலை தேடுபவர்களுக்கு மட்டுமே. மனிதவளக் கணக்குகள் தங்கள் வேலைகளை நேரடியாக நிர்வகிக்கலாம்.'
+          : language === 'hi'
+          ? 'नौकरियों को सहेजना केवल नौकरी चाहने वालों के लिए है। एचआर अपने जॉब पोस्टिंग को प्रबंधित कर सकते हैं।'
+          : 'Bookmarking jobs is reserved for Job Seekers. HR accounts manage listings via My Jobs.',
+        'info'
+      )
+      return
+    }
+
     const nextState = !isSaved
     setIsSaved(nextState)
     setIsSaving(true)
@@ -240,38 +252,40 @@ export const JobCard: React.FC<JobCardProps> = ({
               </div>
               <p className="text-sm font-medium text-[#1E293B]">{displayCompany}</p>
             </div>
-            <button
-              type="button"
-              onClick={handleToggleSave}
-              disabled={isSaving}
-              title={
-                isSaved
-                  ? language === 'ta'
-                    ? 'சேமித்ததை அகற்று'
-                    : language === 'hi'
-                    ? 'सहेजे गए से हटाएं'
-                    : 'Remove from Saved'
-                  : language === 'ta'
-                  ? 'வேலையை சேமிக்கவும்'
-                  : language === 'hi'
-                  ? 'नौकरी सहेजें'
-                  : 'Save Job'
-              }
-              className={`p-1.5 rounded-full transition-all cursor-pointer shrink-0 ${
-                isSaved
-                  ? 'bg-blue-50 text-[#0B2545] hover:bg-blue-100 ring-1 ring-[#0B2545]/20 shadow-2xs'
-                  : 'text-[#64748B] hover:text-[#0B2545] hover:bg-slate-100'
-              }`}
-              aria-label="Bookmark Job"
-            >
-              <Bookmark
-                className={`h-4 w-4 transition-all duration-200 ${
+            {!isHR && (
+              <button
+                type="button"
+                onClick={handleToggleSave}
+                disabled={isSaving}
+                title={
                   isSaved
-                    ? 'fill-[#0B2545] text-[#0B2545] scale-110'
-                    : 'text-[#64748B] hover:scale-105'
+                    ? language === 'ta'
+                      ? 'சேமித்ததை அகற்று'
+                      : language === 'hi'
+                      ? 'सहेजे गए से हटाएं'
+                      : 'Remove from Saved'
+                    : language === 'ta'
+                    ? 'வேலையை சேமிக்கவும்'
+                    : language === 'hi'
+                    ? 'नौकरी सहेजें'
+                    : 'Save Job'
+                }
+                className={`p-1.5 rounded-full transition-all cursor-pointer shrink-0 ${
+                  isSaved
+                    ? 'bg-blue-50 text-[#0B2545] hover:bg-blue-100 ring-1 ring-[#0B2545]/20 shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0B2545] hover:bg-slate-100'
                 }`}
-              />
-            </button>
+                aria-label="Bookmark Job"
+              >
+                <Bookmark
+                  className={`h-4 w-4 transition-all duration-200 ${
+                    isSaved
+                      ? 'fill-[#0B2545] text-[#0B2545] scale-110'
+                      : 'text-[#64748B] hover:scale-105'
+                  }`}
+                />
+              </button>
+            )}
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[#64748B]">

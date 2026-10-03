@@ -77,7 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isNativeApp = Capacitor.isNativePlatform()
 
   React.useEffect(() => {
-    if (user?.id) {
+    if (user?.id && user?.role === 'employee') {
       savedJobService.getSavedJobIds().then((ids) => {
         setSavedCount(ids.length)
       }).catch(() => {
@@ -88,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
 
     const updateCount = () => {
-      if (user?.id) {
+      if (user?.id && user?.role === 'employee') {
         savedJobService.getSavedJobIds().then((ids) => {
           setSavedCount(ids.length)
         }).catch(() => {
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
     window.addEventListener('saved_jobs_updated', updateCount)
     return () => window.removeEventListener('saved_jobs_updated', updateCount)
-  }, [user?.id])
+  }, [user?.id, user?.role])
 
   const navigateToLogin = () => {
     window.history.pushState({}, '', '/login')
@@ -421,27 +421,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>{t('profile_title') || 'Profile & Settings'}</span>
                       </button>
 
-                      <button
-                        onClick={() => {
-                          setShowProfileMenu(false)
-                          onSelectTab('saved-jobs')
-                        }}
-                        className={`w-full flex items-center justify-between p-2 rounded-lg text-left font-semibold cursor-pointer transition ${
-                          activeTab === 'saved-jobs'
-                            ? 'bg-[#0B2545]/10 text-[#0B2545]'
-                            : 'hover:bg-slate-100 text-slate-800'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Bookmark className={`h-4 w-4 ${activeTab === 'saved-jobs' ? 'fill-[#0B2545] text-[#0B2545]' : 'text-[#0B2545]'}`} />
-                          <span>{t('saved_jobs_title') || 'Saved Jobs'}</span>
-                        </div>
-                        {savedCount > 0 && (
-                          <span className="rounded-full bg-[#0B2545] px-2 py-0.5 text-[10px] font-bold text-white">
-                            {savedCount}
-                          </span>
-                        )}
-                      </button>
+                      {(!user || user.role === 'employee') && (
+                        <button
+                          onClick={() => {
+                            setShowProfileMenu(false)
+                            onSelectTab('saved-jobs')
+                          }}
+                          className={`w-full flex items-center justify-between p-2 rounded-lg text-left font-semibold cursor-pointer transition ${
+                            activeTab === 'saved-jobs'
+                              ? 'bg-[#0B2545]/10 text-[#0B2545]'
+                              : 'hover:bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Bookmark className={`h-4 w-4 ${activeTab === 'saved-jobs' ? 'fill-[#0B2545] text-[#0B2545]' : 'text-[#0B2545]'}`} />
+                            <span>{t('saved_jobs_title') || 'Saved Jobs'}</span>
+                          </div>
+                          {savedCount > 0 && (
+                            <span className="rounded-full bg-[#0B2545] px-2 py-0.5 text-[10px] font-bold text-white">
+                              {savedCount}
+                            </span>
+                          )}
+                        </button>
+                      )}
 
                       {isNativeApp && (
                         <button

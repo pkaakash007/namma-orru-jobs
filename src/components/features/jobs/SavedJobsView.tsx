@@ -3,6 +3,7 @@ import type { Job } from '../../../types'
 import { JobCard } from './JobCard'
 import { savedJobService } from '../../../services/api'
 import { useLanguage } from '../../../context/LanguageContext'
+import { useAuth } from '../../../context/AuthContext'
 import { Card } from '../../ui/Card'
 import { Button } from '../../ui/Button'
 import { Bookmark, Search, ArrowLeft, Briefcase } from 'lucide-react'
@@ -23,10 +24,16 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
   onBrowseJobs,
 }) => {
   const { t, language } = useLanguage()
+  const { user } = useAuth()
+  const isHR = user?.role === 'manager' || user?.role === 'admin'
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const loadSavedJobs = useCallback(async () => {
+    if (isHR) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const data = await savedJobService.getSavedJobs()
@@ -36,9 +43,13 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isHR])
 
   useEffect(() => {
+    if (isHR) {
+      setLoading(false)
+      return
+    }
     loadSavedJobs()
 
     // Listen for cross-component bookmark updates
@@ -70,6 +81,35 @@ export const SavedJobsView: React.FC<SavedJobsViewProps> = ({
         (j.workplace_type && j.workplace_type.toLowerCase().includes(q))
     )
   }, [jobs, searchQuery])
+
+  if (isHR) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center max-w-lg mx-auto shadow-xs">
+          <div className="h-12 w-12 rounded-full bg-blue-50 text-[#0B2545] flex items-center justify-center mx-auto mb-4">
+            <Bookmark className="h-6 w-6 text-[#0B2545]" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
+            {language === 'ta' ? 'புக்மார்க் வேலைகள்' : language === 'hi' ? 'सहेजी गई नौकरियां' : 'Saved Jobs & Bookmarks'}
+          </h2>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            {language === 'ta'
+              ? 'வேலைகளைச் சேமிப்பது வேலை தேடுபவர்களுக்கு மட்டுமே. மனிதவளக் கணக்காக, உங்கள் வேலைப் பட்டியல்களை நேரடியாக நிர்வகிக்கலாம் அல்லது விண்ணப்பதாரர்களைத் தேடலாம்.'
+              : language === 'hi'
+              ? 'नौकरियों को बुकमार्क करना केवल नौकरी चाहने वालों के लिए उपलब्ध है। भर्तीकर्ता के रूप में, आप अपनी नौकरियों का प्रबंधन कर सकते हैं या उम्मीदवारों की खोज कर सकते हैं।'
+              : 'Bookmarking and saving jobs is designed exclusively for Job Seekers (Employees). As an HR recruiter, you can manage your posted job openings or search verified candidates.'}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            {onBrowseJobs && (
+              <Button variant="primary" onClick={onBrowseJobs}>
+                {language === 'ta' ? 'அனைத்து வேலைகள்' : language === 'hi' ? 'सभी नौकरियां देखें' : 'View All Jobs'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">

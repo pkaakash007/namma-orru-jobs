@@ -298,7 +298,7 @@ function MainContent() {
   const [savedJobsCount, setSavedJobsCount] = useState<number>(0)
 
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && user?.role === 'employee') {
       savedJobService.getSavedJobIds().then((ids) => {
         setSavedJobsCount(ids.length)
       }).catch(() => {
@@ -310,11 +310,11 @@ function MainContent() {
         localStorage.removeItem('namma_saved_job_ids')
       } catch {}
     }
-  }, [user?.id])
+  }, [user?.id, user?.role])
 
   useEffect(() => {
     const handleSavedUpdate = () => {
-      if (user?.id) {
+      if (user?.id && user?.role === 'employee') {
         savedJobService.getSavedJobIds().then((ids) => {
           setSavedJobsCount(ids.length)
         }).catch(() => {
@@ -329,7 +329,7 @@ function MainContent() {
     }
     window.addEventListener('saved_jobs_updated', handleSavedUpdate)
     return () => window.removeEventListener('saved_jobs_updated', handleSavedUpdate)
-  }, [user?.id])
+  }, [user?.id, user?.role])
   const dispatch = useAppDispatch()
   const { items: jobs, totalCount: reduxJobsCount } = useAppSelector((state) => state.jobs)
   const totalJobsCount = reduxJobsCount || jobs.length
@@ -749,6 +749,12 @@ function MainContent() {
   useEffect(() => {
     if (activeTab === 'connections' && user && (user.role === 'manager' || user.role === 'admin')) {
       setActiveTab('candidates')
+    }
+  }, [activeTab, user])
+
+  useEffect(() => {
+    if (activeTab === 'saved-jobs' && user && (user.role === 'manager' || user.role === 'admin')) {
+      setActiveTab('jobs')
     }
   }, [activeTab, user])
 
