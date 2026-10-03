@@ -1055,12 +1055,6 @@ app.post('/api/auth/google', async (c) => {
           code: 'ROLE_CONFLICT_HR',
         }, 400)
       }
-      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
-        return c.json({
-          error: 'This Google account is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-          code: 'ROLE_CONFLICT_STAFF',
-        }, 400)
-      }
 
       const avatarToSave = (picture && picture.trim()) || (clientPicture && clientPicture.trim()) || existingUser.avatar_url || ''
       // Admin role stays admin, otherwise keep existing registered role
@@ -1190,12 +1184,6 @@ app.post('/api/auth/dev-login', async (c) => {
         return c.json({
           error: 'This email or phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
-        }, 400)
-      }
-      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
-        return c.json({
-          error: 'This account is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
 
@@ -1356,12 +1344,6 @@ app.post('/api/auth/register', async (c) => {
           code: 'ROLE_CONFLICT_HR',
         }, 409)
       }
-      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
-        return c.json({
-          error: 'This email or phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-          code: 'ROLE_CONFLICT_STAFF',
-        }, 409)
-      }
       return c.json({ error: 'An account with this email address or phone number already exists. Please sign in.' }, 409)
     }
 
@@ -1459,12 +1441,6 @@ app.post('/api/auth/whatsapp/send-otp', async (c) => {
         return c.json({
           error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
-        }, 400)
-      }
-      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
-        return c.json({
-          error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
     }
@@ -1643,12 +1619,6 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
         return c.json({
           error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
-        }, 400)
-      }
-      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
-        return c.json({
-          error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
-          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
 

@@ -16,7 +16,6 @@ import {
   Mail,
   Lock,
   User as UserIcon,
-  Shield,
 } from 'lucide-react'
 import type { SupportedLanguage } from '../../../utils/i18n'
 
@@ -689,23 +688,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </div>
               )}
 
-              {/* ── Sleek Compact Role Switcher: Job Seeker vs HR Recruiter vs Staff ── */}
+              {/* ── Sleek Compact Role Switcher: Job Seeker vs HR Recruiter ── */}
               {phoneStep === 'phone' && (
-            <div className="grid grid-cols-3 p-1 rounded-xl bg-slate-100 mb-3.5 text-xs font-semibold gap-1">
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100 mb-3.5 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => {
                   setSelectedRole('employee')
                   setRoleConflictNotice(null)
                 }}
-                className={`py-1.5 px-1 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   selectedRole === 'employee'
                     ? 'bg-white text-[#0B2545] shadow-2xs font-bold'
                     : 'text-slate-500 hover:text-slate-800 font-medium'
                 }`}
               >
-                <Briefcase className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{t('auth_role_job_seeker')}</span>
+                <Briefcase className="h-3.5 w-3.5" />
+                <span>{t('auth_role_job_seeker')}</span>
               </button>
               <button
                 type="button"
@@ -713,29 +712,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   setSelectedRole('manager')
                   setRoleConflictNotice(null)
                 }}
-                className={`py-1.5 px-1 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   selectedRole === 'manager'
                     ? 'bg-white text-[#0B2545] shadow-2xs font-bold'
                     : 'text-slate-500 hover:text-slate-800 font-medium'
                 }`}
               >
-                <Building2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{t('auth_role_hr_recruiter')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRole('staff')
-                  setRoleConflictNotice(null)
-                }}
-                className={`py-1.5 px-1 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  selectedRole === 'staff'
-                    ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800 font-medium'
-                }`}
-              >
-                <Shield className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
-                <span className="truncate">{t('auth_role_company_staff')}</span>
+                <Building2 className="h-3.5 w-3.5" />
+                <span>{t('auth_role_hr_recruiter')}</span>
               </button>
             </div>
           )}
