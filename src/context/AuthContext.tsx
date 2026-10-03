@@ -259,7 +259,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return userObj
       } catch (err: any) {
-        showToast('Google Sign-In failed: ' + err.message, 'error')
+        const msg = err.message || ''
+        const isConflict =
+          msg.includes('Job Seeker') ||
+          msg.includes('ROLE_CONFLICT') ||
+          msg.includes('already registered') ||
+          msg.includes('HR Recruiter') ||
+          msg.includes('Employee')
+        showToast(
+          isConflict ? msg : 'Google Sign-In failed: ' + msg,
+          isConflict ? 'warning' : 'error'
+        )
         throw err
       } finally {
         setIsLoading(false)

@@ -15,6 +15,7 @@ declare global {
 
 interface GoogleSignInButtonProps {
   onSuccess?: () => void
+  onError?: (err: any) => void
   roleOverride?: SelectableRole
   onBeforeSignIn?: () => boolean
   disabled?: boolean
@@ -22,6 +23,7 @@ interface GoogleSignInButtonProps {
 
 export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   onSuccess,
+  onError,
   roleOverride,
   onBeforeSignIn,
   disabled,
@@ -85,8 +87,10 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
 
       await loginWithGoogle(response.credential, googlePicture, targetRole)
       handleAuthSuccess()
-    } catch {
-      // Error toast handled by AuthContext
+    } catch (err: any) {
+      if (onError) {
+        onError(err)
+      }
     } finally {
       setIsAuthenticating(false)
     }
@@ -198,6 +202,9 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
           showToast('Google Sign-In did not return an ID token', 'error')
         }
       } catch (err: any) {
+        if (onError) {
+          onError(err)
+        }
         const errorMsg = err?.message || String(err)
         // Check for cancellation
         if (

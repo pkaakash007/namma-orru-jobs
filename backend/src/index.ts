@@ -984,7 +984,7 @@ app.post('/api/auth/google', async (c) => {
       // Role conflict validation: Prevent cross-role account hijacking
       if (existingUser.role === 'employee' && requestedRole === 'manager') {
         return c.json({
-          error: 'This Google account is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate Google account for HR Recruiter access.',
+          error: 'You are already registered as an Employee (Job Seeker). Please switch to the Job Seeker tab to sign in, or use a corporate Google account for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 400)
       }

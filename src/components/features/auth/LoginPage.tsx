@@ -748,6 +748,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   roleOverride={selectedRole}
                   onBeforeSignIn={authMode === 'signup' ? validateTermsAccepted : undefined}
                   onSuccess={handleNavigateHome}
+                  onError={(err) => {
+                    const msg = err?.message || ''
+                    if (
+                      msg.includes('Job Seeker') ||
+                      msg.includes('ROLE_CONFLICT_EMPLOYEE') ||
+                      msg.includes('Employee')
+                    ) {
+                      setRoleConflictNotice({
+                        message: 'You are already registered as an Employee (Job Seeker). Please switch to the Job Seeker tab to sign in.',
+                        targetRole: 'employee',
+                      })
+                    } else if (
+                      msg.includes('HR Recruiter') ||
+                      msg.includes('ROLE_CONFLICT_HR') ||
+                      msg.includes('manager')
+                    ) {
+                      setRoleConflictNotice({
+                        message: 'You are already registered as an HR Recruiter. Please switch to the HR Recruiter tab to sign in.',
+                        targetRole: 'manager',
+                      })
+                    }
+                  }}
                 />
               </div>
 
