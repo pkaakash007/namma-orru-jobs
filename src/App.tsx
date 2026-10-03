@@ -115,8 +115,136 @@ const isPrivacyPath = () => {
   )
 }
 
+export const TAB_ROUTES: Record<TabType, string> = {
+  home: '/',
+  jobs: '/jobs',
+  'saved-jobs': '/saved-jobs',
+  feed: '/feed',
+  connections: '/network',
+  messages: '/messages',
+  'post-job': '/post-job',
+  candidates: '/candidates',
+  'admin-panel': '/admin',
+  notifications: '/notifications',
+  profile: '/profile',
+}
+
+export const getTabFromLocation = (): TabType | null => {
+  if (typeof window === 'undefined') return null
+  const path = window.location.pathname.toLowerCase()
+  const hash = window.location.hash.toLowerCase()
+  const searchParams = new URLSearchParams(window.location.search)
+  const tabParam = (searchParams.get('tab') || searchParams.get('view') || '').toLowerCase()
+
+  // Network / Connections
+  if (
+    path === '/network' || path.startsWith('/network/') ||
+    path === '/connections' || path.startsWith('/connections/') ||
+    hash === '#network' || hash === '#/network' ||
+    hash === '#connections' || hash === '#/connections' ||
+    tabParam === 'network' || tabParam === 'connections'
+  ) {
+    return 'connections'
+  }
+
+  // Jobs
+  if (
+    path === '/jobs' || path.startsWith('/jobs/') ||
+    hash === '#jobs' || hash === '#/jobs' ||
+    tabParam === 'jobs'
+  ) {
+    return 'jobs'
+  }
+
+  // Saved Jobs
+  if (
+    path === '/saved-jobs' || path.startsWith('/saved-jobs/') ||
+    path === '/saved' || path.startsWith('/saved/') ||
+    hash === '#saved-jobs' || hash === '#/saved-jobs' ||
+    hash === '#saved' || hash === '#/saved' ||
+    tabParam === 'saved' || tabParam === 'saved-jobs'
+  ) {
+    return 'saved-jobs'
+  }
+
+  // Feed / Thoughts
+  if (
+    path === '/feed' || path.startsWith('/feed/') ||
+    path === '/thoughts' || path.startsWith('/thoughts/') ||
+    path === '/posts' || path.startsWith('/posts/') ||
+    hash === '#feed' || hash === '#/feed' ||
+    hash === '#thoughts' || hash === '#/thoughts' ||
+    tabParam === 'feed' || tabParam === 'thoughts'
+  ) {
+    return 'feed'
+  }
+
+  // Messages
+  if (
+    path === '/messages' || path.startsWith('/messages/') ||
+    path === '/chat' || path.startsWith('/chat/') ||
+    hash === '#messages' || hash === '#/messages' ||
+    hash === '#chat' || hash === '#/chat' ||
+    tabParam === 'messages' || tabParam === 'chat'
+  ) {
+    return 'messages'
+  }
+
+  // Candidates
+  if (
+    path === '/candidates' || path.startsWith('/candidates/') ||
+    path === '/candidate-search' || path.startsWith('/candidate-search/') ||
+    hash === '#candidates' || hash === '#/candidates' ||
+    tabParam === 'candidates'
+  ) {
+    return 'candidates'
+  }
+
+  // Post Job
+  if (
+    path === '/post-job' || path.startsWith('/post-job/') ||
+    path === '/post' || path.startsWith('/post/') ||
+    hash === '#post-job' || hash === '#/post-job' ||
+    tabParam === 'post-job' || tabParam === 'post'
+  ) {
+    return 'post-job'
+  }
+
+  // Admin
+  if (
+    path === '/admin' || path.startsWith('/admin/') ||
+    path === '/admin-panel' || path.startsWith('/admin-panel/') ||
+    hash === '#admin' || hash === '#/admin' ||
+    hash === '#admin-panel' || hash === '#/admin-panel' ||
+    tabParam === 'admin' || tabParam === 'admin-panel'
+  ) {
+    return 'admin-panel'
+  }
+
+  // Notifications
+  if (
+    path === '/notifications' || path.startsWith('/notifications/') ||
+    hash === '#notifications' || hash === '#/notifications' ||
+    tabParam === 'notifications'
+  ) {
+    return 'notifications'
+  }
+
+  // Profile
+  if (
+    path === '/profile' || path.startsWith('/profile/') ||
+    path === '/me' || path.startsWith('/me/') ||
+    hash === '#profile' || hash === '#/profile' ||
+    tabParam === 'profile'
+  ) {
+    return 'profile'
+  }
+
+  return null
+}
+
 function MainContent() {
-  const { user, role, hasRole, setSelectedRole } = useAuth()
+  const { user, role, hasRole, setSelectedRole, isLoading } = useAuth()
   const isRecruiter = hasRole(['admin', 'manager'])
 
   const isVerifiedHr = (u: any): boolean => {
@@ -137,14 +265,11 @@ function MainContent() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
       if (typeof window !== 'undefined') {
+        const urlTab = getTabFromLocation()
+        if (urlTab) return urlTab
+
         const storedTab = sessionStorage.getItem('namma_active_tab') as TabType
-        if (storedTab) return storedTab
-        const hash = window.location.hash.toLowerCase()
-        const path = window.location.pathname.toLowerCase()
-        const search = window.location.search.toLowerCase()
-        if (hash === '#admin' || hash === '#admin-panel' || path === '/admin' || search.includes('tab=admin')) return 'admin-panel'
-        if (hash === '#profile' || path === '/profile') return 'profile'
-        if (hash === '#saved-jobs' || hash === '#saved' || path === '/saved-jobs' || search.includes('tab=saved-jobs')) return 'saved-jobs'
+        if (storedTab && storedTab !== 'home') return storedTab
       }
       const savedUser = localStorage.getItem('namma_user')
       if (savedUser) {
@@ -156,12 +281,19 @@ function MainContent() {
     return 'home'
   })
 
+  // Synchronize activeTab to URL and sessionStorage like a real React SPA
   useEffect(() => {
+    if (isTermsRoute || isPrivacyRoute || isLoginRoute || isReleaseRoute) return
     try {
       sessionStorage.setItem('namma_active_tab', activeTab)
+      const targetPath = TAB_ROUTES[activeTab] || '/'
+      const currentPath = window.location.pathname.toLowerCase()
+      if (currentPath !== targetPath && !currentPath.startsWith('/login') && !currentPath.startsWith('/release')) {
+        window.history.pushState({ tab: activeTab }, '', targetPath)
+      }
     } catch {}
     window.scrollTo(0, 0)
-  }, [activeTab])
+  }, [activeTab, isTermsRoute, isPrivacyRoute, isLoginRoute, isReleaseRoute])
 
   const [savedJobsCount, setSavedJobsCount] = useState<number>(0)
 
@@ -615,6 +747,12 @@ function MainContent() {
   }, [activeTab, user?.role, loadAdminData])
 
   useEffect(() => {
+    if (activeTab === 'connections' && user && (user.role === 'manager' || user.role === 'admin')) {
+      setActiveTab('candidates')
+    }
+  }, [activeTab, user])
+
+  useEffect(() => {
     if (activeTab === 'feed' && user && user.role !== 'employee') {
       setActiveTab('jobs')
     }
@@ -632,6 +770,11 @@ function MainContent() {
       setIsReleaseRoute(isReleasePath())
       setIsTermsRoute(isTermsPath())
       setIsPrivacyRoute(isPrivacyPath())
+
+      const newTab = getTabFromLocation()
+      if (newTab) {
+        setActiveTab(newTab)
+      }
     }
     // namma:navigate fires from push notification taps and Google sign-in
     const handleNammaNavigate = (e: Event) => {
@@ -685,19 +828,35 @@ function MainContent() {
 
   // Registered members should strictly stay on authenticated portal, never see public landing page
   useEffect(() => {
+    // CRITICAL: Never prematurely redirect or reset tabs while initial auth check is in flight!
+    if (isLoading) return
+
+    const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('namma_token'))
+
     if (user) {
       if (activeTab === 'home') {
-        setActiveTab(user.role === 'admin' ? 'admin-panel' : 'jobs')
+        const urlTab = getTabFromLocation()
+        if (urlTab && urlTab !== 'home') {
+          setActiveTab(urlTab)
+        } else {
+          setActiveTab(user.role === 'admin' ? 'admin-panel' : 'jobs')
+        }
       }
-    } else {
-      // When unauthenticated, ensure protected tabs safely fall back to home landing page
-      if (activeTab === 'admin-panel' || activeTab === 'notifications' || activeTab === 'profile' || activeTab === 'messages' || activeTab === 'connections') {
+    } else if (!hasStoredToken) {
+      // When confirmed unauthenticated, ensure protected tabs safely fall back to home landing page
+      if (
+        activeTab === 'admin-panel' ||
+        activeTab === 'notifications' ||
+        activeTab === 'profile' ||
+        activeTab === 'messages' ||
+        activeTab === 'connections'
+      ) {
         setActiveTab('home')
         setIsLoginRoute(false)
       }
       sessionStorage.removeItem('applied_job_ids')
     }
-  }, [user, activeTab])
+  }, [user, activeTab, isLoading])
 
   // Pre-load applied job IDs once on user login session (avoids repeated network calls on tab change)
   useEffect(() => {
@@ -724,11 +883,12 @@ function MainContent() {
 
   // Guard notifications: only available for authenticated members, safely redirect to home if unauthenticated
   useEffect(() => {
-    if (!user && activeTab === 'notifications') {
+    const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('namma_token'))
+    if (!isLoading && !user && !hasStoredToken && activeTab === 'notifications') {
       setActiveTab('home')
       setIsLoginRoute(false)
     }
-  }, [user, activeTab])
+  }, [user, activeTab, isLoading])
 
   if (isTermsRoute) {
     return (
@@ -865,8 +1025,22 @@ function MainContent() {
       j.workplace_type === 'Remote' || j.location.toLowerCase().includes('remote')
   ).length
 
+  const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('namma_token'))
+
+  // While validating stored session on refresh, show a clean loader rather than flashing the public home page
+  if (isLoading && hasStoredToken) {
+    return (
+      <div className="min-h-screen bg-[#F4F2EE] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 rounded-full border-3 border-[#0B2545] border-t-transparent animate-spin" />
+          <p className="text-xs font-semibold text-slate-500 tracking-wide">Loading Namma Ooru Jobs...</p>
+        </div>
+      </div>
+    )
+  }
+
   // Home Landing Info Page (Initial Design & Overview) - strictly for unregistered / guest visitors only
-  if (activeTab === 'home' && !user) {
+  if (activeTab === 'home' && !user && !hasStoredToken && !isLoading) {
     return (
       <PublicHomePage
         onNavigateToLogin={navigateToLogin}
