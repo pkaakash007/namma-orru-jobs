@@ -52,6 +52,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Apple iOS System Alert Modal (centered on page with iOS frosted glass theme)
   const showToast = useCallback((message: string, type: AlertType = 'success', title?: string) => {
+    if (!message) return
+    const lower = message.toLowerCase()
+    if (lower.startsWith('welcome back') || lower.startsWith('welcome,') || lower.startsWith('welcome!')) {
+      return
+    }
+
     setCurrentAlert((prev) => {
       // Do not overwrite an active user confirmation dialog with a background notification
       if (prev?.isConfirm) return prev
@@ -61,19 +67,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       let finalMessage = message
 
       if (!finalTitle) {
-        if (message.startsWith('Welcome, ')) {
-          finalTitle = 'Welcome'
-          finalMessage = message.replace(/^Welcome,\s*/, '')
-        } else {
-          finalTitle =
-            type === 'error'
-              ? 'Error'
-              : type === 'warning'
-              ? 'Notice'
-              : type === 'info'
-              ? 'Notice'
-              : 'Success'
-        }
+        finalTitle =
+          type === 'error'
+            ? 'Error'
+            : type === 'warning'
+            ? 'Notice'
+            : type === 'info'
+            ? 'Notice'
+            : 'Success'
       }
 
       return {

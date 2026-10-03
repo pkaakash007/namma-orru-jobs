@@ -155,9 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncDeviceTokenWithUser(data.user.id, data.token)
         
         if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
-          showToast(`Welcome, ${data.user.full_name}! Your HR account is pending administrator verification.`, 'info')
-        } else {
-          showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
+          showToast(`Your HR account is pending administrator verification.`, 'info')
         }
 
         // Ensure user is redirected from login page to home
@@ -206,9 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncDeviceTokenWithUser(data.user.id, data.token)
 
         if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
-          showToast(`Welcome, ${data.user.full_name}! Your HR account is pending administrator verification.`, 'info')
-        } else {
-          showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : 'Job Seeker'})`, 'success')
+          showToast(`Your HR account is pending administrator verification.`, 'info')
         }
 
         if (typeof window !== 'undefined') {
@@ -248,7 +244,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedAcc = persistLastLogin(userObj)
         if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(userObj.id, data.token)
-        showToast(`Welcome back, ${userObj.full_name}! (${userObj.role === 'manager' ? 'HR Recruiter' : userObj.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
+        if (userObj.role === 'manager' && (userObj.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
+          showToast(`Your HR account is pending administrator verification.`, 'info')
+        }
 
         // Ensure user is redirected from login page to home
         if (typeof window !== 'undefined') {
@@ -312,7 +310,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedAcc = persistLastLogin(data.user)
         if (savedAcc) setLastLoginAccount(savedAcc)
         syncDeviceTokenWithUser(data.user.id, data.token)
-        showToast(`Welcome, ${data.user.full_name}! (${data.user.role === 'manager' ? 'HR Recruiter' : data.user.role === 'admin' ? 'Admin' : 'Job Seeker'})`, 'success')
+        if (data.user.role === 'manager' && (data.user.status || '').toUpperCase() === 'PENDING_VERIFICATION') {
+          showToast(`Your HR account is pending administrator verification.`, 'info')
+        }
 
         // Redirect to home page
         if (typeof window !== 'undefined') {
