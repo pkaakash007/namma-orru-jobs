@@ -30,7 +30,7 @@ import {
   sendProfileRejectedEmail,
 } from './services/emailService'
 
-export type UserRole = 'admin' | 'manager' | 'employee'
+export type UserRole = 'admin' | 'manager' | 'employee' | 'staff'
 
 export interface UserRecord {
   id: string
@@ -491,6 +491,39 @@ export async function ensureProductionSchema(db: D1Database) {
       embedding TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      client_name TEXT NOT NULL,
+      company_name TEXT NOT NULL,
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      service_type TEXT DEFAULT 'Hiring Package',
+      total_agreed_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      notes TEXT DEFAULT '',
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS client_billing (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      billing_month TEXT NOT NULL,
+      billed_amount REAL DEFAULT 0,
+      paid_amount REAL DEFAULT 0,
+      pending_amount REAL DEFAULT 0,
+      due_date TEXT DEFAULT '',
+      payment_status TEXT DEFAULT 'pending',
+      payment_date TEXT DEFAULT '',
+      payment_mode TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     )`
   ]
 
@@ -777,7 +810,7 @@ app.get('/api/health', async (c) => {
     service: 'Namma Ooru Jobs API',
     platform: 'Cloudflare Workers',
     database: 'Cloudflare D1',
-    roles_supported: ['admin', 'manager', 'employee'],
+    roles_supported: ['admin', 'manager', 'employee', 'staff'],
     production_ready: allReady,
     total_tables: tables.length,
     tables_verified: Object.keys(tableStatus).length,
@@ -947,10 +980,14 @@ app.post('/api/auth/google', async (c) => {
       return c.json({ error: 'Missing Google id_token or credential' }, 400)
     }
 
-    // Role selection: User can choose 'employee' (job seeker) or 'manager' (HR recruiter).
+    // Role selection: User can choose 'employee' (job seeker), 'manager' (HR recruiter), or 'staff' (company staff).
     // Admin role can NEVER be self-assigned; it can ONLY be manually assigned in the database.
     const requestedRole: UserRole =
-      (selected_role === 'manager' || body.role === 'manager') ? 'manager' : 'employee'
+      (selected_role === 'staff' || body.role === 'staff')
+        ? 'staff'
+        : (selected_role === 'manager' || body.role === 'manager')
+        ? 'manager'
+        : 'employee'
 
     // Verify token with Google's public tokeninfo API
     const googleRes = await fetch(
@@ -1006,16 +1043,22 @@ app.post('/api/auth/google', async (c) => {
 
     if (existingUser) {
       // Role conflict validation: Prevent cross-role account hijacking
-      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+      if (existingUser.role === 'employee' && requestedRole !== 'employee') {
         return c.json({
           error: 'You are already registered as an Employee (Job Seeker). Please switch to the Job Seeker tab to sign in, or use a corporate Google account for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 400)
       }
-      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+      if (existingUser.role === 'manager' && requestedRole !== 'manager') {
         return c.json({
           error: 'This Google account is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
+      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
+        return c.json({
+          error: 'This Google account is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
 
@@ -1105,7 +1148,12 @@ app.post('/api/auth/dev-login', async (c) => {
     }
 
     const targetEmail = rawEmail
-    const requestedRole: UserRole = body.role === 'manager' ? 'manager' : 'employee'
+    const requestedRole: UserRole =
+      (body.role === 'staff' || body.selected_role === 'staff')
+        ? 'staff'
+        : (body.role === 'manager' || body.selected_role === 'manager')
+        ? 'manager'
+        : 'employee'
     const targetName = (body.full_name || targetEmail.split('@')[0]).trim().slice(0, 100)
     const company = (body.company || '').trim().slice(0, 100)
     const position = (body.position || '').trim().slice(0, 100)
@@ -1132,16 +1180,22 @@ app.post('/api/auth/dev-login', async (c) => {
 
     if (existingUser) {
       // Role conflict validation: strictly block cross-role logins
-      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+      if (existingUser.role === 'employee' && requestedRole !== 'employee') {
         return c.json({
           error: 'This email or phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 400)
       }
-      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+      if (existingUser.role === 'manager' && requestedRole !== 'manager') {
         return c.json({
           error: 'This email or phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
+      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
+        return c.json({
+          error: 'This account is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
 
@@ -1192,16 +1246,22 @@ app.post('/api/auth/dev-login', async (c) => {
           .first() as { id: string; role: string } | null
 
         if (phoneConflict) {
-          if (phoneConflict.role === 'employee' && requestedRole === 'manager') {
+          if (phoneConflict.role === 'employee' && requestedRole !== 'employee') {
             return c.json({
               error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
               code: 'ROLE_CONFLICT_EMPLOYEE',
             }, 400)
           }
-          if (phoneConflict.role === 'manager' && requestedRole === 'employee') {
+          if (phoneConflict.role === 'manager' && requestedRole !== 'manager') {
             return c.json({
               error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
               code: 'ROLE_CONFLICT_HR',
+            }, 400)
+          }
+          if (phoneConflict.role === 'staff' && requestedRole !== 'staff') {
+            return c.json({
+              error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+              code: 'ROLE_CONFLICT_STAFF',
             }, 400)
           }
         }
@@ -1258,7 +1318,12 @@ app.post('/api/auth/register', async (c) => {
       return c.json({ error: 'Valid email address format is required' }, 400)
     }
 
-    const requestedRole: UserRole = body.role === 'manager' ? 'manager' : 'employee'
+    const requestedRole: UserRole =
+      (body.role === 'staff' || body.selected_role === 'staff')
+        ? 'staff'
+        : (body.role === 'manager' || body.selected_role === 'manager')
+        ? 'manager'
+        : 'employee'
     const targetName = (body.full_name || rawEmail.split('@')[0]).trim().slice(0, 100)
     const company = (body.company || '').trim().slice(0, 100)
     const position = (body.position || '').trim().slice(0, 100)
@@ -1279,16 +1344,22 @@ app.post('/api/auth/register', async (c) => {
     }
 
     if (existingUser) {
-      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+      if (existingUser.role === 'employee' && requestedRole !== 'employee') {
         return c.json({
           error: 'This email or phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 409)
       }
-      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+      if (existingUser.role === 'manager' && requestedRole !== 'manager') {
         return c.json({
           error: 'This email or phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
+        }, 409)
+      }
+      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
+        return c.json({
+          error: 'This email or phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+          code: 'ROLE_CONFLICT_STAFF',
         }, 409)
       }
       return c.json({ error: 'An account with this email address or phone number already exists. Please sign in.' }, 409)
@@ -1351,7 +1422,8 @@ app.post('/api/auth/signup', async (c) => {
 // 3. WhatsApp OTP Send via Meta WhatsApp Cloud API
 app.post('/api/auth/whatsapp/send-otp', async (c) => {
   try {
-    const { phone, full_name, selected_role } = await c.req.json().catch(() => ({}))
+    const body = await c.req.json().catch(() => ({}))
+    const { phone, full_name, selected_role } = body
     if (!phone) {
       return c.json({ error: 'Phone number is required' }, 400)
     }
@@ -1361,7 +1433,12 @@ app.post('/api/auth/whatsapp/send-otp', async (c) => {
       return c.json({ error: 'Invalid phone number format. Please provide a 10-digit mobile number' }, 400)
     }
 
-    const requestedRole: UserRole = selected_role === 'manager' ? 'manager' : 'employee'
+    const requestedRole: UserRole =
+      (selected_role === 'staff' || body.role === 'staff')
+        ? 'staff'
+        : (selected_role === 'manager' || body.role === 'manager')
+        ? 'manager'
+        : 'employee'
     const targetEmail = `${formattedPhone}@phone.nammaoorujobs.com`
 
     // Pre-flight check: validate role compatibility before sending OTP
@@ -1372,16 +1449,22 @@ app.post('/api/auth/whatsapp/send-otp', async (c) => {
       .first() as { id: string; role: string } | null
 
     if (existingUser) {
-      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+      if (existingUser.role === 'employee' && requestedRole !== 'employee') {
         return c.json({
           error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 400)
       }
-      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+      if (existingUser.role === 'manager' && requestedRole !== 'manager') {
         return c.json({
           error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
+      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
+        return c.json({
+          error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
     }
@@ -1490,12 +1573,18 @@ app.post('/api/auth/whatsapp/send-otp', async (c) => {
 // 4. WhatsApp OTP Verification & Login
 app.post('/api/auth/whatsapp/verify-otp', async (c) => {
   try {
-    const { phone, otp, full_name, selected_role } = await c.req.json()
+    const body = await c.req.json().catch(() => ({}))
+    const { phone, otp, full_name, selected_role } = body
     if (!phone || !otp) {
       return c.json({ error: 'Phone and OTP are required' }, 400)
     }
 
-    const requestedRole: UserRole = selected_role === 'manager' ? 'manager' : 'employee'
+    const requestedRole: UserRole =
+      (selected_role === 'staff' || body.role === 'staff')
+        ? 'staff'
+        : (selected_role === 'manager' || body.role === 'manager')
+        ? 'manager'
+        : 'employee'
     const cleanDigits = phone.replace(/\D/g, '')
     const formattedPhone = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits
 
@@ -1544,16 +1633,22 @@ app.post('/api/auth/whatsapp/verify-otp', async (c) => {
 
     if (existingUser) {
       // Role conflict validation: strictly block cross-role logins
-      if (existingUser.role === 'employee' && requestedRole === 'manager') {
+      if (existingUser.role === 'employee' && requestedRole !== 'employee') {
         return c.json({
           error: 'This phone number is already registered as a Job Seeker account. Please switch to the Job Seeker tab to sign in, or use a corporate work email for HR Recruiter access.',
           code: 'ROLE_CONFLICT_EMPLOYEE',
         }, 400)
       }
-      if (existingUser.role === 'manager' && requestedRole === 'employee') {
+      if (existingUser.role === 'manager' && requestedRole !== 'manager') {
         return c.json({
           error: 'This phone number is already registered as an HR Recruiter account. Please switch to the HR Recruiter tab to sign in.',
           code: 'ROLE_CONFLICT_HR',
+        }, 400)
+      }
+      if (existingUser.role === 'staff' && requestedRole !== 'staff') {
+        return c.json({
+          error: 'This phone number is already registered as Company Staff. Please switch to the Staff tab to sign in.',
+          code: 'ROLE_CONFLICT_STAFF',
         }, 400)
       }
 
@@ -5922,6 +6017,298 @@ app.get('/api/users/:id/follow-status', requireAuth, async (c) => {
       following_count: followingCountRow?.count || 0,
       target_id: targetId,
     })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============================================================================
+// CLIENT MAINTENANCE & MONTH-WISE BILLING PANEL (Staff & Admin)
+// ============================================================================
+
+// 1. Get all clients with real-time calculated total billed, paid, and pending balances
+app.get('/api/clients', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const q = (c.req.query('q') || '').trim().toLowerCase()
+    let query = `
+      SELECT c.*,
+             COALESCE(SUM(b.billed_amount), 0) AS total_billed,
+             COALESCE(SUM(b.paid_amount), 0) AS total_paid,
+             COALESCE(SUM(b.pending_amount), 0) AS total_pending,
+             COUNT(b.id) AS billing_count
+      FROM clients c
+      LEFT JOIN client_billing b ON c.id = b.client_id
+    `
+    const params: any[] = []
+    if (q) {
+      query += ` WHERE LOWER(c.client_name) LIKE ? OR LOWER(c.company_name) LIKE ? OR LOWER(c.phone) LIKE ? OR LOWER(c.email) LIKE ?`
+      const pattern = `%${q}%`
+      params.push(pattern, pattern, pattern, pattern)
+    }
+    query += ` GROUP BY c.id ORDER BY c.created_at DESC`
+
+    const { results } = await c.env.DB.prepare(query).bind(...params).all()
+    return c.json({ clients: results || [] })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 2. Overall overview statistics for staff dashboard
+app.get('/api/clients/overview/stats', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const totalClients = (await c.env.DB.prepare('SELECT COUNT(*) as count FROM clients').first('count') as number) || 0
+    const activeClients = (await c.env.DB.prepare("SELECT COUNT(*) as count FROM clients WHERE status = 'active'").first('count') as number) || 0
+    const billingTotals = await c.env.DB.prepare(`
+      SELECT
+        COALESCE(SUM(billed_amount), 0) AS total_billed,
+        COALESCE(SUM(paid_amount), 0) AS total_paid,
+        COALESCE(SUM(pending_amount), 0) AS total_pending
+      FROM client_billing
+    `).first() as any
+
+    const totalContractValue = (await c.env.DB.prepare('SELECT COALESCE(SUM(total_agreed_amount), 0) as val FROM clients').first('val') as number) || 0
+
+    return c.json({
+      total_clients: totalClients,
+      active_clients: activeClients,
+      total_contract_value: totalContractValue,
+      total_billed: billingTotals?.total_billed || 0,
+      total_paid: billingTotals?.total_paid || 0,
+      total_pending: billingTotals?.total_pending || 0,
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 3. Get single client details with all month-wise billing records
+app.get('/api/clients/:id', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const clientId = c.req.param('id')
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(clientId).first()
+    if (!client) {
+      return c.json({ error: 'Client not found' }, 404)
+    }
+    const { results: billing } = await c.env.DB.prepare(
+      'SELECT * FROM client_billing WHERE client_id = ? ORDER BY billing_month DESC, created_at DESC'
+    ).bind(clientId).all()
+
+    const totalBilled = (billing || []).reduce((acc: number, item: any) => acc + (Number(item.billed_amount) || 0), 0)
+    const totalPaid = (billing || []).reduce((acc: number, item: any) => acc + (Number(item.paid_amount) || 0), 0)
+    const totalPending = (billing || []).reduce((acc: number, item: any) => acc + (Number(item.pending_amount) || 0), 0)
+
+    return c.json({
+      client,
+      billing: billing || [],
+      totals: {
+        total_billed: totalBilled,
+        total_paid: totalPaid,
+        total_pending: totalPending,
+      }
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 4. Create a new client
+app.post('/api/clients', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const user = c.get('user') as UserRecord
+    const body = await c.req.json().catch(() => ({}))
+    const clientName = (body.client_name || '').trim()
+    const companyName = (body.company_name || '').trim()
+    if (!clientName || !companyName) {
+      return c.json({ error: 'Client name and Company name are required' }, 400)
+    }
+
+    const clientId = 'cli_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    const phone = (body.phone || '').trim()
+    const email = (body.email || '').trim()
+    const address = (body.address || '').trim()
+    const serviceType = (body.service_type || 'Hiring Package').trim()
+    const agreedAmount = Math.max(0, Number(body.total_agreed_amount) || 0)
+    const status = body.status || 'active'
+    const notes = (body.notes || '').trim()
+
+    await c.env.DB.prepare(`
+      INSERT INTO clients (id, client_name, company_name, phone, email, address, service_type, total_agreed_amount, status, notes, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      clientId,
+      clientName,
+      companyName,
+      phone,
+      email,
+      address,
+      serviceType,
+      agreedAmount,
+      status,
+      notes,
+      user.id
+    ).run()
+
+    return c.json({ success: true, message: 'Client created successfully', client_id: clientId }, 201)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 5. Update client
+app.put('/api/clients/:id', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const clientId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const clientName = (body.client_name || '').trim()
+    const companyName = (body.company_name || '').trim()
+    if (!clientName || !companyName) {
+      return c.json({ error: 'Client name and Company name are required' }, 400)
+    }
+
+    const phone = (body.phone || '').trim()
+    const email = (body.email || '').trim()
+    const address = (body.address || '').trim()
+    const serviceType = (body.service_type || 'Hiring Package').trim()
+    const agreedAmount = Math.max(0, Number(body.total_agreed_amount) || 0)
+    const status = body.status || 'active'
+    const notes = (body.notes || '').trim()
+
+    await c.env.DB.prepare(`
+      UPDATE clients
+      SET client_name = ?, company_name = ?, phone = ?, email = ?, address = ?,
+          service_type = ?, total_agreed_amount = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(
+      clientName,
+      companyName,
+      phone,
+      email,
+      address,
+      serviceType,
+      agreedAmount,
+      status,
+      notes,
+      clientId
+    ).run()
+
+    return c.json({ success: true, message: 'Client updated successfully' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 6. Delete client & associated billing records
+app.delete('/api/clients/:id', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const clientId = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM client_billing WHERE client_id = ?').bind(clientId).run()
+    await c.env.DB.prepare('DELETE FROM clients WHERE id = ?').bind(clientId).run()
+    return c.json({ success: true, message: 'Client and billing history deleted successfully' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 7. Add monthly billing record for a client
+app.post('/api/clients/:id/billing', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const clientId = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const billingMonth = (body.billing_month || '').trim()
+    if (!billingMonth) {
+      return c.json({ error: 'Billing month is required (e.g. October 2026 or 2026-10)' }, 400)
+    }
+
+    const billedAmount = Math.max(0, Number(body.billed_amount) || 0)
+    const paidAmount = Math.max(0, Number(body.paid_amount) || 0)
+    const pendingAmount = Math.max(0, billedAmount - paidAmount)
+    const dueDate = (body.due_date || '').trim()
+    let paymentStatus = (body.payment_status || '').trim()
+    if (!paymentStatus) {
+      if (pendingAmount === 0 && billedAmount > 0) paymentStatus = 'paid'
+      else if (paidAmount > 0) paymentStatus = 'partially_paid'
+      else paymentStatus = 'pending'
+    }
+    const paymentDate = (body.payment_date || '').trim()
+    const paymentMode = (body.payment_mode || 'Bank Transfer').trim()
+    const notes = (body.notes || '').trim()
+
+    const billingId = 'bill_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    await c.env.DB.prepare(`
+      INSERT INTO client_billing (id, client_id, billing_month, billed_amount, paid_amount, pending_amount, due_date, payment_status, payment_date, payment_mode, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      billingId,
+      clientId,
+      billingMonth,
+      billedAmount,
+      paidAmount,
+      pendingAmount,
+      dueDate,
+      paymentStatus,
+      paymentDate,
+      paymentMode,
+      notes
+    ).run()
+
+    return c.json({ success: true, message: 'Monthly billing record added successfully', billing_id: billingId }, 201)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 8. Update monthly billing record (e.g. client pays pending amount)
+app.put('/api/clients/:id/billing/:billingId', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const { id: clientId, billingId } = c.req.param()
+    const body = await c.req.json().catch(() => ({}))
+    const billingMonth = (body.billing_month || '').trim()
+    const billedAmount = Math.max(0, Number(body.billed_amount) || 0)
+    const paidAmount = Math.max(0, Number(body.paid_amount) || 0)
+    const pendingAmount = Math.max(0, billedAmount - paidAmount)
+    const dueDate = (body.due_date || '').trim()
+    let paymentStatus = (body.payment_status || '').trim()
+    if (!paymentStatus) {
+      if (pendingAmount === 0 && billedAmount > 0) paymentStatus = 'paid'
+      else if (paidAmount > 0) paymentStatus = 'partially_paid'
+      else paymentStatus = 'pending'
+    }
+    const paymentDate = (body.payment_date || '').trim()
+    const paymentMode = (body.payment_mode || 'Bank Transfer').trim()
+    const notes = (body.notes || '').trim()
+
+    await c.env.DB.prepare(`
+      UPDATE client_billing
+      SET billing_month = ?, billed_amount = ?, paid_amount = ?, pending_amount = ?,
+          due_date = ?, payment_status = ?, payment_date = ?, payment_mode = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND client_id = ?
+    `).bind(
+      billingMonth,
+      billedAmount,
+      paidAmount,
+      pendingAmount,
+      dueDate,
+      paymentStatus,
+      paymentDate,
+      paymentMode,
+      notes,
+      billingId,
+      clientId
+    ).run()
+
+    return c.json({ success: true, message: 'Billing record updated successfully' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// 9. Delete monthly billing record
+app.delete('/api/clients/:id/billing/:billingId', requireAuth, requireRole(['admin', 'staff']), async (c) => {
+  try {
+    const { id: clientId, billingId } = c.req.param()
+    await c.env.DB.prepare('DELETE FROM client_billing WHERE id = ? AND client_id = ?').bind(billingId, clientId).run()
+    return c.json({ success: true, message: 'Billing record deleted successfully' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

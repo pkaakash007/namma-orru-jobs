@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Bookmark,
   RotateCw,
+  WalletCards,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -37,6 +38,7 @@ export type TabType =
   | 'admin-panel'
   | 'notifications'
   | 'profile'
+  | 'clients'
 
 interface NavbarProps {
   activeTab: TabType
@@ -124,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 try {
                   window.history.pushState({}, '', '/')
                 } catch {}
-                onSelectTab(user ? (user.role === 'admin' ? 'admin-panel' : 'jobs') : 'home')
+                onSelectTab(user ? (user.role === 'admin' ? 'admin-panel' : user.role === 'staff' ? 'clients' : 'jobs') : 'home')
               }}
               className="flex cursor-pointer items-center gap-2 transition hover:opacity-90 shrink-0"
               title={user ? (user.role === 'admin' ? 'Admin Dashboard' : 'Jobs Portal') : 'Home'}
@@ -226,8 +228,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* HR / Admin: Candidate Search by Skill */}
-            {hasRole(['admin', 'manager']) && (
+            {/* HR / Admin / Staff: Candidate Search by Skill */}
+            {hasRole(['admin', 'manager', 'staff']) && (
               <button
                 onClick={() => onSelectTab('candidates')}
                 className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
@@ -241,8 +243,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* HR: Post a Job */}
-            {hasRole(['admin', 'manager']) && (
+            {/* Staff / Admin: Client Maintenance */}
+            {hasRole(['admin', 'staff']) && (
+              <button
+                onClick={() => onSelectTab('clients')}
+                className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                  activeTab === 'clients'
+                    ? 'border-b-2 border-indigo-600 text-indigo-700 font-bold'
+                    : 'text-[#5E5E5E] hover:text-[#0F172A]'
+                }`}
+              >
+                <WalletCards className="h-5 w-5 shrink-0" />
+                <span className="mt-0.5">{t('nav_client_maintenance')}</span>
+              </button>
+            )}
+
+            {/* Admin: Post a Job */}
+            {hasRole(['admin']) && (
               <button
                 onClick={() => onSelectTab('post-job')}
                 className={`flex flex-col items-center justify-center px-2.5 py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
@@ -563,7 +580,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {hasRole(['admin', 'manager']) && (
+        {hasRole(['admin', 'manager', 'staff']) && (
           <button
             onClick={() => onSelectTab('candidates')}
             className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
@@ -575,7 +592,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         )}
 
-        {hasRole(['admin', 'manager']) && (
+        {hasRole(['admin', 'staff']) && (
+          <button
+            onClick={() => onSelectTab('clients')}
+            className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${
+              activeTab === 'clients' ? 'text-indigo-600 font-bold' : 'text-slate-500'
+            }`}
+          >
+            <WalletCards className="h-5 w-5" />
+            <span>{t('nav_client_maintenance')}</span>
+          </button>
+        )}
+
+        {hasRole(['admin']) && (
           <button
             onClick={() => onSelectTab('post-job')}
             className={`flex flex-col items-center justify-center py-1 px-3 text-[10px] font-semibold transition cursor-pointer ${

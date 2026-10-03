@@ -31,6 +31,11 @@ export const ROLE_CONFIG: Record<
     badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200',
     description: 'Default role for all registered professionals and members',
   },
+  staff: {
+    label: 'Company Staff',
+    badgeClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+    description: 'Internal company staff with client maintenance and company management access',
+  },
 }
 
 export const WORKPLACE_TYPES = ['All', 'Remote', 'Hybrid', 'On-site'] as const

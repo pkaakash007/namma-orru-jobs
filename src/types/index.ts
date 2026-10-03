@@ -1,5 +1,50 @@
-export type UserRole = 'admin' | 'manager' | 'employee'
-export type SelectableRole = 'employee' | 'manager'
+export type UserRole = 'admin' | 'manager' | 'employee' | 'staff'
+export type SelectableRole = 'employee' | 'manager' | 'staff'
+
+export interface Client {
+  id: string
+  client_name: string
+  company_name: string
+  phone: string
+  email: string
+  address: string
+  service_type: string
+  total_agreed_amount: number
+  status: 'active' | 'paused' | 'completed'
+  notes?: string
+  created_by?: string
+  created_at: string
+  updated_at: string
+  total_billed?: number
+  total_paid?: number
+  total_pending?: number
+  billing_count?: number
+}
+
+export interface ClientBilling {
+  id: string
+  client_id: string
+  billing_month: string
+  billed_amount: number
+  paid_amount: number
+  pending_amount: number
+  due_date: string
+  payment_status: 'paid' | 'partially_paid' | 'pending' | 'overdue'
+  payment_date?: string
+  payment_mode?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientOverviewStats {
+  total_clients: number
+  active_clients: number
+  total_contract_value: number
+  total_billed: number
+  total_paid: number
+  total_pending: number
+}
 
 export type Language = 'en' | 'ta' | 'hi'
 

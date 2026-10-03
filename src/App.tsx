@@ -30,6 +30,7 @@ import { PrivacyPolicyPage } from './components/features/legal/PrivacyPolicyPage
 import { CandidateSearchView } from './components/features/hr/CandidateSearchView'
 import { HrProfileSetupModal } from './components/features/hr/HrProfileSetupModal'
 import { SavedJobsView } from './components/features/jobs/SavedJobsView'
+import { ClientMaintenancePage } from './components/features/staff/ClientMaintenancePage'
 import { PullToRefresh } from './components/ui/PullToRefresh'
 import { MapPin, Globe, Compass, Settings, Users, FileText, Briefcase, ShieldCheck, Bookmark, Plus, Bell, MessageSquare, X } from 'lucide-react'
 import type { Job } from './types'
@@ -127,6 +128,7 @@ export const TAB_ROUTES: Record<TabType, string> = {
   'admin-panel': '/admin',
   notifications: '/notifications',
   profile: '/profile',
+  clients: '/clients',
 }
 
 export const getTabFromLocation = (): TabType | null => {
@@ -240,6 +242,16 @@ export const getTabFromLocation = (): TabType | null => {
     return 'profile'
   }
 
+  // Clients
+  if (
+    path === '/clients' || path.startsWith('/clients/') ||
+    path === '/client-maintenance' || path.startsWith('/client-maintenance/') ||
+    hash === '#clients' || hash === '#/clients' ||
+    tabParam === 'clients'
+  ) {
+    return 'clients'
+  }
+
   return null
 }
 
@@ -275,6 +287,7 @@ function MainContent() {
       if (savedUser) {
         const parsed = JSON.parse(savedUser)
         if (parsed?.role === 'admin') return 'admin-panel'
+        if (parsed?.role === 'staff') return 'clients'
         return 'jobs'
       }
     } catch {}
@@ -453,11 +466,15 @@ function MainContent() {
     if (hasAuthedUser) {
       if (user?.role === 'admin') {
         defaultTab = 'admin-panel'
+      } else if (user?.role === 'staff') {
+        defaultTab = 'clients'
       } else {
         try {
           const raw = localStorage.getItem('namma_user')
           if (raw && JSON.parse(raw)?.role === 'admin') {
             defaultTab = 'admin-panel'
+          } else if (raw && JSON.parse(raw)?.role === 'staff') {
+            defaultTab = 'clients'
           } else {
             defaultTab = 'jobs'
           }
@@ -850,13 +867,14 @@ function MainContent() {
         if (urlTab && urlTab !== 'home') {
           setActiveTab(urlTab)
         } else {
-          setActiveTab(user.role === 'admin' ? 'admin-panel' : 'jobs')
+          setActiveTab(user.role === 'admin' ? 'admin-panel' : user.role === 'staff' ? 'clients' : 'jobs')
         }
       }
     } else if (!hasStoredToken) {
       // When confirmed unauthenticated, ensure protected tabs safely fall back to home landing page
       if (
         activeTab === 'admin-panel' ||
+        activeTab === 'clients' ||
         activeTab === 'notifications' ||
         activeTab === 'profile' ||
         activeTab === 'messages' ||
@@ -1249,6 +1267,10 @@ function MainContent() {
                 </div>
               </div>
             )}
+          </div>
+        ) : activeTab === 'clients' ? (
+          <div className="max-w-7xl mx-auto w-full animate-in fade-in duration-150">
+            <ClientMaintenancePage />
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -1877,7 +1899,7 @@ function MainContent() {
             {activeTab === 'candidates' && (
               isHrUnverified ? (
                 <HrVerificationPendingView onBackToFeed={() => setActiveTab('jobs')} />
-              ) : hasRole(['admin', 'manager']) ? (
+              ) : hasRole(['admin', 'manager', 'staff']) ? (
                 <CandidateSearchView
                   initialQuery={candidateSearchQuery}
                   initialJd={candidateSearchJd}

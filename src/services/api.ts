@@ -5,6 +5,7 @@ import type {
   AdminStats,
   Post,
   UserRole,
+  SelectableRole,
   AppNotification,
   PublicProfile,
   Conversation,
@@ -12,6 +13,9 @@ import type {
   UserViolation,
   ModerationResult,
   HrVerificationsResponse,
+  Client,
+  ClientBilling,
+  ClientOverviewStats,
 } from '../types'
 
 // Immediate sanitization of legacy static/mock local storage keys
@@ -164,7 +168,7 @@ export const authService = {
     }
   },
 
-  async googleAuth(id_token: string, picture?: string, selected_role?: 'employee' | 'manager') {
+  async googleAuth(id_token: string, picture?: string, selected_role?: SelectableRole) {
     return apiClient.request<{ token: string; user: User }>('/api/auth/google', {
       method: 'POST',
       body: JSON.stringify({ id_token, picture, selected_role, role: selected_role }),
@@ -175,7 +179,7 @@ export const authService = {
     return apiClient.request<{ user: User }>('/api/auth/me')
   },
 
-  async sendWhatsAppOtp(phone: string, full_name?: string, selected_role?: 'employee' | 'manager') {
+  async sendWhatsAppOtp(phone: string, full_name?: string, selected_role?: SelectableRole) {
     return await apiClient.request<{
       success: boolean
       message: string
@@ -188,7 +192,7 @@ export const authService = {
     })
   },
 
-  async verifyWhatsAppOtp(phone: string, otp: string, full_name?: string, selected_role?: 'employee' | 'manager') {
+  async verifyWhatsAppOtp(phone: string, otp: string, full_name?: string, selected_role?: SelectableRole) {
     return await apiClient.request<{ token: string; user: User }>(
       '/api/auth/whatsapp/verify-otp',
       {
@@ -1045,5 +1049,68 @@ export const commentService = {
         body: JSON.stringify({ content }),
       }
     )
+  },
+}
+
+export const clientService = {
+  async getClients(query?: string): Promise<{ clients: Client[] }> {
+    const url = query ? `/api/clients?q=${encodeURIComponent(query)}` : '/api/clients'
+    return apiClient.request<{ clients: Client[] }>(url)
+  },
+
+  async getClient(id: string): Promise<{
+    client: Client
+    billing: ClientBilling[]
+    totals: { total_billed: number; total_paid: number; total_pending: number }
+  }> {
+    return apiClient.request<{
+      client: Client
+      billing: ClientBilling[]
+      totals: { total_billed: number; total_paid: number; total_pending: number }
+    }>(`/api/clients/${id}`)
+  },
+
+  async createClient(data: Partial<Client>): Promise<{ success: boolean; client_id: string; message: string }> {
+    return apiClient.request<{ success: boolean; client_id: string; message: string }>('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async updateClient(id: string, data: Partial<Client>): Promise<{ success: boolean; message: string }> {
+    return apiClient.request<{ success: boolean; message: string }>(`/api/clients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async deleteClient(id: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.request<{ success: boolean; message: string }>(`/api/clients/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async addClientBilling(clientId: string, data: Partial<ClientBilling>): Promise<{ success: boolean; billing_id: string; message: string }> {
+    return apiClient.request<{ success: boolean; billing_id: string; message: string }>(`/api/clients/${clientId}/billing`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async updateClientBilling(clientId: string, billingId: string, data: Partial<ClientBilling>): Promise<{ success: boolean; message: string }> {
+    return apiClient.request<{ success: boolean; message: string }>(`/api/clients/${clientId}/billing/${billingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async deleteClientBilling(clientId: string, billingId: string): Promise<{ success: boolean; message: string }> {
+    return apiClient.request<{ success: boolean; message: string }>(`/api/clients/${clientId}/billing/${billingId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async getOverviewStats(): Promise<ClientOverviewStats> {
+    return apiClient.request<ClientOverviewStats>('/api/clients/overview/stats')
   },
 }

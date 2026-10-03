@@ -18,7 +18,6 @@ import {
   Plus,
   Edit,
   Clock,
-  CheckCircle2,
   GraduationCap,
   MessageSquare,
   MessageCircle,
@@ -830,7 +829,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   // HR / Recruiter — read-only profile card with approval-gated edit workflow
   // ─────────────────────────────────────────────────────────────────────────────
   if (role === 'manager' && user) {
-    const isApproved = (user.status || '').toUpperCase() === 'ACTIVE'
     const hasPending = !!user.pending_profile
     let pendingData: any = null
     try { if (hasPending && user.pending_profile) pendingData = JSON.parse(user.pending_profile) } catch {}
@@ -887,13 +885,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
           </div>
         )}
 
-        {/* Approval Status */}
-        {isApproved && !hasPending && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-3">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-            <p className="text-xs font-semibold text-emerald-800">Profile verified and approved by admin</p>
-          </div>
-        )}
 
         {/* Cover Banner */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
