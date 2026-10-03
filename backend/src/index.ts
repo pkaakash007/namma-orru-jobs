@@ -3919,6 +3919,7 @@ async function handleGetThoughts(c: any) {
     return c.json({
       thoughts: formattedThoughts,
       posts: formattedThoughts, // Backwards compatibility alias
+      employee_posts: formattedThoughts, // Employee-posts alias
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -3927,6 +3928,7 @@ async function handleGetThoughts(c: any) {
 
 app.get('/api/thoughts', handleGetThoughts)
 app.get('/api/posts', handleGetThoughts)
+app.get('/api/employee-posts', handleGetThoughts)
 
 // API-7: Create Thoughts (Employee only — HR blocked with 403)
 async function handleCreateThought(c: any) {
@@ -3981,6 +3983,7 @@ async function handleCreateThought(c: any) {
 
 app.post('/api/thoughts', requireAuth, handleCreateThought)
 app.post('/api/posts', requireAuth, handleCreateThought)
+app.post('/api/employee-posts', requireAuth, handleCreateThought)
 
 // API-10: Like / Unlike Thought (Toggle behavior associated with authenticatedUserId + thoughtId)
 async function handleLikeThought(c: any) {
@@ -4105,6 +4108,7 @@ async function handleLikeThought(c: any) {
 
 app.post('/api/thoughts/:id/like', handleLikeThought)
 app.post('/api/posts/:id/like', handleLikeThought)
+app.post('/api/employee-posts/:id/like', handleLikeThought)
 
 // --------------------------------------------------------------------------
 // COMMENTS — GET & POST
@@ -4132,6 +4136,20 @@ app.get('/api/thoughts/:id/comments', async (c: any) => {
 })
 
 app.get('/api/posts/:id/comments', async (c: any) => {
+  const postId = c.req.param('id')
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.post_id, c.author_id, c.content, c.created_at,
+            u.full_name as author_name, u.avatar_url as author_avatar
+     FROM comments c
+     JOIN users u ON c.author_id = u.id
+     WHERE c.post_id = ?
+     ORDER BY c.created_at ASC
+     LIMIT 200`
+  ).bind(postId).all()
+  return c.json({ comments: results || [] })
+})
+
+app.get('/api/employee-posts/:id/comments', async (c: any) => {
   const postId = c.req.param('id')
   const { results } = await c.env.DB.prepare(
     `SELECT c.id, c.post_id, c.author_id, c.content, c.created_at,
@@ -4217,6 +4235,24 @@ app.post('/api/thoughts/:id/comments', requireAuth, async (c: any) => {
 })
 
 app.post('/api/posts/:id/comments', requireAuth, async (c: any) => {
+  // Alias to thoughts route handler
+  c.req.param = Object.assign(c.req.param, { id: c.req.param('id') })
+  const postId = c.req.param('id')
+  const author = c.get('user') as UserRecord
+  const body = await c.req.json().catch(() => ({}))
+  const content = (body.content || '').trim()
+  if (!content) return c.json({ error: 'Comment cannot be empty' }, 400)
+  if (content.length > 1000) return c.json({ error: 'Comment too long' }, 400)
+  const post = await c.env.DB.prepare('SELECT id, author_id FROM employee_posts WHERE id = ?').bind(postId).first() as any
+  if (!post) return c.json({ error: 'Post not found' }, 404)
+  const commentId = 'cmt_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+  await c.env.DB.prepare(`INSERT INTO comments (id, post_id, author_id, content, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).bind(commentId, postId, author.id, content).run()
+  await c.env.DB.prepare('UPDATE employee_posts SET comments_count = comments_count + 1 WHERE id = ?').bind(postId).run()
+  invalidateEdgeCache('posts:')
+  return c.json({ success: true, comment: { id: commentId, post_id: postId, author_id: author.id, content, created_at: new Date().toISOString(), author_name: author.full_name, author_avatar: author.avatar_url || null } })
+})
+
+app.post('/api/employee-posts/:id/comments', requireAuth, async (c: any) => {
   // Alias to thoughts route handler
   c.req.param = Object.assign(c.req.param, { id: c.req.param('id') })
   const postId = c.req.param('id')

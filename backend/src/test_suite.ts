@@ -2239,6 +2239,14 @@ async function runTestSuite() {
   const thoughtsJson = await resThoughts.json() as any
   assert(Array.isArray(thoughtsJson.thoughts), 'API-6: Thoughts feed returned')
 
+  // API-6b: Employee Posts alias
+  const resEmpPosts = await app.request('/api/employee-posts', {
+    method: 'GET',
+  }, env)
+  assert(resEmpPosts.status === 200, 'API-6b: GET /api/employee-posts returns 200 OK')
+  const empPostsJson = await resEmpPosts.json() as any
+  assert(Array.isArray(empPostsJson.employee_posts || empPostsJson.posts), 'API-6b: Employee posts feed returned')
+
   // API-7: Create Thoughts (Employee -> Allowed, HR -> 403 Forbidden)
   const resCreateThoughtEmp = await app.request('/api/thoughts', {
     method: 'POST',

@@ -327,11 +327,16 @@ export const adminService = {
 export const feedService = {
   async getPosts() {
     try {
-      const res = await apiClient.request<{ posts?: Post[]; thoughts?: Post[] }>('/api/thoughts')
-      return { posts: res.thoughts || res.posts || [] }
+      const res = await apiClient.request<{ posts?: Post[]; thoughts?: Post[]; employee_posts?: Post[] }>('/api/thoughts')
+      return { posts: res.thoughts || res.posts || res.employee_posts || [] }
     } catch (err: any) {
       if (err.message?.includes('404')) {
-        return apiClient.request<{ posts: Post[] }>('/api/posts')
+        try {
+          const res = await apiClient.request<{ posts?: Post[]; employee_posts?: Post[] }>('/api/employee-posts')
+          return { posts: res.employee_posts || res.posts || [] }
+        } catch {
+          return apiClient.request<{ posts: Post[] }>('/api/posts')
+        }
       }
       throw err
     }
